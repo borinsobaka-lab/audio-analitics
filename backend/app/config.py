@@ -40,8 +40,12 @@ class Settings(BaseSettings):
     # --- Auth ---
     # Static API keys for desktop clients: "key1:location_id1,key2:location_id2"
     device_api_keys: str = ""
-    # Supabase JWT secret for dashboard users (HS256). Empty disables JWT check in dev.
+    # Static admin token for the dashboard (simplest production auth).
+    admin_api_token: str = ""
+    # Supabase JWT secret for dashboard users (HS256), optional alternative.
     supabase_jwt_secret: str = ""
+    # Comma-separated origins allowed for CORS (dashboard URLs).
+    cors_origins: str = ""
 
     # --- Pipeline tuning ---
     vad_threshold: float = 0.5
@@ -51,6 +55,9 @@ class Settings(BaseSettings):
     conversation_gap_s: float = 30.0
     # Audio retention in days (lifecycle policy should mirror this on the bucket).
     audio_retention_days: int = 60
+
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def device_key_map(self) -> dict[str, str]:
         """Parse device_api_keys into {api_key: location_id}."""

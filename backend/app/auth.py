@@ -40,13 +40,19 @@ async def require_device(x_device_key: str = Header(default="")) -> DeviceContex
 
 
 async def require_user(authorization: str = Header(default="")) -> UserContext:
-    if not settings.supabase_jwt_secret:
+    if not settings.admin_api_token and not settings.supabase_jwt_secret:
         if settings.environment == "development":
             return UserContext(user_id="dev", email="dev@local")
-        raise HTTPException(500, "SUPABASE_JWT_SECRET is not configured")
+        raise HTTPException(500, "Neither ADMIN_API_TOKEN nor SUPABASE_JWT_SECRET configured")
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing bearer token")
     token = authorization.removeprefix("Bearer ")
+    # Simple mode: a single admin token grants dashboard access.
+    if settings.admin_api_token:
+        if token == settings.admin_api_token:
+            return UserContext(user_id="admin", email="admin")
+        if not settings.supabase_jwt_secret:
+            raise HTTPException(401, "Invalid access token")
     try:
         payload = jwt.decode(
             token,

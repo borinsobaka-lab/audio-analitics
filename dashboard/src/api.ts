@@ -2,10 +2,18 @@
 
 const BASE = import.meta.env.VITE_API_URL || "";
 
-let authToken: string | null = null;
+const TOKEN_KEY = "aa_access_token";
+
+let authToken: string | null = localStorage.getItem(TOKEN_KEY);
 
 export function setToken(token: string | null) {
   authToken = token;
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getToken(): string | null {
+  return authToken;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
