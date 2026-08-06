@@ -9,9 +9,11 @@ import pytest
 from app.pipeline.audio_prep import map_to_original_ts
 from app.pipeline.asr import Word
 from app.pipeline.llm import (
+    LlmClient,
     extract_json,
     normalize_analysis,
     normalize_dialogs,
+    normalize_metric_eval,
     parse_timestamp,
     render_prompt,
 )
@@ -203,9 +205,6 @@ def test_normalize_analysis_clamps_effectiveness_and_bad_outcome():
 
 # --- metric evaluation normalization ---
 
-from app.pipeline.llm import normalize_metric_eval  # noqa: E402
-
-
 def test_metric_eval_applicable_with_score():
     result = normalize_metric_eval(
         {"applicable": True, "score": "7", "good": ["a"], "bad": ["b"], "comment": "ok"},
@@ -234,3 +233,70 @@ def test_metric_eval_applicable_without_score_becomes_not_triggered():
     result = normalize_metric_eval({"applicable": True, "score": "не знаю"}, 10)
     assert result["applicable"] is False
     assert result["score"] is None
+
+
+# --- LLM request shape ---
+
+class _FakeBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _FakeMessage:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.content = [_FakeBlock(text)] if text else []
+        self.stop_reason = stop_reason
+
+
+class _FakeStream:
+    def __init__(self, message):
+        self._message = message
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self._message
+
+
+class _FakeMessages:
+    def __init__(self, message):
+        self._message = message
+        self.calls = []
+
+    def stream(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeStream(self._message)
+
+
+def make_llm(text, stop_reason="end_turn"):
+    """An LlmClient whose Anthropic client is replaced by a recording fake."""
+    client = LlmClient.__new__(LlmClient)
+    client.settings = type("S", (), {"llm_max_tokens": 16000})()
+    client.client = type("C", (), {})()
+    client.client.messages = _FakeMessages(_FakeMessage(text, stop_reason))
+    return client
+
+
+def test_complete_json_sends_no_sampling_params():
+    # Current Claude models reject temperature/top_p/top_k with a 400 — this
+    # test is the guard against reintroducing them.
+    llm = make_llm('{"ok": true}')
+    assert llm.complete_json("prompt", "claude-sonnet-5") == {"ok": True}
+    call = llm.client.messages.calls[0]
+    assert "temperature" not in call
+    assert "top_p" not in call and "top_k" not in call
+    assert call["model"] == "claude-sonnet-5"
+    assert call["max_tokens"] == 16000
+
+
+def test_complete_json_reports_empty_answer_clearly():
+    # Thinking and the answer share max_tokens: an exhausted budget yields no
+    # text, which must not surface as an opaque JSON parse error.
+    llm = make_llm("", stop_reason="max_tokens")
+    with pytest.raises(ValueError, match="LLM_MAX_TOKENS"):
+        llm.complete_json("prompt", "claude-sonnet-5")

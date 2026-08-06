@@ -339,14 +339,33 @@ class LlmClient:
         self.client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key)
 
     def complete_json(self, prompt: str, model: str, system: str | None = None):
-        message = self.client.messages.create(
+        """One request → parsed JSON.
+
+        Deliberately passes no sampling parameters: `temperature`, `top_p` and
+        `top_k` are rejected with a 400 by current Claude models (Sonnet 5,
+        Opus 5 and newer). Determinism is steered by the prompts themselves
+        ("строго JSON без пояснений") plus extract_json() below.
+
+        Streaming is used because these models think before answering: a long
+        day transcript can keep the connection open past the non-streaming
+        request limit.
+        """
+        with self.client.messages.stream(
             model=model,
             max_tokens=self.settings.llm_max_tokens,
-            temperature=0.0,
             system=system or anthropic.NOT_GIVEN,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            message = stream.get_final_message()
+
         text = "".join(block.text for block in message.content if block.type == "text")
+        if not text.strip():
+            # With thinking enabled by default, max_tokens caps thinking and
+            # the answer together — an exhausted budget yields no text at all.
+            raise ValueError(
+                f"модель {model} не вернула текст (stop_reason={message.stop_reason}); "
+                "увеличьте LLM_MAX_TOKENS"
+            )
         return extract_json(text)
 
     def segment_dialogs(

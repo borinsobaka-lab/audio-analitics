@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     llm_model_stage1: str = "claude-sonnet-5"
     llm_model_stage2: str = "claude-sonnet-5"
-    llm_max_tokens: int = 8192
+    # Current models think before answering, and max_tokens caps thinking plus
+    # the answer together — too low a limit returns an empty response.
+    llm_max_tokens: int = 16000
 
     # --- Auth ---
     # Static API keys for desktop clients: "key1:location_id1,key2:location_id2"
