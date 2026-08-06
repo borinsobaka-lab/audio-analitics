@@ -5,16 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f6fb" />
     <title>Аналитика ресепшена</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Golos Text — гротеск, нарисованный под кириллицу: интерфейс на русском
-         не выглядит переводом. Unbounded — геометрический дисплейный, только
-         на заголовках и главных цифрах. JetBrains Mono — таймкоды и оценки,
-         чтобы цифры не прыгали. -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400..700&family=JetBrains+Mono:wght@400..600&family=Unbounded:wght@500..700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Шрифт подключается в main.tsx (@fontsource-variable/roboto) и едет
+         в сборке: внешних запросов за шрифтами нет. -->
   </head>
   <body>
     <div id="root"></div>

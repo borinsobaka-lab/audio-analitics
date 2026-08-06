@@ -57,9 +57,11 @@
   --r-md: 12px;
   --r-lg: 16px;
 
-  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
-  --sans: "Golos Text", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Одна гарнитура на весь проект. Роли различаются насыщенностью, кеглем
+     и цифровыми начертаниями, а не сменой шрифта. */
+  --sans: "Roboto Variable", Roboto, ui-sans-serif, system-ui, sans-serif;
+  --display: var(--sans);
+  --mono: var(--sans);
 
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -115,17 +117,16 @@ a {
   color: inherit;
 }
 
-/* Геометрический гротеск — только на заголовке страницы и главной цифре:
-   он задаёт тон, но в тексте был бы криком. */
+/* Заголовки и главные цифры: та же гарнитура, но плотнее набором — на
+   крупном кегле Roboto без поджатого трекинга рассыпается. */
 .display {
-  font-family: var(--display);
   font-weight: 600;
-  /* Unbounded сам по себе широкий — сильный отрицательный трекинг его ломает. */
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
+/* Данные — не отдельный шрифт, а табличные цифры: колонки таймкодов и оценок
+   не дёргаются при обновлении. */
 .mono {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
@@ -185,13 +186,11 @@ a {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px -3px rgba(239, 19, 112, 0.5);
 }
 .brand-name {
   display: block;
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
@@ -284,14 +283,14 @@ button {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  box-shadow: 0 2px 8px -2px rgba(239, 19, 112, 0.45);
+  box-shadow: var(--sh-1);
   transition: background 130ms var(--ease), box-shadow 130ms var(--ease),
     border-color 130ms var(--ease), color 130ms var(--ease),
     transform 90ms var(--ease);
 }
 button:hover {
   background: var(--accent-hot);
-  box-shadow: 0 4px 14px -3px rgba(239, 19, 112, 0.55);
+  box-shadow: var(--sh-2);
 }
 button:active {
   transform: scale(0.975);
@@ -337,7 +336,7 @@ button.ghost:hover {
 
 button.danger {
   background: var(--red);
-  box-shadow: 0 2px 8px -2px rgba(255, 59, 48, 0.5);
+  box-shadow: var(--sh-1);
 }
 button.danger:hover {
   background: #e02a20;
@@ -405,8 +404,7 @@ select {
 }
 
 textarea.prompt-editor {
-  font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.65;
   min-height: 380px;
   resize: vertical;
@@ -611,7 +609,6 @@ textarea.prompt-editor {
   color: var(--ink-3);
 }
 .chip-score b {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   font-weight: 700;
@@ -637,15 +634,13 @@ textarea.prompt-editor {
   padding: 16px 18px 17px;
 }
 .stat .v {
-  font-family: var(--display);
   font-size: 28px;
   font-weight: 600;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.03em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .stat .v .of {
-  font-family: var(--sans);
   font-size: 14px;
   font-weight: 500;
   color: var(--ink-4);
@@ -658,7 +653,7 @@ textarea.prompt-editor {
 .stat.lead {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 6px 22px -8px rgba(239, 19, 112, 0.65);
+  box-shadow: var(--sh-1);
 }
 .stat.lead .label {
   color: rgba(255, 255, 255, 0.75);
@@ -676,7 +671,6 @@ textarea.prompt-editor {
   gap: 9px;
 }
 .score-val {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   font-weight: 700;
@@ -827,7 +821,6 @@ textarea.prompt-editor {
 
 /* Метка времени — кнопка воспроизведения, а не текст. */
 .cue {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;
@@ -914,7 +907,6 @@ textarea.prompt-editor {
   width: 2px;
   background: #fff;
   border-radius: 1px;
-  box-shadow: 0 0 10px 1px rgba(239, 19, 112, 0.9);
   pointer-events: none;
   transform: translateX(-1px);
 }
@@ -1013,7 +1005,6 @@ textarea.prompt-editor {
   background: var(--accent);
   color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 4px 16px -3px rgba(239, 19, 112, 0.7);
 }
 .deck-play:hover {
   background: var(--accent-hot);
@@ -1026,7 +1017,6 @@ textarea.prompt-editor {
   margin-left: 0;
 }
 .deck-time {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
   color: var(--ink-deck);
@@ -1140,8 +1130,7 @@ tbody tr:hover {
 }
 
 .prompt-preview {
-  font-family: var(--mono);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.6;
   color: var(--ink-2);
   white-space: pre-wrap;

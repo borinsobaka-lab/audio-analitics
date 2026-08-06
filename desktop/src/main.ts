@@ -1,3 +1,6 @@
+// Roboto едет внутри приложения: на ресепшене интернет может пропасть, а
+// запись должна выглядеть одинаково всегда.
+import "@fontsource-variable/roboto";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Status {
