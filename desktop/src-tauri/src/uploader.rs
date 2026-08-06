@@ -75,16 +75,20 @@ impl Uploader {
         }
     }
 
-    /// Wait until every finished chunk is uploaded (10 min cap), then stop.
+    /// Wait until every finished chunk is uploaded (3 min cap), then stop.
+    /// Chunks stay on disk if this fails, so the day can be retried.
     pub fn drain_and_stop(mut self) -> Result<()> {
-        let deadline = std::time::Instant::now() + Duration::from_secs(600);
+        let deadline = std::time::Instant::now() + Duration::from_secs(180);
         loop {
             let remaining = count_pending(&self.chunks_dir);
             if remaining == 0 {
                 break;
             }
             if std::time::Instant::now() > deadline {
-                anyhow::bail!("{remaining} чанков не загрузилось за 10 минут — проверьте сеть");
+                anyhow::bail!(
+                    "{remaining} сегментов не загрузилось за 3 минуты — проверьте сеть \
+                     и адрес сервера, затем завершите день ещё раз"
+                );
             }
             std::thread::sleep(Duration::from_secs(2));
         }
