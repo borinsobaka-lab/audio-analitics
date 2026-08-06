@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Rust / Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Audio / data artifacts
+*.opus
+*.wav
+*.mp3
+*.ogg
+data/
+scratch/
+
+# OS
+.DS_Store
+Thumbs.db
+*.tsbuildinfo

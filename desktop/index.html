@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Запись рабочего дня</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 20px;
+        user-select: none;
+      }
+      h1 { font-size: 17px; margin: 0 0 16px; }
+      .indicator {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #1e293b;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 16px;
+      }
+      .dot {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #475569;
+        flex-shrink: 0;
+      }
+      .dot.on {
+        background: #ef4444;
+        animation: pulse 1.2s infinite;
+      }
+      .dot.paused { background: #f59e0b; animation: none; }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+        50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      }
+      .indicator .text { font-size: 15px; font-weight: 600; }
+      .indicator .sub { font-size: 12px; color: #94a3b8; font-weight: 400; }
+      button {
+        width: 100%;
+        padding: 13px;
+        border: none;
+        border-radius: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-bottom: 10px;
+        color: #fff;
+      }
+      #btn-start { background: #16a34a; }
+      #btn-pause { background: #d97706; }
+      #btn-finish { background: #dc2626; }
+      button:disabled { background: #334155; color: #64748b; cursor: default; }
+      .stats { font-size: 13px; color: #94a3b8; margin-bottom: 14px; line-height: 1.7; }
+      .error { color: #f87171; font-size: 13px; min-height: 18px; margin-bottom: 8px; white-space: pre-wrap; }
+      details { margin-top: 12px; }
+      summary { font-size: 13px; color: #94a3b8; cursor: pointer; }
+      label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 4px; }
+      input {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #1e293b;
+        color: #e2e8f0;
+        font-size: 13px;
+      }
+      #btn-save-settings { background: #2563eb; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>Запись рабочего дня</h1>
+
+    <div class="indicator">
+      <div class="dot" id="dot"></div>
+      <div>
+        <div class="text" id="status-text">Запись не идёт</div>
+        <div class="sub" id="status-sub"></div>
+      </div>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <button id="btn-start">▶ Начать рабочий день</button>
+    <button id="btn-pause" disabled>⏸ Пауза (личный разговор)</button>
+    <button id="btn-finish" disabled>■ Завершить день и отправить</button>
+
+    <div class="stats" id="stats"></div>
+
+    <details id="settings-block">
+      <summary>Настройки</summary>
+      <label>Адрес сервера</label>
+      <input id="server-url" placeholder="https://api.example.com" />
+      <label>Ключ устройства</label>
+      <input id="device-key" type="password" placeholder="ключ из DEVICE_API_KEYS" />
+      <button id="btn-save-settings">Сохранить настройки</button>
+    </details>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
