@@ -21,6 +21,10 @@ pub struct RecorderHandle {
     stop_flag: Arc<AtomicBool>,
     pause_flag: Arc<AtomicBool>,
     pub chunk_counter: Arc<AtomicU32>,
+    /// Peak input amplitude of the last callback, scaled to 0..1000.
+    /// Stays at 0 when the OS denies microphone access — the UI surfaces that.
+    pub level: Arc<AtomicU32>,
+    pub device_name: String,
     stream: cpal::Stream,
     encoder_thread: Option<std::thread::JoinHandle<Result<()>>>,
 }
@@ -32,6 +36,11 @@ unsafe impl Send for RecorderHandle {}
 impl RecorderHandle {
     pub fn pause(&self, paused: bool) {
         self.pause_flag.store(paused, Ordering::SeqCst);
+    }
+
+    /// Current input level, 0.0..1.0.
+    pub fn input_level(&self) -> f32 {
+        self.level.load(Ordering::Relaxed) as f32 / 1000.0
     }
 
     pub fn is_paused(&self) -> bool {
@@ -59,9 +68,11 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
     let device = host
         .default_input_device()
         .context("Микрофон не найден. Подключите микрофон и проверьте разрешения.")?;
+    let device_name = device.name().unwrap_or_else(|_| "неизвестное".into());
     let config = device
         .default_input_config()
         .context("Не удалось получить конфигурацию микрофона")?;
+    log::info!("input device: {device_name}, config: {config:?}");
 
     let src_rate = config.sample_rate().0;
     let src_channels = config.channels() as usize;
@@ -70,8 +81,10 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let pause_flag = Arc::new(AtomicBool::new(false));
     let chunk_counter = Arc::new(AtomicU32::new(first_chunk_idx));
+    let level = Arc::new(AtomicU32::new(0));
 
     let pause_cb = pause_flag.clone();
+    let level_cb = level.clone();
     let err_fn = |e| log::error!("audio stream error: {e}");
 
     let stream = match config.sample_format() {
@@ -79,6 +92,7 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
             &config.into(),
             move |data: &[f32], _| {
                 if !pause_cb.load(Ordering::SeqCst) {
+                    store_level(&level_cb, data.iter().copied());
                     let _ = tx.try_send(data.to_vec());
                 }
             },
@@ -93,6 +107,7 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
                     if !pause_cb.load(Ordering::SeqCst) {
                         let floats: Vec<f32> =
                             data.iter().map(|s| *s as f32 / 32768.0).collect();
+                        store_level(&level_cb, floats.iter().copied());
                         let _ = tx.try_send(floats);
                     }
                 },
@@ -115,9 +130,20 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
         stop_flag,
         pause_flag,
         chunk_counter,
+        level,
+        device_name,
         stream,
         encoder_thread: Some(encoder_thread),
     })
+}
+
+/// Peak level with slow decay, so a value polled once per second still
+/// reflects the loudest sound of the last couple of seconds (VU-meter feel).
+fn store_level(slot: &AtomicU32, samples: impl Iterator<Item = f32>) {
+    let peak = samples.fold(0.0f32, |acc, s| acc.max(s.abs())).min(1.0);
+    let previous = slot.load(Ordering::Relaxed) as f32 / 1000.0;
+    let smoothed = peak.max(previous * 0.99);
+    slot.store((smoothed * 1000.0) as u32, Ordering::Relaxed);
 }
 
 fn encode_loop(

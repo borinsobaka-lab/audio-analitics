@@ -10,6 +10,8 @@ interface Status {
   chunks_uploaded: number;
   chunks_pending: number;
   upload_error: string;
+  input_level: number;
+  device_name: string;
 }
 
 interface Settings {
@@ -28,15 +30,48 @@ const btnPause = $("btn-pause") as HTMLButtonElement;
 const btnFinish = $("btn-finish") as HTMLButtonElement;
 const serverUrl = $("server-url") as HTMLInputElement;
 const deviceKey = $("device-key") as HTMLInputElement;
+const meter = $("meter");
+const meterTitle = $("meter-title");
+const meterFill = $("meter-fill");
+const warnSilence = $("warn-silence");
 
 let busy = false;
+// Number of consecutive polls with a completely silent input while recording.
+// The OS denying microphone access looks exactly like this, so warn about it.
+let silentPolls = 0;
+const POLL_INTERVAL_MS = 1000;
+const SILENT_POLLS_BEFORE_WARNING = 10; // ~10 seconds of complete silence
 
 function setError(message: string) {
   errorEl.textContent = message;
 }
 
+function renderMeter(status: Status) {
+  if (!status.recording) {
+    meter.style.display = "none";
+    warnSilence.classList.remove("show");
+    silentPolls = 0;
+    return;
+  }
+  meter.style.display = "block";
+  meterTitle.textContent = `Уровень сигнала — ${status.device_name || "микрофон"}`;
+  // Amplitude is perceptually compressed: sqrt makes quiet speech visible.
+  const width = Math.min(100, Math.sqrt(status.input_level) * 100);
+  meterFill.style.width = `${width}%`;
+
+  if (status.paused) {
+    silentPolls = 0;
+  } else if (status.input_level <= 0) {
+    silentPolls += 1;
+  } else {
+    silentPolls = 0;
+  }
+  warnSilence.classList.toggle("show", silentPolls >= SILENT_POLLS_BEFORE_WARNING);
+}
+
 function render(status: Status) {
   dot.className = "dot" + (status.recording ? (status.paused ? " paused" : " on") : "");
+  renderMeter(status);
   if (status.recording) {
     statusText.textContent = status.paused ? "ПАУЗА" : "● ИДЁТ ЗАПИСЬ";
     statusSub.textContent = `${status.date}, с ${status.started_at}`;
@@ -132,7 +167,7 @@ async function init() {
     setError(String(e));
   }
   refresh();
-  setInterval(refresh, 2000);
+  setInterval(refresh, POLL_INTERVAL_MS);
 }
 
 init();

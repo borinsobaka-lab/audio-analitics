@@ -42,6 +42,37 @@
       }
       .indicator .text { font-size: 15px; font-weight: 600; }
       .indicator .sub { font-size: 12px; color: #94a3b8; font-weight: 400; }
+      .meter {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 14px;
+      }
+      .meter .title { font-size: 12px; color: #94a3b8; margin-bottom: 8px; }
+      .meter .track {
+        height: 10px;
+        background: #0f172a;
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .meter .fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #16a34a, #84cc16, #f59e0b);
+        transition: width 0.15s linear;
+      }
+      .warn {
+        background: #422006;
+        border: 1px solid #a16207;
+        color: #fde68a;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        margin-bottom: 12px;
+        display: none;
+      }
+      .warn.show { display: block; }
       button {
         width: 100%;
         padding: 13px;
@@ -83,6 +114,19 @@
         <div class="text" id="status-text">Запись не идёт</div>
         <div class="sub" id="status-sub"></div>
       </div>
+    </div>
+
+    <div class="meter" id="meter" style="display: none">
+      <div class="title" id="meter-title">Уровень сигнала микрофона</div>
+      <div class="track"><div class="fill" id="meter-fill"></div></div>
+    </div>
+
+    <div class="warn" id="warn-silence">
+      <strong>Микрофон не даёт сигнала.</strong><br />
+      Откройте «Системные настройки → Конфиденциальность и безопасность →
+      Микрофон» и включите доступ для Audio Recorder, затем перезапустите
+      приложение. Проверьте также, что нужный микрофон выбран в «Звук → Вход»
+      и не выключен аппаратной кнопкой.
     </div>
 
     <div class="error" id="error"></div>

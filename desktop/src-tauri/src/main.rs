@@ -51,6 +51,9 @@ struct Status {
     chunks_uploaded: u32,
     chunks_pending: u32,
     upload_error: String,
+    /// 0.0..1.0 peak input level; stays at 0 if the mic is muted or blocked.
+    input_level: f32,
+    device_name: String,
 }
 
 fn settings_path(data_dir: &PathBuf) -> PathBuf {
@@ -96,6 +99,8 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             chunks_uploaded: s.uploader.uploaded_count.load(Ordering::SeqCst),
             chunks_pending: s.uploader.pending_count.load(Ordering::SeqCst),
             upload_error: s.uploader.last_error.lock().unwrap().clone(),
+            input_level: s.recorder.input_level(),
+            device_name: s.recorder.device_name.clone(),
         },
         None => Status {
             recording: false,
@@ -107,6 +112,8 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             chunks_uploaded: 0,
             chunks_pending: 0,
             upload_error: String::new(),
+            input_level: 0.0,
+            device_name: String::new(),
         },
     }
 }
