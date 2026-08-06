@@ -27,12 +27,25 @@ def probe_duration_s(path: str) -> float:
 
 
 def merge_segments(segment_paths: list[str], out_path: str) -> None:
-    """Concatenate opus segments into one file (stream copy, no re-encode)."""
+    """Concatenate opus segments into one continuous stream.
+
+    Each chunk is its own Ogg stream, and ffmpeg cannot stream-copy a chain of
+    them into one file (`-c copy` silently keeps only the first chunk).
+    Decoding and re-encoding once produces a single clean stream that both
+    ffprobe and browser players handle; the quality cost of an opus→opus pass
+    at 32 kbps is negligible for ASR.
+    """
     list_file = Path(out_path).with_suffix(".txt")
     list_file.write_text(
         "".join(f"file '{Path(p).resolve()}'\n" for p in segment_paths), encoding="utf-8"
     )
-    run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", out_path])
+    run_ffmpeg(
+        [
+            "-f", "concat", "-safe", "0", "-i", str(list_file),
+            "-c:a", "libopus", "-b:a", "32k", "-ac", "1",
+            out_path,
+        ]
+    )
     list_file.unlink(missing_ok=True)
 
 

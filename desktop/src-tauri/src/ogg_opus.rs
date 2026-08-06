@@ -13,6 +13,11 @@ pub struct OggOpusWriter {
     writer: PacketWriter<'static, BufWriter<File>>,
     serial: u32,
     granule: u64,
+    /// The most recent packet is held back so finish() can emit it with the
+    /// EndStream flag: Opus forbids empty packets, so a stream cannot be
+    /// terminated by appending an empty one — the LAST real packet must carry
+    /// the end-of-stream marker itself.
+    pending: Option<(Vec<u8>, u64)>,
 }
 
 impl OggOpusWriter {
@@ -44,29 +49,34 @@ impl OggOpusWriter {
             writer,
             serial,
             granule: PRE_SKIP as u64,
+            pending: None,
         })
     }
 
     /// Write one encoded Opus packet covering `samples_48k` samples.
     pub fn write_packet(&mut self, packet: &[u8], samples_48k: u64) -> Result<()> {
+        if let Some((data, granule)) = self.pending.take() {
+            self.writer.write_packet(
+                data,
+                self.serial,
+                PacketWriteEndInfo::NormalPacket,
+                granule,
+            )?;
+        }
         self.granule += samples_48k;
-        self.writer.write_packet(
-            packet.to_vec(),
-            self.serial,
-            PacketWriteEndInfo::NormalPacket,
-            self.granule,
-        )?;
+        self.pending = Some((packet.to_vec(), self.granule));
         Ok(())
     }
 
     pub fn finish(mut self) -> Result<()> {
-        // Empty end-of-stream packet flushes the last page.
-        self.writer.write_packet(
-            Vec::new(),
-            self.serial,
-            PacketWriteEndInfo::EndStream,
-            self.granule,
-        )?;
+        if let Some((data, granule)) = self.pending.take() {
+            self.writer.write_packet(
+                data,
+                self.serial,
+                PacketWriteEndInfo::EndStream,
+                granule,
+            )?;
+        }
         Ok(())
     }
 }
