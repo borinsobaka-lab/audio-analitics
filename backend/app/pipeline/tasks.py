@@ -139,6 +139,10 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     )
     if not regions:
         rec.speech_duration_s = 0.0
+        rec.status_detail = (
+            "речь в записи не найдена — проверьте микрофон и уровень сигнала "
+            "в приложении, затем нажмите «Обработать заново»"
+        )
         db.commit()
         return "no speech detected"
     rec.speech_duration_s = sum(e - s for s, e in regions)

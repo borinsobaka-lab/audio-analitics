@@ -26,27 +26,39 @@ def download_model(path: Path = MODEL_CACHE) -> Path:
     return path
 
 
+CONTEXT = 64  # Silero v5: each frame must be prefixed with the previous frame's tail
+
+
 class SileroVAD:
     def __init__(self, model_path: str | None = None):
         self.session = ort.InferenceSession(
             model_path or str(download_model()),
             providers=["CPUExecutionProvider"],
         )
-        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self.reset()
 
     def reset(self) -> None:
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros(CONTEXT, dtype=np.float32)
 
     def frame_prob(self, frame: np.ndarray) -> float:
-        """Speech probability for one 512-sample frame."""
+        """Speech probability for one 512-sample frame.
+
+        The v5 ONNX model expects 512 + 64 samples: the frame prefixed with
+        the tail of the previous frame. Feeding a bare 512-sample window makes
+        the model output near-zero probabilities even for clear speech.
+        """
+        frame = frame.astype(np.float32)
+        model_input = np.concatenate([self._context, frame]).reshape(1, -1)
         out, self._state = self.session.run(
             None,
             {
-                "input": frame.reshape(1, -1).astype(np.float32),
+                "input": model_input,
                 "state": self._state,
                 "sr": np.array(SAMPLE_RATE, dtype=np.int64),
             },
         )
+        self._context = frame[-CONTEXT:]
         return float(out[0][0])
 
 
