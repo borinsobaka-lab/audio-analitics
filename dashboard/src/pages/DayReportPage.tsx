@@ -177,7 +177,45 @@ function Stars({ score, scale }: { score: number; scale: number }) {
   );
 }
 
-function EvaluationBlock({ ev }: { ev: MetricEvaluation }) {
+/** Matches [HH:MM:SS] and [MM:SS] timestamps the prompt asks the model to emit. */
+const TS_PATTERN = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
+
+function tsToSeconds(stamp: string): number {
+  const parts = stamp.split(":").map(Number);
+  return parts.reduce((acc, part) => acc * 60 + part, 0);
+}
+
+/** Renders feedback text with its timestamps turned into play buttons. */
+function WithTimestamps({ text, onSeek }: { text: string; onSeek: (s: number) => void }) {
+  const nodes: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(TS_PATTERN)) {
+    const at = match.index ?? 0;
+    if (at > lastIndex) nodes.push(text.slice(lastIndex, at));
+    const seconds = tsToSeconds(match[1]);
+    nodes.push(
+      <span
+        key={`${at}-${match[1]}`}
+        className="ts-link"
+        title="Слушать с этого места"
+        onClick={() => onSeek(seconds)}
+      >
+        ▶ {match[1]}
+      </span>
+    );
+    lastIndex = at + match[0].length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return <>{nodes}</>;
+}
+
+function EvaluationBlock({
+  ev,
+  onSeek,
+}: {
+  ev: MetricEvaluation;
+  onSeek: (s: number) => void;
+}) {
   if (!ev.applicable) return null;
   return (
     <div className="eval-block">
@@ -185,13 +223,19 @@ function EvaluationBlock({ ev }: { ev: MetricEvaluation }) {
         <strong>{ev.metric_name}</strong>
         {ev.score != null && <Stars score={ev.score} scale={ev.scale_max} />}
       </div>
-      {ev.comment && <p style={{ margin: "6px 0" }}>{ev.comment}</p>}
+      {ev.comment && (
+        <p style={{ margin: "6px 0" }}>
+          <WithTimestamps text={ev.comment} onSeek={onSeek} />
+        </p>
+      )}
       {ev.good.length > 0 && (
         <div>
           <span className="eval-good">Хорошо:</span>
           <ul style={{ margin: "4px 0" }}>
             {ev.good.map((item, i) => (
-              <li key={i}>{item}</li>
+              <li key={i}>
+                <WithTimestamps text={item} onSeek={onSeek} />
+              </li>
             ))}
           </ul>
         </div>
@@ -201,7 +245,9 @@ function EvaluationBlock({ ev }: { ev: MetricEvaluation }) {
           <span className="eval-bad">Плохо / упущено:</span>
           <ul style={{ margin: "4px 0" }}>
             {ev.bad.map((item, i) => (
-              <li key={i}>{item}</li>
+              <li key={i}>
+                <WithTimestamps text={item} onSeek={onSeek} />
+              </li>
             ))}
           </ul>
         </div>
@@ -247,7 +293,10 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
       </div>
       <p style={{ marginBottom: 0 }}>{dialog.brief}</p>
 
-      {open && applicableEvals.map((ev) => <EvaluationBlock key={ev.metric_id} ev={ev} />)}
+      {open &&
+        applicableEvals.map((ev) => (
+          <EvaluationBlock key={ev.metric_id} ev={ev} onSeek={onSeek} />
+        ))}
       {open && applicableEvals.length === 0 && (
         <p className="muted">Ни одна метрика не сработала на этом диалоге.</p>
       )}
