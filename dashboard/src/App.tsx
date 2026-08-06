@@ -4,8 +4,7 @@ import { getToken, setToken } from "./api";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
 import EmployeesPage from "./pages/EmployeesPage";
-import PromptsPage from "./pages/PromptsPage";
-import ScriptPage from "./pages/ScriptPage";
+import MetricsPage from "./pages/MetricsPage";
 
 function AccessTokenBox() {
   const [value, setValue] = useState(getToken() ?? "");
@@ -49,18 +48,16 @@ export default function App() {
         <NavLink to="/" end>
           Отчёты по дням
         </NavLink>
+        <NavLink to="/metrics">Метрики и анализ</NavLink>
         <NavLink to="/employees">Менеджеры</NavLink>
-        <NavLink to="/prompts">Промпты анализа</NavLink>
-        <NavLink to="/script">Скрипт продаж</NavLink>
         <AccessTokenBox />
       </nav>
       <main className="content">
         <Routes>
           <Route path="/" element={<DaysPage />} />
           <Route path="/days/:id" element={<DayReportPage />} />
+          <Route path="/metrics" element={<MetricsPage />} />
           <Route path="/employees" element={<EmployeesPage />} />
-          <Route path="/prompts" element={<PromptsPage />} />
-          <Route path="/script" element={<ScriptPage />} />
         </Routes>
       </main>
     </div>

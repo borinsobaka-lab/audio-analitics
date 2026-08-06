@@ -228,6 +228,65 @@ def normalize_dialogs(items: list, day_duration_s: float | None = None) -> list[
     return result
 
 
+# Internal wrapper around an owner-defined metric prompt. The owner writes only
+# the instructions (what to evaluate, the reference script, what counts as
+# good); this template pins down applicability, the scale and the JSON shape.
+METRIC_EVAL_TEMPLATE = """Ты — контролёр качества студии растяжки. Оцени диалог менеджера \
+с клиентом по метрике «{name}».
+
+ИНСТРУКЦИИ МЕТРИКИ (заданы владельцем студии):
+{prompt}
+
+ПРАВИЛА:
+1. Сначала реши, применима ли метрика к этому диалогу (applicable). Метрика применима,
+   только если в диалоге реально была ситуация, которую она оценивает. Если нет —
+   applicable=false, score=null, списки пустые.
+2. Если применима — поставь score: ЦЕЛОЕ число от 1 до {scale} ({scale} — идеально по инструкциям).
+3. good — что менеджер сделал хорошо по этой метрике (каждый пункт с дословной цитатой).
+4. bad — что сделано плохо или упущено (каждый пункт с пояснением, при возможности с цитатой).
+5. comment — итог в 1–2 предложениях.
+6. Опирайся ТОЛЬКО на транскрипт. Не выдумывай цитат и фактов.
+
+Ответ — строго JSON без пояснений:
+{{"applicable": true|false, "score": число|null, "good": [], "bad": [], "comment": ""}}
+
+ДИАЛОГ (с таймкодами и спикерами):
+{dialog}"""
+
+
+def normalize_metric_eval(raw: dict, scale_max: int) -> dict:
+    """Coerce a metric evaluation from the LLM into a safe, typed shape."""
+    applicable = bool(raw.get("applicable"))
+
+    score = None
+    if applicable:
+        try:
+            score = int(round(float(raw.get("score"))))
+        except (TypeError, ValueError):
+            score = None
+        if score is not None:
+            score = min(scale_max, max(1, score))
+    if score is None:
+        applicable_score_missing = applicable
+        # An "applicable" verdict without a usable score is worthless for
+        # averages — treat it as not triggered rather than skewing stats.
+        if applicable_score_missing:
+            applicable = False
+
+    def as_str_list(value) -> list[str]:
+        if isinstance(value, list):
+            return [str(v) for v in value if v][:20]
+        return [str(value)] if value else []
+
+    return {
+        "applicable": applicable,
+        "score": score if applicable else None,
+        "good": as_str_list(raw.get("good")) if applicable else [],
+        "bad": as_str_list(raw.get("bad")) if applicable else [],
+        "comment": str(raw.get("comment") or "")[:2000],
+    }
+
+
 def normalize_analysis(analysis: dict) -> dict:
     """Validate stage-2 output: coerce numbers and per-stage evidence timestamps."""
     valid_statuses = {"done", "partial", "not_done"}
@@ -328,6 +387,18 @@ class LlmClient:
         if not isinstance(result, dict):
             raise ValueError("sale_analysis prompt must return a JSON object")
         return normalize_analysis(result)
+
+    def evaluate_metric(
+        self, dialog_text: str, metric_name: str, metric_prompt: str,
+        scale_max: int, model: str,
+    ) -> dict:
+        prompt = METRIC_EVAL_TEMPLATE.format(
+            name=metric_name, prompt=metric_prompt, scale=scale_max, dialog=dialog_text
+        )
+        result = self.complete_json(prompt, model)
+        if not isinstance(result, dict):
+            raise ValueError("metric evaluation must return a JSON object")
+        return normalize_metric_eval(result, scale_max)
 
     def summarize_day(
         self, analyses: list[dict], stats: dict, prompt_content: str, model: str

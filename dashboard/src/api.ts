@@ -52,6 +52,35 @@ export interface DayRecording {
   created_at: string | null;
   employee_id: string | null;
   employee_name: string | null;
+  metric_stats: MetricStat[];
+}
+
+export interface MetricStat {
+  metric_id: string;
+  name: string;
+  scale_max: number;
+  triggered_count: number;
+  avg_score: number | null;
+}
+
+export interface AnalysisMetric {
+  id: string;
+  name: string;
+  prompt: string;
+  scale_max: number;
+  active: boolean;
+  position: number;
+}
+
+export interface MetricEvaluation {
+  metric_id: string;
+  metric_name: string;
+  scale_max: number;
+  applicable: boolean;
+  score: number | null;
+  good: string[];
+  bad: string[];
+  comment: string;
 }
 
 export interface Employee {
@@ -72,6 +101,7 @@ export interface Dialog {
   effectiveness_score: number | null;
   upsell_count: number;
   analysis_json: Record<string, unknown> | null;
+  evaluations: MetricEvaluation[];
 }
 
 export interface DialogTurn {
@@ -99,6 +129,7 @@ export interface DayReport {
     script_suggestions?: string[];
     highlights?: string[];
   } | null;
+  metric_stats: MetricStat[];
   dialogs: Dialog[];
 }
 
@@ -141,6 +172,20 @@ export const api = {
     request<DayRecording>(`/api/reports/days/${id}/force-finish`, { method: "POST" }),
   deleteDay: (id: string) =>
     request<void>(`/api/reports/days/${id}`, { method: "DELETE" }),
+
+  listMetrics: () => request<AnalysisMetric[]>("/api/metrics"),
+  createMetric: (body: { name: string; prompt: string; scale_max: number }) =>
+    request<AnalysisMetric>("/api/metrics", { method: "POST", body: JSON.stringify(body) }),
+  updateMetric: (
+    id: string,
+    body: { name?: string; prompt?: string; scale_max?: number; active?: boolean }
+  ) =>
+    request<AnalysisMetric>(`/api/metrics/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteMetric: (id: string) =>
+    request<void>(`/api/metrics/${id}`, { method: "DELETE" }),
 
   listEmployees: () => request<Employee[]>("/api/employees"),
   createEmployee: (full_name: string) =>

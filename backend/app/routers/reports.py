@@ -3,7 +3,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,15 +11,24 @@ from .. import storage
 from ..auth import UserContext, require_user
 from ..db import get_db
 from ..models import (
+    AnalysisMetric,
     AudioSegment,
     DayRecording,
     Dialog,
     DialogTurn,
     Employee,
+    MetricEvaluation,
     MetricsDaily,
     Transcript,
 )
-from ..schemas import DayRecordingOut, DayReportOut, DialogDetailOut, DialogOut
+from ..schemas import (
+    DayMetricStat,
+    DayRecordingOut,
+    DayReportOut,
+    DialogDetailOut,
+    DialogOut,
+    MetricEvaluationOut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +45,65 @@ async def to_day_out(db: AsyncSession, rec: DayRecording) -> DayRecordingOut:
     return out
 
 
+async def metric_stats_for(db: AsyncSession, recording_id) -> list[DayMetricStat]:
+    """Per-metric aggregates of one day: how often it triggered + average score."""
+    rows = (
+        await db.execute(
+            select(
+                AnalysisMetric.id,
+                AnalysisMetric.name,
+                AnalysisMetric.scale_max,
+                func.count().filter(MetricEvaluation.applicable.is_(True)),
+                func.avg(MetricEvaluation.score).filter(
+                    MetricEvaluation.applicable.is_(True)
+                ),
+            )
+            .join(MetricEvaluation, MetricEvaluation.metric_id == AnalysisMetric.id)
+            .where(MetricEvaluation.day_recording_id == recording_id)
+            .group_by(AnalysisMetric.id, AnalysisMetric.name, AnalysisMetric.scale_max)
+            .order_by(AnalysisMetric.name)
+        )
+    ).all()
+    return [
+        DayMetricStat(
+            metric_id=metric_id,
+            name=name,
+            scale_max=scale_max,
+            triggered_count=triggered or 0,
+            avg_score=round(float(avg), 1) if avg is not None else None,
+        )
+        for metric_id, name, scale_max, triggered, avg in rows
+    ]
+
+
+async def evaluations_for_dialogs(
+    db: AsyncSession, recording_id
+) -> dict[str, list[MetricEvaluationOut]]:
+    """All metric evaluations of a day grouped by dialog id (str)."""
+    rows = (
+        await db.execute(
+            select(MetricEvaluation, AnalysisMetric.name, AnalysisMetric.scale_max)
+            .join(AnalysisMetric, AnalysisMetric.id == MetricEvaluation.metric_id)
+            .where(MetricEvaluation.day_recording_id == recording_id)
+        )
+    ).all()
+    result: dict[str, list[MetricEvaluationOut]] = {}
+    for ev, name, scale_max in rows:
+        result.setdefault(str(ev.dialog_id), []).append(
+            MetricEvaluationOut(
+                metric_id=ev.metric_id,
+                metric_name=name,
+                scale_max=scale_max,
+                applicable=ev.applicable,
+                score=ev.score,
+                good=ev.good_json or [],
+                bad=ev.bad_json or [],
+                comment=ev.comment,
+            )
+        )
+    return result
+
+
 @router.get("/days", response_model=list[DayRecordingOut])
 async def list_days(
     location_id: uuid.UUID | None = None,
@@ -50,7 +118,13 @@ async def list_days(
     if location_id:
         q = q.where(DayRecording.location_id == location_id)
     records = (await db.scalars(q)).all()
-    return [await to_day_out(db, rec) for rec in records]
+    result = []
+    for rec in records:
+        out = await to_day_out(db, rec)
+        if rec.status == "done":
+            out.metric_stats = await metric_stats_for(db, rec.id)
+        result.append(out)
+    return result
 
 
 @router.get("/days/{recording_id}", response_model=DayReportOut)
@@ -75,6 +149,13 @@ async def day_report(
         select(MetricsDaily).where(MetricsDaily.day_recording_id == recording_id)
     )
 
+    evals_by_dialog = await evaluations_for_dialogs(db, recording_id)
+    dialog_outs = []
+    for d in dialogs:
+        out = DialogOut.model_validate(d)
+        out.evaluations = evals_by_dialog.get(str(d.id), [])
+        dialog_outs.append(out)
+
     return DayReportOut(
         recording=await to_day_out(db, rec),
         dialogs_total=metrics.dialogs_total if metrics else len(dialogs),
@@ -83,7 +164,8 @@ async def day_report(
         upsell_count=metrics.upsell_count if metrics else 0,
         avg_script_score=metrics.avg_script_score if metrics else None,
         summary=metrics.summary_json if metrics else None,
-        dialogs=[DialogOut.model_validate(d) for d in dialogs],
+        metric_stats=await metric_stats_for(db, recording_id),
+        dialogs=dialog_outs,
     )
 
 
@@ -141,6 +223,9 @@ async def delete_day(
     dialog_ids = (
         await db.scalars(select(Dialog.id).where(Dialog.day_recording_id == recording_id))
     ).all()
+    await db.execute(
+        delete(MetricEvaluation).where(MetricEvaluation.day_recording_id == recording_id)
+    )
     if dialog_ids:
         await db.execute(delete(DialogTurn).where(DialogTurn.dialog_id.in_(dialog_ids)))
     await db.execute(delete(Dialog).where(Dialog.day_recording_id == recording_id))

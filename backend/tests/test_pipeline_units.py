@@ -199,3 +199,38 @@ def test_normalize_analysis_clamps_effectiveness_and_bad_outcome():
     assert result["manager_effectiveness"] == 1.0
     assert result["outcome"] is None
     assert result["upsell_count"] == 0
+
+
+# --- metric evaluation normalization ---
+
+from app.pipeline.llm import normalize_metric_eval  # noqa: E402
+
+
+def test_metric_eval_applicable_with_score():
+    result = normalize_metric_eval(
+        {"applicable": True, "score": "7", "good": ["a"], "bad": ["b"], "comment": "ok"},
+        10,
+    )
+    assert result == {
+        "applicable": True, "score": 7, "good": ["a"], "bad": ["b"], "comment": "ok"
+    }
+
+
+def test_metric_eval_score_clamped_to_scale():
+    assert normalize_metric_eval({"applicable": True, "score": 12}, 10)["score"] == 10
+    assert normalize_metric_eval({"applicable": True, "score": 0}, 5)["score"] == 1
+
+
+def test_metric_eval_not_applicable_clears_everything():
+    result = normalize_metric_eval(
+        {"applicable": False, "score": 5, "good": ["x"], "bad": ["y"]}, 10
+    )
+    assert result["applicable"] is False
+    assert result["score"] is None
+    assert result["good"] == [] and result["bad"] == []
+
+
+def test_metric_eval_applicable_without_score_becomes_not_triggered():
+    result = normalize_metric_eval({"applicable": True, "score": "не знаю"}, 10)
+    assert result["applicable"] is False
+    assert result["score"] is None

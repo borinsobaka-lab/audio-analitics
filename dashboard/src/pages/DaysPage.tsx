@@ -97,6 +97,18 @@ export default function DaysPage() {
                   {d.status_detail && (
                     <div className="muted">{d.status_detail.slice(0, 160)}</div>
                   )}
+                  {d.metric_stats.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      {d.metric_stats.map((s) => (
+                        <div key={s.metric_id} className="metric-chip">
+                          {s.name}: {s.triggered_count}
+                          {s.avg_score != null && (
+                            <> · ★ {s.avg_score}/{s.scale_max}</>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td>{d.total_duration_s != null ? fmtTs(d.total_duration_s) : "—"}</td>
                 <td>{d.speech_duration_s != null ? fmtTs(d.speech_duration_s) : "—"}</td>

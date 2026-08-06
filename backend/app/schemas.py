@@ -23,6 +23,7 @@ class DayRecordingOut(BaseModel):
     created_at: datetime | None = None
     employee_id: uuid.UUID | None = None
     employee_name: str | None = None
+    metric_stats: list["DayMetricStat"] = []
 
     model_config = {"from_attributes": True}
 
@@ -59,6 +60,52 @@ class DayFinishRequest(BaseModel):
     total_segments: int
 
 
+# --- Analysis metrics ---
+
+class MetricOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    prompt: str
+    scale_max: int
+    active: bool
+    position: int
+
+    model_config = {"from_attributes": True}
+
+
+class MetricCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    prompt: str = Field(min_length=10)
+    scale_max: int = Field(default=10, ge=2, le=10)
+
+
+class MetricUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    prompt: str | None = Field(default=None, min_length=10)
+    scale_max: int | None = Field(default=None, ge=2, le=10)
+    active: bool | None = None
+    position: int | None = None
+
+
+class MetricEvaluationOut(BaseModel):
+    metric_id: uuid.UUID
+    metric_name: str
+    scale_max: int
+    applicable: bool
+    score: int | None
+    good: list[str] = []
+    bad: list[str] = []
+    comment: str = ""
+
+
+class DayMetricStat(BaseModel):
+    metric_id: uuid.UUID
+    name: str
+    scale_max: int
+    triggered_count: int
+    avg_score: float | None
+
+
 # --- Dialogs / reports ---
 
 class DialogTurnOut(BaseModel):
@@ -81,6 +128,7 @@ class DialogOut(BaseModel):
     effectiveness_score: float | None
     upsell_count: int
     analysis_json: dict | None
+    evaluations: list[MetricEvaluationOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -97,6 +145,7 @@ class DayReportOut(BaseModel):
     upsell_count: int
     avg_script_score: float | None
     summary: dict | None
+    metric_stats: list[DayMetricStat] = []
     dialogs: list[DialogOut]
 
 

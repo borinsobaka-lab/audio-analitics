@@ -204,6 +204,43 @@ class PromptTemplate(UUIDMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AnalysisMetric(UUIDMixin, Base):
+    """An owner-defined evaluation metric: name + free-form LLM instructions
+    + rating scale. Every active metric is applied to every dialog of a day."""
+
+    __tablename__ = "analysis_metrics"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text)
+    scale_max: Mapped[int] = mapped_column(Integer, default=10)  # 5 or 10
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MetricEvaluation(UUIDMixin, Base):
+    """Result of applying one metric to one dialog."""
+
+    __tablename__ = "metric_evaluations"
+    __table_args__ = (
+        UniqueConstraint("dialog_id", "metric_id", name="uq_metric_eval_dialog"),
+    )
+
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
+    metric_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_metrics.id"), index=True
+    )
+    applicable: Mapped[bool] = mapped_column(Boolean, default=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    good_json: Mapped[list] = mapped_column(JSONB, default=list)
+    bad_json: Mapped[list] = mapped_column(JSONB, default=list)
+    comment: Mapped[str] = mapped_column(Text, default="")
+
+
 class MetricsDaily(UUIDMixin, Base):
     """Aggregated result of one recording session (see DayRecording)."""
 

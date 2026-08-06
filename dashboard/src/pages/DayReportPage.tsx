@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, DayReport, Dialog, DialogDetail, fmtTs } from "../api";
+import {
+  api,
+  DayReport,
+  Dialog,
+  DialogDetail,
+  fmtTs,
+  MetricEvaluation,
+} from "../api";
 
 const TYPE_LABELS: Record<string, string> = {
   sale: "Продажа",
@@ -9,18 +16,6 @@ const TYPE_LABELS: Record<string, string> = {
   service: "Сервис",
   irrelevant: "Нерелевантно",
 };
-
-const STAGE_ICONS: Record<string, string> = {
-  done: "✅",
-  partial: "⚠️",
-  not_done: "❌",
-};
-
-interface StageResult {
-  status?: string;
-  evidence?: string | null;
-  evidence_ts?: number | null;
-}
 
 export default function DayReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -45,18 +40,14 @@ export default function DayReportPage() {
   };
 
   const reprocess = async () => {
-    if (!id) return;
-    if (
-      !confirm(
-        "Пересчитать отчёт по текущим промптам и скрипту? Прежний разбор дня будет заменён."
-      )
-    )
-      return;
+    if (!id || reprocessing) return;
     setReprocessing(true);
     setError("");
     try {
       await api.reprocessDay(id);
-      setNotice("Поставлено в очередь. Обновите страницу через пару минут.");
+      setNotice(
+        "Поставлено в очередь: отчёт пересчитается по текущим метрикам. Обновите страницу через пару минут."
+      );
     } catch (e) {
       setError(String(e));
     } finally {
@@ -82,7 +73,7 @@ export default function DayReportPage() {
           className="secondary"
           onClick={reprocess}
           disabled={reprocessing}
-          title="Прогнать ту же запись через анализ заново — например, после правки промптов"
+          title="Прогнать ту же запись через анализ заново — например, после правки метрик"
         >
           {reprocessing ? "Запуск…" : "Обработать заново"}
         </button>
@@ -97,20 +88,35 @@ export default function DayReportPage() {
           value={report.conversion != null ? `${Math.round(report.conversion * 100)}%` : "—"}
           label="Конверсия"
         />
-        <Stat value={report.upsell_count} label="Апсейлов" />
         <Stat
           value={
-            report.avg_script_score != null
-              ? `${Math.round(report.avg_script_score * 100)}%`
-              : "—"
+            recording.speech_duration_s != null ? fmtTs(recording.speech_duration_s) : "—"
           }
-          label="Балл по скрипту"
-        />
-        <Stat
-          value={recording.speech_duration_s != null ? fmtTs(recording.speech_duration_s) : "—"}
           label="Чистая речь"
         />
       </div>
+
+      {report.metric_stats.length > 0 && (
+        <div className="stat-row">
+          {report.metric_stats.map((s) => (
+            <div className="stat" key={s.metric_id}>
+              <div className="value">
+                {s.avg_score != null ? (
+                  <>
+                    ★ {s.avg_score}
+                    <span style={{ fontSize: 15, color: "#64748b" }}>/{s.scale_max}</span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </div>
+              <div className="label">
+                {s.name} · срабатываний: {s.triggered_count}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {summary && (
         <div className="card">
@@ -138,7 +144,7 @@ export default function DayReportPage() {
   );
 }
 
-function Stat({ value, label }: { value: number | string; label: string }) {
+function Stat({ value, label }: { value: number | string | JSX.Element; label: string }) {
   return (
     <div className="stat">
       <div className="value">{value}</div>
@@ -161,6 +167,49 @@ function SummaryList({ title, items }: { title: string; items?: string[] }) {
   );
 }
 
+function Stars({ score, scale }: { score: number; scale: number }) {
+  return (
+    <span className="score" title={`${score} из ${scale}`}>
+      {"★".repeat(score)}
+      <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, scale - score))}</span>{" "}
+      {score}/{scale}
+    </span>
+  );
+}
+
+function EvaluationBlock({ ev }: { ev: MetricEvaluation }) {
+  if (!ev.applicable) return null;
+  return (
+    <div className="eval-block">
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <strong>{ev.metric_name}</strong>
+        {ev.score != null && <Stars score={ev.score} scale={ev.scale_max} />}
+      </div>
+      {ev.comment && <p style={{ margin: "6px 0" }}>{ev.comment}</p>}
+      {ev.good.length > 0 && (
+        <div>
+          <span className="eval-good">Хорошо:</span>
+          <ul style={{ margin: "4px 0" }}>
+            {ev.good.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {ev.bad.length > 0 && (
+        <div>
+          <span className="eval-bad">Плохо / упущено:</span>
+          <ul style={{ margin: "4px 0" }}>
+            {ev.bad.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) => void }) {
   const [detail, setDetail] = useState<DialogDetail | null>(null);
   const [open, setOpen] = useState(false);
@@ -172,31 +221,25 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
     }
   };
 
-  const analysis = dialog.analysis_json as {
-    script?: Record<string, StageResult>;
-    deviations?: string[];
-    recommendations?: string[];
-    outcome_evidence?: string;
-  } | null;
+  const applicableEvals = dialog.evaluations.filter((e) => e.applicable);
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <span className={`badge ${dialog.type}`}>{TYPE_LABELS[dialog.type] ?? dialog.type}</span>
         <span
           className="ts-link"
           onClick={() => onSeek(dialog.start_s)}
-          title="Слушать с этого места"
+          title="Слушать с начала диалога"
         >
           ▶ {fmtTs(dialog.start_s)}–{fmtTs(dialog.end_s)}
         </span>
-        {dialog.effectiveness_score != null && (
-          <span className="muted">
-            эффективность {Math.round(dialog.effectiveness_score * 100)}%
-          </span>
-        )}
-        {dialog.upsell_count > 0 && (
-          <span className="muted">апсейлов: {dialog.upsell_count}</span>
+        {applicableEvals.map((ev) =>
+          ev.score != null ? (
+            <span key={ev.metric_id} className="metric-chip">
+              {ev.metric_name}: ★ {ev.score}/{ev.scale_max}
+            </span>
+          ) : null
         )}
         <button className="secondary" style={{ marginLeft: "auto" }} onClick={toggle}>
           {open ? "Свернуть" : "Подробнее"}
@@ -204,34 +247,9 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
       </div>
       <p style={{ marginBottom: 0 }}>{dialog.brief}</p>
 
-      {open && analysis?.script && (
-        <>
-          <h4>Скрипт продаж</h4>
-          <ul className="checklist">
-            {Object.entries(analysis.script).map(([stage, result]) => (
-              <li key={stage}>
-                {STAGE_ICONS[result.status ?? ""] ?? "❔"} <strong>{stage}</strong>
-                {result.evidence && (
-                  <>
-                    {" — "}
-                    <span className="evidence">«{result.evidence}»</span>{" "}
-                    {result.evidence_ts != null && (
-                      <span className="ts-link" onClick={() => onSeek(result.evidence_ts!)}>
-                        ▶ {fmtTs(result.evidence_ts)}
-                      </span>
-                    )}
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-          {analysis.deviations && analysis.deviations.length > 0 && (
-            <SummaryList title="Отклонения" items={analysis.deviations} />
-          )}
-          {analysis.recommendations && analysis.recommendations.length > 0 && (
-            <SummaryList title="Рекомендации" items={analysis.recommendations} />
-          )}
-        </>
+      {open && applicableEvals.map((ev) => <EvaluationBlock key={ev.metric_id} ev={ev} />)}
+      {open && applicableEvals.length === 0 && (
+        <p className="muted">Ни одна метрика не сработала на этом диалоге.</p>
       )}
 
       {open && detail && detail.turns.length > 0 && (

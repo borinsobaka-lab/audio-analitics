@@ -14,18 +14,19 @@ from ..celery_app import celery
 from ..config import get_settings
 from ..db import get_sync_db
 from ..models import (
+    AnalysisMetric,
     AudioSegment,
     DayRecording,
     Dialog,
     DialogTurn,
+    MetricEvaluation,
     MetricsDaily,
     PromptTemplate,
-    ScriptTemplate,
     Transcript,
 )
 from . import audio_prep
 from .asr import AsrResult, get_asr
-from .llm import DEFAULT_PROMPTS, DEFAULT_SCRIPT_STAGES, LlmClient
+from .llm import DEFAULT_PROMPTS, LlmClient
 from .segmentation import Turn, group_conversations, render_transcript, words_to_turns
 from .vad import find_speech_regions
 
@@ -46,17 +47,6 @@ def load_active_prompt(db, org_id, key: str) -> tuple[str, str | None]:
     if prompt:
         return prompt.content, prompt.model
     return DEFAULT_PROMPTS[key]["content"], None
-
-
-def load_active_script(db, org_id) -> tuple[str, list[dict]]:
-    script = db.scalar(
-        select(ScriptTemplate)
-        .where(ScriptTemplate.org_id == org_id, ScriptTemplate.active.is_(True))
-        .order_by(ScriptTemplate.version.desc())
-    )
-    if script:
-        return script.body, script.stages_json or DEFAULT_SCRIPT_STAGES
-    return "", DEFAULT_SCRIPT_STAGES
 
 
 @celery.task(name="pipeline.process_day_recording", bind=True, max_retries=2)
@@ -90,8 +80,12 @@ def process_day_recording(self, recording_id: str) -> str:
 
 
 def _cleanup_previous_results(db, rec: DayRecording) -> None:
-    """Make reprocessing idempotent: drop dialogs/transcripts of earlier runs."""
+    """Make reprocessing idempotent: drop results of earlier runs."""
     old_dialogs = list(db.scalars(select(Dialog).where(Dialog.day_recording_id == rec.id)))
+    for ev in db.scalars(
+        select(MetricEvaluation).where(MetricEvaluation.day_recording_id == rec.id)
+    ):
+        db.delete(ev)
     for dialog in old_dialogs:
         for turn in db.scalars(select(DialogTurn).where(DialogTurn.dialog_id == dialog.id)):
             db.delete(turn)
@@ -187,15 +181,18 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         day_duration_s=rec.total_duration_s,
     )
 
-    # 5. LLM stage 2: per-dialog script analysis (editable prompt + script).
-    an_content, an_model = load_active_prompt(db, rec.org_id, "sale_analysis")
-    script_body, stages = load_active_script(db, rec.org_id)
+    # 5. LLM stage 2: evaluate every client dialog against every active metric.
+    metrics = list(
+        db.scalars(
+            select(AnalysisMetric)
+            .where(AnalysisMetric.org_id == rec.org_id, AnalysisMetric.active.is_(True))
+            .order_by(AnalysisMetric.position)
+        )
+    )
 
     analyses: list[dict] = []
-    sales = upsells = 0
-    scores: list[float] = []
-
-    failed_dialogs = 0
+    sales = 0
+    failed_evals = 0
 
     for meta in dialogs_meta:
         # Timestamps and type are already validated by normalize_dialogs().
@@ -215,6 +212,9 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         )
         db.add(dialog)
         db.flush()
+        if d_type == "sale":
+            dialog.outcome = "sale"
+            sales += 1
 
         # Store turns for analyzable dialogs only — irrelevant (personal) talk
         # is deliberately not persisted per the privacy policy.
@@ -230,45 +230,58 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
                     )
                 )
 
-        if d_type in ANALYZABLE_TYPES and d_turns:
-            # One dialog the model mangles must not cost the whole day's report.
-            try:
-                analysis = llm.analyze_dialog(
-                    render_transcript(d_turns),
-                    script_body,
-                    stages,
-                    an_content,
-                    an_model or settings.llm_model_stage2,
+        if d_type in ANALYZABLE_TYPES and d_turns and metrics:
+            dialog_text = render_transcript(d_turns)
+            dialog_evals: dict = {}
+            for metric in metrics:
+                # One failed evaluation must not cost the whole day's report.
+                try:
+                    result = llm.evaluate_metric(
+                        dialog_text,
+                        metric.name,
+                        metric.prompt,
+                        metric.scale_max,
+                        settings.llm_model_stage2,
+                    )
+                except Exception as e:
+                    failed_evals += 1
+                    logger.warning(
+                        "metric '%s' failed on dialog at %.1fs: %s",
+                        metric.name, d_start, e,
+                    )
+                    continue
+                db.add(
+                    MetricEvaluation(
+                        day_recording_id=rec.id,
+                        dialog_id=dialog.id,
+                        metric_id=metric.id,
+                        applicable=result["applicable"],
+                        score=result["score"],
+                        good_json=result["good"],
+                        bad_json=result["bad"],
+                        comment=result["comment"],
+                    )
                 )
-            except Exception as e:
-                failed_dialogs += 1
-                logger.warning("dialog analysis failed at %.1fs: %s", d_start, e)
-                dialog.analysis_json = {"error": str(e)[:500]}
-                continue
-
-            dialog.analysis_json = analysis
-            dialog.outcome = analysis.get("outcome")
-            dialog.upsell_count = analysis["upsell_count"]
-            dialog.effectiveness_score = analysis["manager_effectiveness"]
-
-            analyses.append({"start_s": d_start, "type": d_type, **analysis})
-            if dialog.outcome == "sale":
-                sales += 1
-            upsells += dialog.upsell_count
-            if dialog.effectiveness_score is not None:
-                scores.append(dialog.effectiveness_score)
+                if result["applicable"]:
+                    dialog_evals[metric.name] = {
+                        "score": result["score"],
+                        "scale": metric.scale_max,
+                        "bad": result["bad"],
+                    }
+            if dialog_evals:
+                analyses.append(
+                    {"start_s": d_start, "type": d_type, "metrics": dialog_evals}
+                )
 
     db.commit()
 
-    # 6. Metrics + daily summary (editable prompt).
+    # 6. Day stats + daily summary.
     relevant = [m for m in dialogs_meta if m.get("type") in ANALYZABLE_TYPES]
     stats = {
         "date": str(rec.date),
         "dialogs_total": len(relevant),
         "sales_count": sales,
         "conversion": round(sales / len(relevant), 3) if relevant else None,
-        "upsell_count": upsells,
-        "avg_script_score": round(sum(scores) / len(scores), 3) if scores else None,
         "speech_duration_s": rec.speech_duration_s,
     }
     summary = None
@@ -300,16 +313,16 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
             dialogs_total=stats["dialogs_total"],
             sales_count=sales,
             conversion=stats["conversion"],
-            upsell_count=upsells,
-            avg_script_score=stats["avg_script_score"],
+            upsell_count=0,
+            avg_script_score=None,
             summary_json=summary,
         )
     )
     db.commit()
-    if failed_dialogs:
-        rec.status_detail = f"{failed_dialogs} диалогов не удалось разобрать"
+    if failed_evals:
+        rec.status_detail = f"{failed_evals} оценок по метрикам не удалось получить"
         db.commit()
     return (
         f"processed: {len(dialogs_meta)} dialogs, {sales} sales, "
-        f"{failed_dialogs} failed"
+        f"{len(metrics)} metrics, {failed_evals} failed evals"
     )
