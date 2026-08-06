@@ -11,7 +11,15 @@ import {
   MetricEvaluation,
 } from "../api";
 import { Deck, DeckHandle } from "../components/Deck";
-import { Empty, IconPlay, Note, Score, Skeleton } from "../components/ui";
+import {
+  Empty,
+  IconPlay,
+  Note,
+  Score,
+  ScoreBar,
+  Skeleton,
+  scoreZone,
+} from "../components/ui";
 
 const TYPE_LABELS: Record<string, string> = {
   sale: "Продажа",
@@ -115,7 +123,7 @@ export default function DayReportPage() {
           <div className="stats">
             {report.metric_stats.map((s) => (
               <div className="stat" key={s.metric_id}>
-                <div className="v">
+                <div className="v display">
                   {s.avg_score != null ? (
                     <>
                       {s.avg_score}
@@ -125,6 +133,11 @@ export default function DayReportPage() {
                     "—"
                   )}
                 </div>
+                {/* Полоса под цифрой отвечает на «хорошо или плохо» цветом,
+                    до того как прочитано само число. */}
+                {s.avg_score != null && (
+                  <ScoreBar score={s.avg_score} scale={s.scale_max} />
+                )}
                 <div className="label">
                   {s.name} · {s.triggered_count}×
                 </div>
@@ -306,7 +319,12 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
         </button>
         {evals.map((ev) =>
           ev.score != null ? (
-            <span key={ev.metric_id} className="chip-score">
+            // Цифра окрашена по той же зоне, что и полосы: в свёрнутом виде
+            // сразу видно, какой разговор просел.
+            <span
+              key={ev.metric_id}
+              className={`chip-score ${scoreZone(ev.score, ev.scale_max)}`}
+            >
               <b>
                 {ev.score}
                 <span className="scale">/{ev.scale_max}</span>

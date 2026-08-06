@@ -80,23 +80,39 @@ export function StatusLight({ status }: { status: string }) {
 
 /* --- Оценка ------------------------------------------------------------- */
 
-/** Сегментная шкала вместо звёзд: на десятибалльной шкале десять звёзд —
- *  шум, а десять сегментов читаются одним взглядом. Цвет говорит о зоне:
- *  ниже половины — уголёк, около половины — янтарь, выше — шалфей. */
+/** Зона оценки одним словом. Порог один на весь интерфейс: полосы, цифры в
+ *  чипах и всё, что появится позже, должны краснеть в один и тот же момент. */
+export function scoreZone(score: number, scale: number): "low" | "mid" | "good" {
+  const ratio = Math.max(0, Math.min(1, score / scale));
+  return ratio < 0.5 ? "low" : ratio < 0.7 ? "mid" : "good";
+}
+
+/** Полоса из `scale` сегментов: цвет отвечает «хорошо или плохо» до того, как
+ *  прочитана цифра. Зона берётся от точного значения, а закрашиваются целые
+ *  сегменты — средняя 7.3 даёт семь зелёных, а не «почти зелёных». */
+export function ScoreBar({ score, scale }: { score: number; scale: number }) {
+  const zone = scoreZone(score, scale);
+  const filled = Math.round(score);
+  return (
+    <span className="score-bar" aria-hidden>
+      {Array.from({ length: scale }, (_, i) => (
+        <i key={i} className={`score-seg ${i < filled ? `on ${zone}` : ""}`} />
+      ))}
+    </span>
+  );
+}
+
+/** Оценка целиком: цифра плюс полоса. Сегментная шкала вместо звёзд — на
+ *  десятибалльной шкале десять звёзд шум, а десять сегментов читаются
+ *  одним взглядом. */
 export function Score({ score, scale }: { score: number; scale: number }) {
-  const ratio = score / scale;
-  const zone = ratio < 0.5 ? "low" : ratio < 0.7 ? "mid" : "";
   return (
     <span className="score" title={`${score} из ${scale}`}>
       <span className="score-val">
         {score}
         <span className="of">/{scale}</span>
       </span>
-      <span className="score-bar" aria-hidden>
-        {Array.from({ length: scale }, (_, i) => (
-          <i key={i} className={`score-seg ${i < score ? `on ${zone}` : ""}`} />
-        ))}
-      </span>
+      <ScoreBar score={score} scale={scale} />
     </span>
   );
 }

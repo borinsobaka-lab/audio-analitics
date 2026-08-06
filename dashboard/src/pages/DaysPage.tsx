@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, DayRecording, fmtClock, fmtDate, fmtDur } from "../api";
-import { Empty, Note, PageHead, Skeleton, StatusLight } from "../components/ui";
+import { Empty, Note, PageHead, Score, Skeleton, StatusLight } from "../components/ui";
 
 // Пока что-то живо, список опрашивается сам: огоньки должны отражать
 // реальность без ручного обновления страницы.
@@ -110,20 +110,23 @@ export default function DaysPage() {
                   {d.status_detail && (
                     <div className="day-detail">{d.status_detail.slice(0, 220)}</div>
                   )}
+                  {/* Средние по метрикам — не просто «7.3 из 10»: полоса
+                      отвечает на «хорошо или плохо» цветом, до чтения цифры,
+                      и сразу видно, какая метрика проседает. */}
                   {d.metric_stats.length > 0 && (
-                    <div className="chips">
+                    <div className="metric-lines">
                       {d.metric_stats.map((s) => (
-                        <span key={s.metric_id} className="chip-score">
+                        <div key={s.metric_id} className="metric-line">
                           {s.avg_score != null ? (
-                            <b>
-                              {s.avg_score}
-                              <span className="scale">/{s.scale_max}</span>
-                            </b>
+                            <Score score={s.avg_score} scale={s.scale_max} />
                           ) : (
-                            <b className="scale">—</b>
+                            <span className="score-empty">не сработала</span>
                           )}
-                          {s.name} · {s.triggered_count}×
-                        </span>
+                          <span className="metric-name">
+                            {s.name}
+                            <span className="times"> · {s.triggered_count}×</span>
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}

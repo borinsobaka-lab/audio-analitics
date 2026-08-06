@@ -598,6 +598,35 @@ textarea.prompt-editor {
   margin-top: 9px;
 }
 
+/* Метрики смены в списке: колонка оценок фиксированной ширины, поэтому
+   полосы и названия выравниваются между строками и метрики сравниваются
+   взглядом, а не чтением. */
+.metric-lines {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.metric-line {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.metric-name {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-name .times {
+  color: var(--ink-4);
+}
+.score-empty {
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
 .chip-score {
   display: inline-flex;
   align-items: baseline;
@@ -618,6 +647,17 @@ textarea.prompt-editor {
   font-size: 11px;
   font-weight: 400;
   color: var(--ink-4);
+}
+/* Зоны те же, что у полосы: ниже половины — красный, около половины —
+   янтарь, выше — зелёный. */
+.chip-score.low b {
+  color: #d92b21;
+}
+.chip-score.mid b {
+  color: #c96f00;
+}
+.chip-score.good b {
+  color: var(--green);
 }
 
 /* --- Показатели --------------------------------------------------------- */
@@ -648,6 +688,20 @@ textarea.prompt-editor {
 }
 .stat .label {
   margin-top: 7px;
+}
+/* В карточке показателя полоса растягивается на всю ширину: это уже не
+   значок рядом с цифрой, а шкала под ней. */
+.stat .score-bar {
+  display: flex;
+  margin-top: 10px;
+}
+.stat .score-seg {
+  flex: 1;
+  width: auto;
+  height: 6px;
+}
+.stat .score-bar + .label {
+  margin-top: 9px;
 }
 /* Главный показатель смены забирает акцент — на экране он один. */
 .stat.lead {
@@ -689,7 +743,8 @@ textarea.prompt-editor {
   border-radius: 2px;
   background: var(--edge);
 }
-.score-seg.on {
+.score-seg.on,
+.score-seg.on.good {
   background: var(--green);
 }
 .score-seg.on.low {
