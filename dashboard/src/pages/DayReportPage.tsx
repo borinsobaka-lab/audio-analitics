@@ -129,6 +129,21 @@ export default function DayReportPage() {
       )}
 
       <h3>Диалоги</h3>
+      {report.dialogs.length === 0 && (
+        <div className="card muted">
+          Диалоги не найдены. Либо в записи не было речи, либо день обработан
+          до последнего обновления — нажмите «Обработать заново».
+        </div>
+      )}
+      {report.dialogs.length > 0 &&
+        report.dialogs.every((d) => d.type === "irrelevant") && (
+          <div className="card muted">
+            Найдено разговоров: {report.dialogs.length}, но все классифицированы
+            как нерелевантные (личные или служебные) — метрики к ним не
+            применяются. Если это ошибка классификации, нажмите «Обработать
+            заново»: короткие тестовые записи иногда попадают в эту категорию.
+          </div>
+        )}
       {report.dialogs
         .filter((d) => d.type !== "irrelevant")
         .map((d) => (

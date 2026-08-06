@@ -31,6 +31,10 @@ from .segmentation import Turn, group_conversations, render_transcript, words_to
 from .vad import find_speech_regions
 
 ANALYZABLE_TYPES = ("sale", "consultation", "refusal")
+# Metrics also run on service talks: stage-1 typing is fuzzy (a greeting of a
+# new client is easily labeled "service"), and each metric decides
+# applicability for itself anyway. Only irrelevant (personal) talk is skipped.
+METRIC_TYPES = ("sale", "consultation", "refusal", "service")
 
 
 def load_active_prompt(db, org_id, key: str) -> tuple[str, str | None]:
@@ -63,8 +67,7 @@ def process_day_recording(self, recording_id: str) -> str:
         with tempfile.TemporaryDirectory(prefix="day_") as tmp:
             result = _run_pipeline(db, rec, Path(tmp))
 
-        rec.status = "done"
-        rec.status_detail = ""
+        rec.status = "done"  # status_detail already carries the run summary
         db.commit()
         return result
     except Exception as e:
@@ -193,6 +196,8 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     analyses: list[dict] = []
     sales = 0
     failed_evals = 0
+    evals_done = 0
+    evals_applicable = 0
 
     for meta in dialogs_meta:
         # Timestamps and type are already validated by normalize_dialogs().
@@ -218,7 +223,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
 
         # Store turns for analyzable dialogs only — irrelevant (personal) talk
         # is deliberately not persisted per the privacy policy.
-        if d_type in ANALYZABLE_TYPES or d_type == "service":
+        if d_type in METRIC_TYPES:
             for t in d_turns:
                 db.add(
                     DialogTurn(
@@ -230,7 +235,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
                     )
                 )
 
-        if d_type in ANALYZABLE_TYPES and d_turns and metrics:
+        if d_type in METRIC_TYPES and d_turns and metrics:
             dialog_text = render_transcript(d_turns)
             dialog_evals: dict = {}
             for metric in metrics:
@@ -262,7 +267,9 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
                         comment=result["comment"],
                     )
                 )
+                evals_done += 1
                 if result["applicable"]:
+                    evals_applicable += 1
                     dialog_evals[metric.name] = {
                         "score": result["score"],
                         "scale": metric.scale_max,
@@ -319,10 +326,18 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         )
     )
     db.commit()
+
+    # Human-readable summary shown under the "Готово" status in the dashboard,
+    # so an empty report explains itself: no metrics? nothing applicable? errors?
+    parts = [f"диалогов: {len(dialogs_meta)}"]
+    if not metrics:
+        parts.append("активных метрик не было — добавьте их и нажмите «Обработать заново»")
+    else:
+        parts.append(f"метрик: {len(metrics)}")
+        parts.append(f"сработало оценок: {evals_applicable} из {evals_done}")
     if failed_evals:
-        rec.status_detail = f"{failed_evals} оценок по метрикам не удалось получить"
-        db.commit()
-    return (
-        f"processed: {len(dialogs_meta)} dialogs, {sales} sales, "
-        f"{len(metrics)} metrics, {failed_evals} failed evals"
-    )
+        parts.append(f"ошибок оценки: {failed_evals}")
+    summary_line = ", ".join(parts)
+    rec.status_detail = summary_line
+    db.commit()
+    return summary_line
