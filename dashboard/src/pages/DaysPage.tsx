@@ -10,7 +10,21 @@ const STATUS_LABELS: Record<string, string> = {
   error: "Ошибка",
 };
 
-const IN_FLIGHT = ["uploaded", "processing"];
+// Keep polling while anything is live, so the lights reflect reality without
+// a manual refresh — including a day that is still being recorded in the app.
+const IN_FLIGHT = ["recording", "uploaded", "processing"];
+
+/** Coloured light next to the status text: red pulsing = recording right now,
+ *  amber = in the queue or being processed, green = report ready. */
+function StatusLight({ status }: { status: string }) {
+  const known = ["recording", "uploaded", "processing", "done", "error"].includes(status);
+  return (
+    <span className="status">
+      <span className={`status-dot ${known ? status : ""}`} />
+      <span className={`status-label ${status}`}>{STATUS_LABELS[status] ?? status}</span>
+    </span>
+  );
+}
 
 /** Second confirmation click for destructive actions, kept inside the page. */
 type Pending = { id: string; action: "delete" } | null;
@@ -86,6 +100,7 @@ export default function DaysPage() {
               <tr key={d.id}>
                 <td
                   className={d.status === "done" ? "clickable-cell" : ""}
+                  style={{ whiteSpace: "nowrap" }}
                   onClick={() => d.status === "done" && navigate(`/days/${d.id}`)}
                 >
                   {d.date}
@@ -93,7 +108,7 @@ export default function DaysPage() {
                 </td>
                 <td>{d.employee_name ?? <span className="muted">не указан</span>}</td>
                 <td>
-                  {STATUS_LABELS[d.status] ?? d.status}
+                  <StatusLight status={d.status} />
                   {d.status_detail && (
                     <div className="muted">{d.status_detail.slice(0, 160)}</div>
                   )}

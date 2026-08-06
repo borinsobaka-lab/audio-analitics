@@ -96,6 +96,35 @@ button:disabled { background: #94a3b8; cursor: default; }
 button.secondary { background: #e2e8f0; color: var(--text); }
 button.danger { background: var(--red); }
 
+/* Status light: red pulsing while recording, amber while processing,
+   green when the report is ready. */
+.status { display: inline-flex; align-items: center; gap: 8px; }
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: var(--muted);
+  background: currentColor;
+}
+.status-dot.recording { color: var(--red); animation: pulse-dot 1.2s ease-in-out infinite; }
+.status-dot.processing { color: var(--amber); animation: pulse-dot 1.6s ease-in-out infinite; }
+.status-dot.uploaded { color: var(--amber); }
+.status-dot.done { color: var(--green); }
+.status-dot.error { color: #7f1d1d; }
+
+.status-label.recording { color: var(--red); font-weight: 600; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+  50% { opacity: 0.3; box-shadow: 0 0 0 5px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot { animation: none !important; }
+}
+
 .metric-chip {
   display: inline-block;
   background: #eef2ff;
