@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AnalysisMetric, api } from "../api";
+import { AnalysisMetric, api, plural } from "../api";
+import { Empty, Note, PageHead, Skeleton } from "../components/ui";
 
 const EXAMPLE_PROMPT = `Оцени, насколько качественно менеджер провёл продажу.
 
@@ -17,50 +18,64 @@ const EXAMPLE_PROMPT = `Оцени, насколько качественно м
 пропущенный этап; 1–3 — менеджер фактически не пытался продавать.`;
 
 export default function MetricsPage() {
-  const [metrics, setMetrics] = useState<AnalysisMetric[]>([]);
+  const [metrics, setMetrics] = useState<AnalysisMetric[] | null>(null);
   const [error, setError] = useState("");
-  const [showNew, setShowNew] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const load = () => {
-    api.listMetrics().then(setMetrics).catch((e) => setError(String(e)));
+    api
+      .listMetrics()
+      .then(setMetrics)
+      .catch((e) => {
+        setMetrics([]);
+        setError(String(e));
+      });
   };
 
   useEffect(load, []);
 
+  const activeCount = metrics?.filter((m) => m.active).length ?? 0;
+
   return (
     <div>
-      <h2>Метрики и анализ</h2>
-      <p className="muted">
-        Каждая активная метрика — это отдельный промпт, по которому ИИ оценивает
-        каждый разговор рабочего дня: применима ли метрика к разговору, оценка по
-        шкале, что сделано хорошо и что плохо. В отчёте дня выводится число
-        срабатываний и средняя оценка по каждой метрике. Вставляйте прямо в текст
-        промпта свой эталонный скрипт и критерии оценки.
-      </p>
-      {error && <div className="error">{error}</div>}
+      <PageHead
+        title="Метрики и анализ"
+        hint="Метрика — это промпт, по которому ИИ разбирает каждый разговор смены: применима ли метрика, оценка по шкале, что сработало и что упущено. Вставляйте прямо в текст свой эталонный скрипт и критерии."
+      >
+        {!creating && metrics !== null && (
+          <button onClick={() => setCreating(true)}>Добавить метрику</button>
+        )}
+      </PageHead>
 
-      {!showNew ? (
-        <button onClick={() => setShowNew(true)} style={{ marginBottom: 16 }}>
-          + Добавить метрику
-        </button>
-      ) : (
+      {error && <Note kind="error">{error}</Note>}
+      {metrics !== null && metrics.length > 0 && activeCount === 0 && (
+        <Note kind="error">
+          Все метрики отключены — разборы смен будут пустыми. Включите хотя бы одну.
+        </Note>
+      )}
+
+      {creating && (
         <MetricEditor
           onDone={() => {
-            setShowNew(false);
+            setCreating(false);
             load();
           }}
-          onCancel={() => setShowNew(false)}
+          onCancel={() => setCreating(false)}
         />
       )}
 
-      {metrics.map((m) => (
+      {metrics === null && <Skeleton count={2} height={140} />}
+
+      {metrics !== null && metrics.length === 0 && !creating && (
+        <Empty title="Метрик пока нет">
+          Добавьте первую — например «Качество продажи абонемента». Готовые
+          эталонные промпты лежат в репозитории, в папке docs/prompts.
+        </Empty>
+      )}
+
+      {metrics?.map((m) => (
         <MetricCard key={m.id} metric={m} onChanged={load} />
       ))}
-      {metrics.length === 0 && !showNew && (
-        <div className="card muted">
-          Метрик пока нет. Добавьте первую — например «Качество продажи».
-        </div>
-      )}
     </div>
   );
 }
@@ -84,11 +99,8 @@ function MetricEditor({
     setSaving(true);
     setError("");
     try {
-      if (metric) {
-        await api.updateMetric(metric.id, { name, prompt, scale_max: scale });
-      } else {
-        await api.createMetric({ name, prompt, scale_max: scale });
-      }
+      if (metric) await api.updateMetric(metric.id, { name, prompt, scale_max: scale });
+      else await api.createMetric({ name, prompt, scale_max: scale });
       onDone();
     } catch (e) {
       setError(String(e));
@@ -97,30 +109,32 @@ function MetricEditor({
   };
 
   return (
-    <div className="card" style={{ borderColor: "#2563eb" }}>
-      <h4>{metric ? "Редактирование метрики" : "Новая метрика"}</h4>
-      <label>
-        Название (видно в отчётах)
-        <input
-          type="text"
-          value={name}
-          placeholder="Например: Качество продажи"
-          onChange={(e) => setName(e.target.value)}
-        />
-      </label>
-      <label style={{ display: "block", margin: "10px 0" }}>
-        Шкала оценки:{" "}
-        <select
-          value={scale}
-          onChange={(e) => setScale(Number(e.target.value))}
-          style={{ width: 160, display: "inline-block" }}
-        >
-          <option value={5}>5-балльная</option>
-          <option value={10}>10-балльная</option>
-        </select>
-      </label>
-      <label>
-        Промпт: что и как оценивать (вставьте сюда эталонный скрипт)
+    <div className="sheet sheet-pad" style={{ marginBottom: 12 }}>
+      <h4 style={{ marginBottom: 14 }}>
+        {metric ? "Редактирование метрики" : "Новая метрика"}
+      </h4>
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <label className="field" style={{ flex: "1 1 280px" }}>
+          <span className="label">Название — видно в отчётах</span>
+          <input
+            type="text"
+            value={name}
+            placeholder="Например: Качество продажи абонемента"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="label">Шкала оценки</span>
+          <select value={scale} onChange={(e) => setScale(Number(e.target.value))}>
+            <option value={5}>5-балльная</option>
+            <option value={10}>10-балльная</option>
+          </select>
+        </label>
+      </div>
+
+      <label className="field">
+        <span className="label">Промпт — что и как оценивать</span>
         <textarea
           className="prompt-editor"
           value={prompt}
@@ -128,15 +142,24 @@ function MetricEditor({
           spellCheck={false}
         />
       </label>
-      <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-        <button onClick={save} disabled={saving || name.trim().length < 2 || prompt.length < 10}>
+
+      {error && <Note kind="error">{error}</Note>}
+
+      <div className="actions">
+        <button
+          onClick={save}
+          disabled={saving || name.trim().length < 2 || prompt.length < 10}
+        >
           {saving ? "Сохранение…" : "Сохранить"}
         </button>
         <button className="secondary" onClick={onCancel}>
           Отмена
         </button>
+        <span className="muted" style={{ marginLeft: "auto" }}>
+          Правки применяются к новым разборам. Чтобы пересчитать прошлую смену,
+          нажмите «Пересчитать» в её карточке.
+        </span>
       </div>
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
@@ -149,6 +172,7 @@ function MetricCard({
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
@@ -165,55 +189,54 @@ function MetricCard({
     );
   }
 
-  const toggleActive = async () => {
+  const patch = async (fn: () => Promise<unknown>) => {
     setError("");
     try {
-      await api.updateMetric(metric.id, { active: !metric.active });
+      await fn();
       onChanged();
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const remove = async () => {
-    setError("");
-    try {
-      await api.deleteMetric(metric.id);
-      onChanged();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
+  const lines = metric.prompt.split("\n").length;
 
   return (
-    <div className="card" style={{ opacity: metric.active ? 1 : 0.6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <strong style={{ fontSize: 16 }}>{metric.name}</strong>
-        <span className="muted">шкала: {metric.scale_max}-балльная</span>
-        {metric.active ? (
-          <span className="badge sale">Активна</span>
-        ) : (
-          <span className="badge irrelevant">Отключена</span>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button className="secondary" onClick={() => setEditing(true)}>
+    <div className="sheet sheet-pad" style={{ marginBottom: 12, opacity: metric.active ? 1 : 0.65 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 15 }}>{metric.name}</strong>
+        <span className={`pill ${metric.active ? "sale" : "irrelevant"}`}>
+          {metric.active ? "Активна" : "Отключена"}
+        </span>
+        <span className="muted">
+          {metric.scale_max}-балльная · промпт: {lines}{" "}
+          {plural(lines, "строка", "строки", "строк")}
+        </span>
+        <div className="actions" style={{ marginLeft: "auto" }}>
+          <button className="secondary small" onClick={() => setEditing(true)}>
             Редактировать
           </button>
-          <button className="secondary" onClick={toggleActive}>
+          <button
+            className="ghost small"
+            onClick={() => patch(() => api.updateMetric(metric.id, { active: !metric.active }))}
+          >
             {metric.active ? "Отключить" : "Включить"}
           </button>
           {confirmDelete ? (
             <>
-              <button className="danger" onClick={remove}>
-                Точно удалить
+              <button
+                className="danger small"
+                onClick={() => patch(() => api.deleteMetric(metric.id))}
+              >
+                Удалить навсегда
               </button>
-              <button className="secondary" onClick={() => setConfirmDelete(false)}>
+              <button className="ghost small" onClick={() => setConfirmDelete(false)}>
                 Отмена
               </button>
             </>
           ) : (
             <button
-              className="secondary"
+              className="ghost small"
               title="Удалить метрику и все её оценки в прошлых отчётах"
               onClick={() => setConfirmDelete(true)}
             >
@@ -222,20 +245,17 @@ function MetricCard({
           )}
         </div>
       </div>
-      <pre
-        style={{
-          whiteSpace: "pre-wrap",
-          fontFamily: "inherit",
-          fontSize: 13,
-          color: "#475569",
-          marginBottom: 0,
-          maxHeight: 180,
-          overflowY: "auto",
-        }}
-      >
+
+      <pre className={`prompt-preview ${expanded ? "open" : ""}`} style={{ marginTop: 12 }}>
         {metric.prompt}
       </pre>
-      {error && <div className="error">{error}</div>}
+      {lines > 8 && (
+        <button className="ghost small" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Свернуть промпт" : "Показать промпт целиком"}
+        </button>
+      )}
+
+      {error && <Note kind="error">{error}</Note>}
     </div>
   );
 }

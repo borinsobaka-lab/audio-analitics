@@ -220,9 +220,60 @@ export const api = {
     request<ScriptTemplate>("/api/script", { method: "PUT", body: JSON.stringify(body) }),
 };
 
+/** Позиция в записи: всегда ЧЧ:ММ:СС — смена длиннее часа, и обрезанный
+ *  формат сбивал бы с толку на коротких тестовых записях. */
 export function fmtTs(seconds: number): string {
-  const s = Math.floor(seconds);
+  const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Длительность для чтения человеком: «11 ч 40 мин», «48 мин», «< 1 мин». */
+export function fmtDur(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const total = Math.floor(seconds / 60);
+  if (total < 1) return "< 1 мин";
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h ? `${h} ч ${m} мин` : `${m} мин`;
+}
+
+const MONTHS = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+const WEEKDAYS = [
+  "воскресенье", "понедельник", "вторник", "среда",
+  "четверг", "пятница", "суббота",
+];
+
+/** "2026-08-05" → { day: "5 августа", weekday: "среда" }. Собирается вручную,
+ *  чтобы формат не зависел от локали браузера. */
+export function fmtDate(iso: string): { day: string; weekday: string } {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return { day: iso, weekday: "" };
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return {
+    day: `${d} ${MONTHS[m - 1] ?? ""}`,
+    weekday: WEEKDAYS[date.getUTCDay()] ?? "",
+  };
+}
+
+/** Русское согласование числительного: 1 строка, 2 строки, 5 строк. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
+/** Время начала записи в часовом поясе браузера. */
+export function fmtClock(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }

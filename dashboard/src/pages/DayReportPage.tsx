@@ -5,9 +5,13 @@ import {
   DayReport,
   Dialog,
   DialogDetail,
+  fmtDate,
+  fmtDur,
   fmtTs,
   MetricEvaluation,
 } from "../api";
+import { Deck, DeckHandle } from "../components/Deck";
+import { Empty, IconPlay, Note, Score, Skeleton } from "../components/ui";
 
 const TYPE_LABELS: Record<string, string> = {
   sale: "Продажа",
@@ -24,7 +28,7 @@ export default function DayReportPage() {
   const [notice, setNotice] = useState("");
   const [reprocessing, setReprocessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const deck = useRef<DeckHandle>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -32,12 +36,7 @@ export default function DayReportPage() {
     api.dayAudioUrl(id).then((r) => setAudioUrl(r.url)).catch(() => {});
   }, [id]);
 
-  const seekTo = (seconds: number) => {
-    const el = audioRef.current;
-    if (!el) return;
-    el.currentTime = seconds;
-    el.play();
-  };
+  const seek = (seconds: number) => deck.current?.seek(seconds);
 
   const reprocess = async () => {
     if (!id || reprocessing) return;
@@ -46,7 +45,7 @@ export default function DayReportPage() {
     try {
       await api.reprocessDay(id);
       setNotice(
-        "Поставлено в очередь: отчёт пересчитается по текущим метрикам. Обновите страницу через пару минут."
+        "Поставлено в очередь: разбор пересчитается по текущим метрикам. Обновите страницу через пару минут."
       );
     } catch (e) {
       setError(String(e));
@@ -55,19 +54,25 @@ export default function DayReportPage() {
     }
   };
 
-  if (error && !report) return <div className="error">{error}</div>;
-  if (!report) return <div className="muted">Загрузка…</div>;
+  if (error && !report) return <Note kind="error">{error}</Note>;
+  if (!report) return <Skeleton count={3} height={92} />;
 
   const { recording, summary } = report;
+  const { day, weekday } = fmtDate(recording.date);
+  const shown = report.dialogs.filter((d) => d.type !== "irrelevant");
+  const conversion =
+    report.conversion != null ? `${Math.round(report.conversion * 100)}%` : "—";
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ marginRight: "auto" }}>
-          <h2 style={{ marginBottom: 4 }}>Отчёт за {recording.date}</h2>
-          <div className="muted">
-            Менеджер: {recording.employee_name ?? "не указан"}
-          </div>
+      <header className="page-head">
+        <div className="grow">
+          <h1 className="serif">Смена {day}</h1>
+          <p>
+            {weekday} · менеджер{" "}
+            <strong>{recording.employee_name ?? "не указан"}</strong> ·{" "}
+            {fmtDur(recording.total_duration_s)} записи
+          </p>
         </div>
         <button
           className="secondary"
@@ -75,105 +80,129 @@ export default function DayReportPage() {
           disabled={reprocessing}
           title="Прогнать ту же запись через анализ заново — например, после правки метрик"
         >
-          {reprocessing ? "Запуск…" : "Обработать заново"}
+          {reprocessing ? "Запуск…" : "Пересчитать"}
         </button>
-      </div>
-      {notice && <div className="success">{notice}</div>}
-      {error && <div className="error">{error}</div>}
+      </header>
 
-      <div className="stat-row">
-        <Stat value={report.dialogs_total} label="Разговоров" />
-        <Stat value={report.sales_count} label="Продаж" />
-        <Stat
-          value={report.conversion != null ? `${Math.round(report.conversion * 100)}%` : "—"}
-          label="Конверсия"
-        />
-        <Stat
-          value={
-            recording.speech_duration_s != null ? fmtTs(recording.speech_duration_s) : "—"
-          }
-          label="Чистая речь"
-        />
+      {notice && <Note kind="success">{notice}</Note>}
+      {error && <Note kind="error">{error}</Note>}
+
+      <div className="stats">
+        <div className="stat lead">
+          <div className="v">{conversion}</div>
+          <div className="label">Конверсия</div>
+        </div>
+        <div className="stat">
+          <div className="v">{report.sales_count}</div>
+          <div className="label">Продаж</div>
+        </div>
+        <div className="stat">
+          <div className="v">{report.dialogs_total}</div>
+          <div className="label">Разговоров с клиентами</div>
+        </div>
+        <div className="stat">
+          <div className="v">{fmtDur(recording.speech_duration_s)}</div>
+          <div className="label">Чистой речи</div>
+        </div>
       </div>
 
       {report.metric_stats.length > 0 && (
-        <div className="stat-row">
-          {report.metric_stats.map((s) => (
-            <div className="stat" key={s.metric_id}>
-              <div className="value">
-                {s.avg_score != null ? (
-                  <>
-                    ★ {s.avg_score}
-                    <span style={{ fontSize: 15, color: "#64748b" }}>/{s.scale_max}</span>
-                  </>
-                ) : (
-                  "—"
-                )}
+        <div className="section">
+          <div className="section-head">
+            <h3>Метрики за смену</h3>
+            <span className="count">средняя оценка и сколько раз сработала</span>
+          </div>
+          <div className="stats">
+            {report.metric_stats.map((s) => (
+              <div className="stat" key={s.metric_id}>
+                <div className="v">
+                  {s.avg_score != null ? (
+                    <>
+                      {s.avg_score}
+                      <span className="of">/{s.scale_max}</span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </div>
+                <div className="label">
+                  {s.name} · {s.triggered_count}×
+                </div>
               </div>
-              <div className="label">
-                {s.name} · срабатываний: {s.triggered_count}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       {summary && (
-        <div className="card">
-          <h3>Итоги дня</h3>
-          <SummaryList title="Главные отклонения" items={summary.top_deviations} />
-          <SummaryList title="Рекомендации менеджеру" items={summary.recommendations} />
-          <SummaryList title="Предложения по скрипту" items={summary.script_suggestions} />
-          <SummaryList title="Удачные моменты" items={summary.highlights} />
+        <div className="section">
+          <div className="section-head">
+            <h3>Итоги смены</h3>
+          </div>
+          <div className="sheet sheet-pad">
+            <SummaryList title="Главные отклонения" items={summary.top_deviations} kind="bad" />
+            <SummaryList title="Рекомендации менеджеру" items={summary.recommendations} />
+            <SummaryList title="Предложения по скрипту" items={summary.script_suggestions} />
+            <SummaryList title="Удачные моменты" items={summary.highlights} kind="good" />
+          </div>
         </div>
       )}
 
-      <h3>Диалоги</h3>
-      {report.dialogs.length === 0 && (
-        <div className="card muted">
-          Диалоги не найдены. Либо в записи не было речи, либо день обработан
-          до последнего обновления — нажмите «Обработать заново».
+      <div className="section">
+        <div className="section-head">
+          <h3>Разговоры</h3>
+          <span className="count">
+            {shown.length > 0
+              ? `${shown.length} на ленте смены`
+              : "ничего не распознано"}
+          </span>
         </div>
-      )}
-      {report.dialogs.length > 0 &&
-        report.dialogs.every((d) => d.type === "irrelevant") && (
-          <div className="card muted">
-            Найдено разговоров: {report.dialogs.length}, но все классифицированы
-            как нерелевантные (личные или служебные) — метрики к ним не
-            применяются. Если это ошибка классификации, нажмите «Обработать
-            заново»: короткие тестовые записи иногда попадают в эту категорию.
-          </div>
+
+        {report.dialogs.length === 0 && (
+          <Empty title="Разговоров не найдено">
+            Либо в записи не было речи, либо смена обработана до последнего
+            обновления — нажмите «Пересчитать».
+          </Empty>
         )}
-      {report.dialogs
-        .filter((d) => d.type !== "irrelevant")
-        .map((d) => (
-          <DialogCard key={d.id} dialog={d} onSeek={seekTo} />
+        {report.dialogs.length > 0 && shown.length === 0 && (
+          <Empty title="Все разговоры отмечены как нерелевантные">
+            Найдено разговоров: {report.dialogs.length}, но все они
+            классифицированы как личные или служебные — метрики к таким не
+            применяются. Короткие тестовые записи часто попадают в эту
+            категорию: попробуйте «Пересчитать».
+          </Empty>
+        )}
+        {shown.map((d) => (
+          <DialogCard key={d.id} dialog={d} onSeek={seek} />
         ))}
+      </div>
 
       {audioUrl && (
-        <div className="audio-bar">
-          <audio ref={audioRef} controls src={audioUrl} preload="none" />
-        </div>
+        <Deck
+          ref={deck}
+          src={audioUrl}
+          dialogs={report.dialogs}
+          totalDuration={recording.total_duration_s}
+        />
       )}
     </div>
   );
 }
 
-function Stat({ value, label }: { value: number | string | JSX.Element; label: string }) {
-  return (
-    <div className="stat">
-      <div className="value">{value}</div>
-      <div className="label">{label}</div>
-    </div>
-  );
-}
-
-function SummaryList({ title, items }: { title: string; items?: string[] }) {
+function SummaryList({
+  title,
+  items,
+  kind,
+}: {
+  title: string;
+  items?: string[];
+  kind?: "good" | "bad";
+}) {
   if (!items || items.length === 0) return null;
   return (
-    <div>
-      <strong>{title}:</strong>
-      <ul>
+    <div style={{ marginBottom: 14 }}>
+      <div className={`notes-title ${kind ?? ""}`}>{title}</div>
+      <ul className={`notes ${kind ?? ""}`}>
         {items.map((item, i) => (
           <li key={i}>{item}</li>
         ))}
@@ -182,26 +211,15 @@ function SummaryList({ title, items }: { title: string; items?: string[] }) {
   );
 }
 
-function Stars({ score, scale }: { score: number; scale: number }) {
-  return (
-    <span className="score" title={`${score} из ${scale}`}>
-      {"★".repeat(score)}
-      <span style={{ color: "#cbd5e1" }}>{"★".repeat(Math.max(0, scale - score))}</span>{" "}
-      {score}/{scale}
-    </span>
-  );
-}
-
-/** Matches [HH:MM:SS] and [MM:SS] timestamps the prompt asks the model to emit. */
+/** Совпадает с [ЧЧ:ММ:СС] и [ММ:СС] — форматом, который промпты просят у модели. */
 const TS_PATTERN = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
 
 function tsToSeconds(stamp: string): number {
-  const parts = stamp.split(":").map(Number);
-  return parts.reduce((acc, part) => acc * 60 + part, 0);
+  return stamp.split(":").map(Number).reduce((acc, part) => acc * 60 + part, 0);
 }
 
-/** Renders feedback text with its timestamps turned into play buttons. */
-function WithTimestamps({ text, onSeek }: { text: string; onSeek: (s: number) => void }) {
+/** Текст разбора, в котором метки времени превращены в кнопки прослушивания. */
+function WithCues({ text, onSeek }: { text: string; onSeek: (s: number) => void }) {
   const nodes: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   for (const match of text.matchAll(TS_PATTERN)) {
@@ -209,14 +227,15 @@ function WithTimestamps({ text, onSeek }: { text: string; onSeek: (s: number) =>
     if (at > lastIndex) nodes.push(text.slice(lastIndex, at));
     const seconds = tsToSeconds(match[1]);
     nodes.push(
-      <span
+      <button
         key={`${at}-${match[1]}`}
-        className="ts-link"
+        className="cue"
         title="Слушать с этого места"
         onClick={() => onSeek(seconds)}
       >
-        ▶ {match[1]}
-      </span>
+        <IconPlay size={9} />
+        {match[1]}
+      </button>
     );
     lastIndex = at + match[0].length;
   }
@@ -224,48 +243,41 @@ function WithTimestamps({ text, onSeek }: { text: string; onSeek: (s: number) =>
   return <>{nodes}</>;
 }
 
-function EvaluationBlock({
-  ev,
-  onSeek,
-}: {
-  ev: MetricEvaluation;
-  onSeek: (s: number) => void;
-}) {
-  if (!ev.applicable) return null;
+function Evaluation({ ev, onSeek }: { ev: MetricEvaluation; onSeek: (s: number) => void }) {
   return (
-    <div className="eval-block">
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="eval">
+      <div className="eval-head">
         <strong>{ev.metric_name}</strong>
-        {ev.score != null && <Stars score={ev.score} scale={ev.scale_max} />}
+        {ev.score != null && <Score score={ev.score} scale={ev.scale_max} />}
       </div>
       {ev.comment && (
-        <p style={{ margin: "6px 0" }}>
-          <WithTimestamps text={ev.comment} onSeek={onSeek} />
+        <p className="eval-note">
+          <WithCues text={ev.comment} onSeek={onSeek} />
         </p>
       )}
       {ev.good.length > 0 && (
-        <div>
-          <span className="eval-good">Хорошо:</span>
-          <ul style={{ margin: "4px 0" }}>
+        <>
+          <div className="notes-title good">Сработало</div>
+          <ul className="notes good">
             {ev.good.map((item, i) => (
               <li key={i}>
-                <WithTimestamps text={item} onSeek={onSeek} />
+                <WithCues text={item} onSeek={onSeek} />
               </li>
             ))}
           </ul>
-        </div>
+        </>
       )}
       {ev.bad.length > 0 && (
-        <div>
-          <span className="eval-bad">Плохо / упущено:</span>
-          <ul style={{ margin: "4px 0" }}>
+        <>
+          <div className="notes-title bad">Упущено</div>
+          <ul className="notes bad">
             {ev.bad.map((item, i) => (
               <li key={i}>
-                <WithTimestamps text={item} onSeek={onSeek} />
+                <WithCues text={item} onSeek={onSeek} />
               </li>
             ))}
           </ul>
-        </div>
+        </>
       )}
     </div>
   );
@@ -277,60 +289,69 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
 
   const toggle = () => {
     setOpen(!open);
-    if (!detail) {
-      api.dialogDetail(dialog.id).then(setDetail).catch(() => {});
-    }
+    if (!detail) api.dialogDetail(dialog.id).then(setDetail).catch(() => {});
   };
 
-  const applicableEvals = dialog.evaluations.filter((e) => e.applicable);
+  const evals = dialog.evaluations.filter((e) => e.applicable);
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span className={`badge ${dialog.type}`}>{TYPE_LABELS[dialog.type] ?? dialog.type}</span>
-        <span
-          className="ts-link"
-          onClick={() => onSeek(dialog.start_s)}
-          title="Слушать с начала диалога"
-        >
-          ▶ {fmtTs(dialog.start_s)}–{fmtTs(dialog.end_s)}
+    <div className="dialog">
+      <div className="dialog-head">
+        <span className={`pill ${dialog.type}`}>
+          {TYPE_LABELS[dialog.type] ?? dialog.type}
         </span>
-        {applicableEvals.map((ev) =>
+        <button className="cue" onClick={() => onSeek(dialog.start_s)} title="Слушать разговор">
+          <IconPlay size={9} />
+          {fmtTs(dialog.start_s)}–{fmtTs(dialog.end_s)}
+        </button>
+        {evals.map((ev) =>
           ev.score != null ? (
-            <span key={ev.metric_id} className="metric-chip">
-              {ev.metric_name}: ★ {ev.score}/{ev.scale_max}
+            <span key={ev.metric_id} className="chip-score">
+              <b>
+                {ev.score}
+                <span className="scale">/{ev.scale_max}</span>
+              </b>
+              {ev.metric_name}
             </span>
           ) : null
         )}
-        <button className="secondary" style={{ marginLeft: "auto" }} onClick={toggle}>
-          {open ? "Свернуть" : "Подробнее"}
+        <button className="ghost small" style={{ marginLeft: "auto" }} onClick={toggle}>
+          {open ? "Свернуть" : "Разбор"}
         </button>
       </div>
-      <p style={{ marginBottom: 0 }}>{dialog.brief}</p>
+      {dialog.brief && <p className="dialog-brief">{dialog.brief}</p>}
 
-      {open &&
-        applicableEvals.map((ev) => (
-          <EvaluationBlock key={ev.metric_id} ev={ev} onSeek={onSeek} />
-        ))}
-      {open && applicableEvals.length === 0 && (
-        <p className="muted">Ни одна метрика не сработала на этом диалоге.</p>
-      )}
+      {open && (
+        <div className="dialog-body">
+          {evals.length > 0 ? (
+            evals.map((ev) => <Evaluation key={ev.metric_id} ev={ev} onSeek={onSeek} />)
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Ни одна метрика не сработала на этом разговоре.
+            </p>
+          )}
 
-      {open && detail && detail.turns.length > 0 && (
-        <>
-          <h4>Транскрипт</h4>
-          <div className="turns">
-            {detail.turns.map((t, i) => (
-              <div key={i} className={`turn ${t.is_manager ? "manager" : ""}`}>
-                <span className="ts-link" onClick={() => onSeek(t.start_s)}>
-                  {fmtTs(t.start_s)}
-                </span>{" "}
-                <span className="speaker">{t.speaker_label}:</span>
-                {t.text}
-              </div>
-            ))}
-          </div>
-        </>
+          {detail && detail.turns.length > 0 && (
+            <div className="turns">
+              {detail.turns.map((t, i) => (
+                <div key={i} className={`turn ${t.is_manager ? "manager" : ""}`}>
+                  <button className="cue" onClick={() => onSeek(t.start_s)}>
+                    {fmtTs(t.start_s)}
+                  </button>
+                  <span className="who">
+                    {t.is_manager === true
+                      ? "Менеджер"
+                      : t.is_manager === false
+                        ? "Клиент"
+                        : t.speaker_label}
+                    :
+                  </span>
+                  <span>{t.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

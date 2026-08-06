@@ -1,40 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, DayRecording, fmtTs } from "../api";
+import { api, DayRecording, fmtClock, fmtDate, fmtDur } from "../api";
+import { Empty, Note, PageHead, Skeleton, StatusLight } from "../components/ui";
 
-const STATUS_LABELS: Record<string, string> = {
-  recording: "Идёт запись",
-  uploaded: "Загружено, в очереди",
-  processing: "Обрабатывается",
-  done: "Готово",
-  error: "Ошибка",
-};
-
-// Keep polling while anything is live, so the lights reflect reality without
-// a manual refresh — including a day that is still being recorded in the app.
+// Пока что-то живо, список опрашивается сам: огоньки должны отражать
+// реальность без ручного обновления страницы.
 const IN_FLIGHT = ["recording", "uploaded", "processing"];
 
-/** Coloured light next to the status text: red pulsing = recording right now,
- *  amber = in the queue or being processed, green = report ready. */
-function StatusLight({ status }: { status: string }) {
-  const known = ["recording", "uploaded", "processing", "done", "error"].includes(status);
-  return (
-    <span className="status">
-      <span className={`status-dot ${known ? status : ""}`} />
-      <span className={`status-label ${status}`}>{STATUS_LABELS[status] ?? status}</span>
-    </span>
-  );
-}
-
-/** Second confirmation click for destructive actions, kept inside the page. */
-type Pending = { id: string; action: "delete" } | null;
-
 export default function DaysPage() {
-  const [days, setDays] = useState<DayRecording[]>([]);
+  const [days, setDays] = useState<DayRecording[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pending, setPending] = useState<Pending>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(() => {
@@ -44,14 +22,16 @@ export default function DaysPage() {
         setDays(items);
         setError("");
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        setDays([]);
+        setError(String(e));
+      });
   }, []);
 
   useEffect(load, [load]);
 
-  // Poll while something is being processed so the status updates itself.
   useEffect(() => {
-    if (!days.some((d) => IN_FLIGHT.includes(d.status))) return;
+    if (!days?.some((d) => IN_FLIGHT.includes(d.status))) return;
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
   }, [days, load]);
@@ -63,7 +43,7 @@ export default function DaysPage() {
     try {
       await fn();
       setNotice(message);
-      setPending(null);
+      setPendingDelete(null);
       load();
     } catch (e) {
       setError(String(e));
@@ -72,82 +52,97 @@ export default function DaysPage() {
     }
   };
 
-  const startedAt = (d: DayRecording) =>
-    d.created_at ? new Date(d.created_at).toLocaleTimeString("ru-RU", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }) : "";
+  const live = days?.filter((d) => d.status === "recording").length ?? 0;
 
   return (
     <div>
-      <h2>Отчёты по дням</h2>
-      {error && <div className="error">{error}</div>}
-      {notice && <div className="success">{notice}</div>}
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Дата</th>
-              <th>Менеджер</th>
-              <th>Статус</th>
-              <th>Длительность</th>
-              <th>Чистая речь</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {days.map((d) => (
-              <tr key={d.id}>
-                <td
-                  className={d.status === "done" ? "clickable-cell" : ""}
-                  style={{ whiteSpace: "nowrap" }}
-                  onClick={() => d.status === "done" && navigate(`/days/${d.id}`)}
-                >
-                  {d.date}
-                  {startedAt(d) && <div className="muted">с {startedAt(d)}</div>}
-                </td>
-                <td>{d.employee_name ?? <span className="muted">не указан</span>}</td>
-                <td>
+      <PageHead
+        title="Смены"
+        hint="Каждая строка — один рабочий день у стойки: кто работал, что записалось и как разговоры оценены метриками."
+      />
+
+      {live > 0 && (
+        <Note kind="info">
+          Прямо сейчас пишется {live === 1 ? "одна смена" : `${live} смены`}. Отчёт
+          появится после того, как менеджер нажмёт «Завершить день» в приложении.
+        </Note>
+      )}
+      {error && <Note kind="error">{error}</Note>}
+      {notice && <Note kind="success">{notice}</Note>}
+
+      {days === null && <Skeleton count={4} height={76} />}
+
+      {days !== null && days.length === 0 && !error && (
+        <Empty title="Смен пока нет">
+          Запустите запись в десктоп-приложении на ресепшене — смена появится
+          здесь сразу после начала записи.
+        </Empty>
+      )}
+
+      {days !== null && days.length > 0 && (
+        <div className="day-list">
+          {days.map((d) => {
+            const { day, weekday } = fmtDate(d.date);
+            const started = fmtClock(d.created_at);
+            const openable = d.status === "done";
+            return (
+              <div key={d.id} className={`day-row ${d.status === "recording" ? "live" : ""}`}>
+                <div>
+                  <div className="day-date">{day}</div>
+                  <div className="day-when">
+                    {weekday}
+                    {started && ` · с ${started}`}
+                  </div>
+                </div>
+
+                <div className="day-mid">
+                  <div className="day-manager">
+                    {d.employee_name ?? <span className="muted">менеджер не указан</span>}
+                  </div>
                   <StatusLight status={d.status} />
+                  {d.total_duration_s != null && (
+                    <span className="muted">
+                      {" · "}
+                      {fmtDur(d.total_duration_s)} записи, из них речи{" "}
+                      {fmtDur(d.speech_duration_s)}
+                    </span>
+                  )}
                   {d.status_detail && (
-                    <div className="muted">{d.status_detail.slice(0, 160)}</div>
+                    <div className="day-detail">{d.status_detail.slice(0, 220)}</div>
                   )}
                   {d.metric_stats.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
+                    <div className="chips">
                       {d.metric_stats.map((s) => (
-                        <div key={s.metric_id} className="metric-chip">
-                          {s.name}: {s.triggered_count}
-                          {s.avg_score != null && (
-                            <> · ★ {s.avg_score}/{s.scale_max}</>
+                        <span key={s.metric_id} className="chip-score">
+                          {s.avg_score != null ? (
+                            <b>
+                              {s.avg_score}
+                              <span className="scale">/{s.scale_max}</span>
+                            </b>
+                          ) : (
+                            <b className="scale">—</b>
                           )}
-                        </div>
+                          {s.name} · {s.triggered_count}×
+                        </span>
                       ))}
                     </div>
                   )}
-                </td>
-                <td>{d.total_duration_s != null ? fmtTs(d.total_duration_s) : "—"}</td>
-                <td>{d.speech_duration_s != null ? fmtTs(d.speech_duration_s) : "—"}</td>
-                <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
-                  {d.status === "done" && (
-                    <button
-                      className="secondary"
-                      onClick={() => navigate(`/days/${d.id}`)}
-                      style={{ marginRight: 8 }}
-                    >
-                      Открыть
-                    </button>
+                </div>
+
+                <div className="actions" style={{ justifyContent: "flex-end" }}>
+                  {openable && (
+                    <button onClick={() => navigate(`/days/${d.id}`)}>Открыть разбор</button>
                   )}
                   {d.status === "recording" && (
                     <button
                       className="secondary"
-                      style={{ marginRight: 8 }}
                       disabled={busyId === d.id}
-                      title="Приложение не закрыло день (вылет, закрытый ноутбук). Обработать то, что успело загрузиться."
+                      title="Приложение не закрыло смену — например, ноутбук закрыли или программа вылетела. Обработать то, что успело загрузиться."
                       onClick={() =>
                         run(
                           d.id,
                           () => api.forceFinishDay(d.id),
-                          "Запись закрыта и отправлена в обработку"
+                          "Смена закрыта и отправлена в обработку"
                         )
                       }
                     >
@@ -157,61 +152,53 @@ export default function DaysPage() {
                   {(d.status === "done" || d.status === "error") && (
                     <button
                       className="secondary"
-                      style={{ marginRight: 8 }}
                       disabled={busyId === d.id}
-                      title="Прогнать запись через анализ заново — например, после правки промптов"
+                      title="Прогнать ту же запись через анализ заново — например, после правки метрик"
                       onClick={() =>
                         run(d.id, () => api.reprocessDay(d.id), "Поставлено в очередь")
                       }
                     >
-                      Обработать заново
+                      Пересчитать
                     </button>
                   )}
                   {d.status !== "processing" &&
-                    (pending?.id === d.id ? (
+                    (pendingDelete === d.id ? (
                       <>
                         <button
                           className="danger"
-                          style={{ marginRight: 8 }}
                           disabled={busyId === d.id}
-                          onClick={() =>
-                            run(d.id, () => api.deleteDay(d.id), "Запись удалена")
-                          }
+                          onClick={() => run(d.id, () => api.deleteDay(d.id), "Смена удалена")}
                         >
-                          Точно удалить
+                          Удалить навсегда
                         </button>
-                        <button className="secondary" onClick={() => setPending(null)}>
+                        <button className="ghost" onClick={() => setPendingDelete(null)}>
                           Отмена
                         </button>
                       </>
                     ) : (
                       <button
-                        className="secondary"
-                        title="Удалить запись вместе с аудио и разбором"
-                        onClick={() => setPending({ id: d.id, action: "delete" })}
+                        className="ghost"
+                        title="Удалить смену вместе с аудио и разбором"
+                        onClick={() => setPendingDelete(d.id)}
                       >
                         Удалить
                       </button>
                     ))}
-                </td>
-              </tr>
-            ))}
-            {days.length === 0 && !error && (
-              <tr>
-                <td colSpan={6} className="muted">
-                  Записей пока нет. Запустите запись в десктоп-приложении.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <p className="muted">
-        «Обработать заново» пересчитывает отчёт из той же аудиозаписи по текущим
-        версиям промптов и скрипта продаж. «Завершить принудительно» закрывает
-        запись, которую приложение не закрыло само. «Удалить» безвозвратно
-        стирает аудио и разбор.
-      </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {days !== null && days.length > 0 && (
+        <p className="muted" style={{ marginTop: 14, maxWidth: "72ch" }}>
+          «Пересчитать» прогоняет ту же запись по текущим метрикам — аудио
+          заново не загружается. «Завершить принудительно» закрывает смену,
+          которую приложение не закрыло само. «Удалить» безвозвратно стирает
+          аудио и разбор.
+        </p>
+      )}
     </div>
   );
 }

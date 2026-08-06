@@ -1,40 +1,43 @@
 import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { getToken, setToken } from "./api";
+import { IconDays, IconMetrics, IconPeople, IconWave } from "./components/ui";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import MetricsPage from "./pages/MetricsPage";
 
-function AccessTokenBox() {
+function AccessToken() {
   const [value, setValue] = useState(getToken() ?? "");
+  const [open, setOpen] = useState(!getToken());
+
   const save = () => {
     setToken(value.trim() || null);
     window.location.reload();
   };
-  return (
-    <div style={{ marginTop: "auto", paddingTop: 20 }}>
-      <label style={{ fontSize: 12, color: "#94a3b8", display: "block", marginBottom: 4 }}>
+
+  if (!open) {
+    return (
+      <button className="ghost small" onClick={() => setOpen(true)}>
         Токен доступа
-      </label>
+      </button>
+    );
+  }
+  return (
+    <div>
+      <span className="label" style={{ display: "block", marginBottom: 6 }}>
+        Токен доступа
+      </span>
       <input
         type="password"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
         placeholder="ADMIN_API_TOKEN"
-        style={{
-          width: "100%",
-          padding: "7px 9px",
-          borderRadius: 6,
-          border: "1px solid #334155",
-          background: "#1e293b",
-          color: "#e2e8f0",
-          fontSize: 12,
-          marginBottom: 6,
-        }}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && save()}
+        style={{ marginBottom: 6 }}
       />
-      <button style={{ width: "100%", padding: "7px" }} onClick={save}>
-        Сохранить
+      <button className="secondary small" style={{ width: "100%" }} onClick={save}>
+        Сохранить и обновить
       </button>
     </div>
   );
@@ -43,15 +46,35 @@ function AccessTokenBox() {
 export default function App() {
   return (
     <div className="layout">
-      <nav className="sidebar" style={{ display: "flex", flexDirection: "column" }}>
-        <h1>Аналитика продаж</h1>
-        <NavLink to="/" end>
-          Отчёты по дням
+      <nav className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">
+            <IconWave />
+          </span>
+          <span>
+            <span className="brand-name">Ресепшен</span>
+            <span className="brand-sub">речевая аналитика</span>
+          </span>
+        </div>
+
+        <NavLink to="/" end className="nav-link">
+          <IconDays />
+          Смены
         </NavLink>
-        <NavLink to="/metrics">Метрики и анализ</NavLink>
-        <NavLink to="/employees">Менеджеры</NavLink>
-        <AccessTokenBox />
+        <NavLink to="/metrics" className="nav-link">
+          <IconMetrics />
+          Метрики и анализ
+        </NavLink>
+        <NavLink to="/employees" className="nav-link">
+          <IconPeople />
+          Менеджеры
+        </NavLink>
+
+        <div className="sidebar-foot">
+          <AccessToken />
+        </div>
       </nav>
+
       <main className="content">
         <Routes>
           <Route path="/" element={<DaysPage />} />
