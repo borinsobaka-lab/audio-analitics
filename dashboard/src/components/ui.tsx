@@ -115,7 +115,7 @@ export function PageHead({
   return (
     <header className="page-head">
       <div className="grow">
-        <h1>{title}</h1>
+        <h1 className="display">{title}</h1>
         {hint && <p>{hint}</p>}
       </div>
       {children && <div className="actions">{children}</div>}

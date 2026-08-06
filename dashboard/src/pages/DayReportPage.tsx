@@ -67,7 +67,7 @@ export default function DayReportPage() {
     <div>
       <header className="page-head">
         <div className="grow">
-          <h1 className="serif">Смена {day}</h1>
+          <h1 className="display">Смена {day}</h1>
           <p>
             {weekday} · менеджер{" "}
             <strong>{recording.employee_name ?? "не указан"}</strong> ·{" "}
@@ -335,7 +335,7 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
             <div className="turns">
               {detail.turns.map((t, i) => (
                 <div key={i} className={`turn ${t.is_manager ? "manager" : ""}`}>
-                  <button className="cue" onClick={() => onSeek(t.start_s)}>
+                  <button className="cue quiet" onClick={() => onSeek(t.start_s)}>
                     {fmtTs(t.start_s)}
                   </button>
                   <span className="who">
