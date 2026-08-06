@@ -25,8 +25,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!resp.ok) {
     const body = await resp.text();
-    throw new Error(`${resp.status}: ${body.slice(0, 300)}`);
+    // FastAPI puts the human-readable reason in {"detail": "..."}.
+    let message = body.slice(0, 300);
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      /* keep the raw body */
+    }
+    throw new Error(message);
   }
+  if (resp.status === 204) return undefined as T;
   return resp.json() as Promise<T>;
 }
 
@@ -40,6 +49,17 @@ export interface DayRecording {
   status_detail: string;
   total_duration_s: number | null;
   speech_duration_s: number | null;
+  created_at: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
+}
+
+export interface Employee {
+  id: string;
+  location_id: string;
+  full_name: string;
+  role: string;
+  active: boolean;
 }
 
 export interface Dialog {
@@ -117,6 +137,22 @@ export const api = {
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
   reprocessDay: (id: string) =>
     request<DayRecording>(`/api/reports/days/${id}/reprocess`, { method: "POST" }),
+  forceFinishDay: (id: string) =>
+    request<DayRecording>(`/api/reports/days/${id}/force-finish`, { method: "POST" }),
+  deleteDay: (id: string) =>
+    request<void>(`/api/reports/days/${id}`, { method: "DELETE" }),
+
+  listEmployees: () => request<Employee[]>("/api/employees"),
+  createEmployee: (full_name: string) =>
+    request<Employee>("/api/employees", {
+      method: "POST",
+      body: JSON.stringify({ full_name }),
+    }),
+  updateEmployee: (id: string, body: { full_name?: string; active?: boolean }) =>
+    request<Employee>(`/api/employees/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   dialogDetail: (id: string) => request<DialogDetail>(`/api/reports/dialogs/${id}`),
   dayAudioUrl: (id: string) =>
     request<{ url: string; expires_in_s: number }>(`/api/audio/day/${id}`),

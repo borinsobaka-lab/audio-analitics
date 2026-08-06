@@ -27,7 +27,8 @@ create table if not exists employees (
     full_name varchar(255) not null,
     role varchar(64) not null default 'manager',
     voiceprint_ref varchar(512),
-    active boolean not null default true
+    active boolean not null default true,
+    created_at timestamptz not null default now()
 );
 create index if not exists ix_employees_org on employees(org_id);
 
@@ -42,8 +43,7 @@ create table if not exists day_recordings (
     raw_audio_uri varchar(512),
     total_duration_s double precision,
     speech_duration_s double precision,
-    created_at timestamptz not null default now(),
-    constraint uq_day_location unique (location_id, date)
+    created_at timestamptz not null default now()
 );
 create index if not exists ix_day_recordings_org on day_recordings(org_id);
 create index if not exists ix_day_recordings_date on day_recordings(date);
@@ -128,6 +128,7 @@ create index if not exists ix_prompt_templates_key on prompt_templates(key);
 
 create table if not exists metrics_daily (
     id uuid primary key default gen_random_uuid(),
+    day_recording_id uuid not null references day_recordings(id),
     org_id uuid not null references organizations(id),
     location_id uuid not null references locations(id),
     employee_id uuid references employees(id),
@@ -138,9 +139,10 @@ create table if not exists metrics_daily (
     upsell_count integer not null default 0,
     avg_script_score double precision,
     summary_json jsonb,
-    constraint uq_metrics_location_date unique (location_id, date)
+    constraint uq_metrics_day_recording unique (day_recording_id)
 );
 create index if not exists ix_metrics_daily_org on metrics_daily(org_id);
+create index if not exists ix_metrics_daily_recording on metrics_daily(day_recording_id);
 
 -- RLS: enabled so Supabase anon/authenticated roles cannot read anything by
 -- default. The backend connects via the direct Postgres connection (postgres

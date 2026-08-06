@@ -94,6 +94,7 @@ button {
 button:hover { opacity: 0.9; }
 button:disabled { background: #94a3b8; cursor: default; }
 button.secondary { background: #e2e8f0; color: var(--text); }
+button.danger { background: var(--red); }
 
 textarea, input[type="text"] {
   width: 100%;

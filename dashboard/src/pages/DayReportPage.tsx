@@ -72,7 +72,12 @@ export default function DayReportPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <h2 style={{ marginRight: "auto" }}>Отчёт за {recording.date}</h2>
+        <div style={{ marginRight: "auto" }}>
+          <h2 style={{ marginBottom: 4 }}>Отчёт за {recording.date}</h2>
+          <div className="muted">
+            Менеджер: {recording.employee_name ?? "не указан"}
+          </div>
+        </div>
         <button
           className="secondary"
           onClick={reprocess}

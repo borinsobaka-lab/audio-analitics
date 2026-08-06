@@ -3,6 +3,7 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import { getToken, setToken } from "./api";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
+import EmployeesPage from "./pages/EmployeesPage";
 import PromptsPage from "./pages/PromptsPage";
 import ScriptPage from "./pages/ScriptPage";
 
@@ -48,6 +49,7 @@ export default function App() {
         <NavLink to="/" end>
           Отчёты по дням
         </NavLink>
+        <NavLink to="/employees">Менеджеры</NavLink>
         <NavLink to="/prompts">Промпты анализа</NavLink>
         <NavLink to="/script">Скрипт продаж</NavLink>
         <AccessTokenBox />
@@ -56,6 +58,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DaysPage />} />
           <Route path="/days/:id" element={<DayReportPage />} />
+          <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/script" element={<ScriptPage />} />
         </Routes>

@@ -52,6 +52,9 @@ class Location(UUIDMixin, Base):
 
 
 class Employee(UUIDMixin, Base):
+    """A sales manager. Deactivated employees stay in the database so past
+    reports keep their author; they just disappear from the app's picker."""
+
     __tablename__ = "employees"
 
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
@@ -60,13 +63,18 @@ class Employee(UUIDMixin, Base):
     role: Mapped[str] = mapped_column(String(64), default="manager")
     voiceprint_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class DayRecording(UUIDMixin, Base):
-    """One working day of one location: the unit of pipeline processing."""
+    """One recording session: normally a whole working day of one location.
+
+    Deliberately NOT unique per (location, date): if the app crashes and the
+    manager starts again, that second session becomes its own recording and
+    its own report, rather than being merged into a half-broken first one.
+    """
 
     __tablename__ = "day_recordings"
-    __table_args__ = (UniqueConstraint("location_id", "date", name="uq_day_location"),)
 
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
@@ -197,11 +205,16 @@ class PromptTemplate(UUIDMixin, Base):
 
 
 class MetricsDaily(UUIDMixin, Base):
+    """Aggregated result of one recording session (see DayRecording)."""
+
     __tablename__ = "metrics_daily"
     __table_args__ = (
-        UniqueConstraint("location_id", "date", name="uq_metrics_location_date"),
+        UniqueConstraint("day_recording_id", name="uq_metrics_day_recording"),
     )
 
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
     employee_id: Mapped[uuid.UUID | None] = mapped_column(

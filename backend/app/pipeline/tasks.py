@@ -285,15 +285,14 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
             summary = {"error": str(e)[:500]}
 
     existing = db.scalar(
-        select(MetricsDaily).where(
-            MetricsDaily.location_id == rec.location_id, MetricsDaily.date == rec.date
-        )
+        select(MetricsDaily).where(MetricsDaily.day_recording_id == rec.id)
     )
     if existing:
         db.delete(existing)
         db.flush()
     db.add(
         MetricsDaily(
+            day_recording_id=rec.id,
             org_id=rec.org_id,
             location_id=rec.location_id,
             employee_id=rec.employee_id,

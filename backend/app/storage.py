@@ -54,6 +54,32 @@ def get_bytes(key: str) -> bytes:
     return resp["Body"].read()
 
 
+def delete_prefix(prefix: str) -> int:
+    """Delete every object under a prefix. Returns how many were removed."""
+    client = s3_client()
+    deleted = 0
+    token: str | None = None
+    while True:
+        kwargs = {"Bucket": settings.s3_bucket, "Prefix": prefix}
+        if token:
+            kwargs["ContinuationToken"] = token
+        page = client.list_objects_v2(**kwargs)
+        keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+        if keys:
+            client.delete_objects(
+                Bucket=settings.s3_bucket, Delete={"Objects": keys, "Quiet": True}
+            )
+            deleted += len(keys)
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+    return deleted
+
+
+def recording_prefix(day_recording_id: str) -> str:
+    return f"recordings/{day_recording_id}/"
+
+
 def presigned_get_url(key: str, ttl_s: int | None = None) -> str:
     return s3_client().generate_presigned_url(
         "get_object",

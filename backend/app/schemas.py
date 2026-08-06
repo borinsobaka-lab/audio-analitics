@@ -20,8 +20,34 @@ class DayRecordingOut(BaseModel):
     status_detail: str = ""
     total_duration_s: float | None = None
     speech_duration_s: float | None = None
+    created_at: datetime | None = None
+    employee_id: uuid.UUID | None = None
+    employee_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# --- Employees (managers) ---
+
+class EmployeeOut(BaseModel):
+    id: uuid.UUID
+    location_id: uuid.UUID
+    full_name: str
+    role: str
+    active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class EmployeeCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=255)
+    location_id: uuid.UUID | None = None
+    role: str = "manager"
+
+
+class EmployeeUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    active: bool | None = None
 
 
 class SegmentUploadedOut(BaseModel):

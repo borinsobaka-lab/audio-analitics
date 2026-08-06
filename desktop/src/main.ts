@@ -17,6 +17,12 @@ interface Status {
 interface Settings {
   server_url: string;
   device_key: string;
+  last_employee_id: string;
+}
+
+interface Employee {
+  id: string;
+  full_name: string;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -30,6 +36,9 @@ const btnPause = $("btn-pause") as HTMLButtonElement;
 const btnFinish = $("btn-finish") as HTMLButtonElement;
 const serverUrl = $("server-url") as HTMLInputElement;
 const deviceKey = $("device-key") as HTMLInputElement;
+const employeeSelect = $("employee") as HTMLSelectElement;
+const employeePicker = $("employee-picker");
+const employeeHint = $("employee-hint");
 const meter = $("meter");
 const meterTitle = $("meter-title");
 const meterFill = $("meter-fill");
@@ -96,6 +105,9 @@ function render(status: Status) {
     statsEl.textContent = "";
   }
   if (!status.recording && confirmingFinish) resetFinishButton();
+  // Kept visible but locked while recording, so it always shows who is on shift.
+  employeeSelect.disabled = status.recording || busy;
+  employeePicker.style.opacity = status.recording ? "0.6" : "1";
   btnStart.disabled = status.recording || busy;
   btnPause.disabled = !status.recording || busy;
   btnFinish.disabled = !status.recording || busy;
@@ -112,12 +124,43 @@ async function refresh() {
   }
 }
 
+async function loadEmployees(preselectId?: string) {
+  employeeHint.textContent = "";
+  try {
+    const employees = await invoke<Employee[]>("list_employees");
+    employeeSelect.innerHTML = "";
+    if (employees.length === 0) {
+      employeeSelect.innerHTML = '<option value="">Менеджеры не заведены</option>';
+      employeeHint.textContent =
+        "Заведите менеджеров в веб-админке, на вкладке «Менеджеры».";
+      return;
+    }
+    employeeSelect.append(new Option("— выберите менеджера —", ""));
+    for (const employee of employees) {
+      employeeSelect.append(new Option(employee.full_name, employee.id));
+    }
+    const wanted = preselectId ?? employeeSelect.value;
+    if (wanted && employees.some((e) => e.id === wanted)) {
+      employeeSelect.value = wanted;
+    }
+  } catch (e) {
+    employeeSelect.innerHTML = '<option value="">Список недоступен</option>';
+    employeeHint.textContent = String(e);
+  }
+}
+
 btnStart.addEventListener("click", async () => {
+  const employeeId = employeeSelect.value;
+  if (!employeeId) {
+    setError("Выберите менеджера, который начинает рабочий день");
+    employeeSelect.focus();
+    return;
+  }
   busy = true;
   setError("");
   btnStart.disabled = true;
   try {
-    await invoke("start_day");
+    await invoke("start_day", { employeeId });
   } catch (e) {
     setError(String(e));
   } finally {
@@ -180,19 +223,27 @@ btnFinish.addEventListener("click", async () => {
 
 $("btn-save-settings").addEventListener("click", async () => {
   try {
+    const current = await invoke<Settings>("get_settings");
     await invoke("save_settings", {
-      settings: { server_url: serverUrl.value.trim(), device_key: deviceKey.value.trim() },
+      settings: {
+        server_url: serverUrl.value.trim(),
+        device_key: deviceKey.value.trim(),
+        last_employee_id: current.last_employee_id ?? "",
+      },
     });
     setError("");
     ($("settings-block") as HTMLDetailsElement).open = false;
+    // New server or key means a different list of managers.
+    await loadEmployees(current.last_employee_id);
   } catch (e) {
     setError(String(e));
   }
 });
 
 async function init() {
+  let settings: Settings | null = null;
   try {
-    const settings = await invoke<Settings>("get_settings");
+    settings = await invoke<Settings>("get_settings");
     serverUrl.value = settings.server_url;
     deviceKey.value = settings.device_key;
     if (!settings.server_url) {
@@ -200,6 +251,11 @@ async function init() {
     }
   } catch (e) {
     setError(String(e));
+  }
+  if (settings?.server_url && settings?.device_key) {
+    await loadEmployees(settings.last_employee_id);
+  } else {
+    employeeSelect.innerHTML = '<option value="">Сначала заполните настройки</option>';
   }
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);

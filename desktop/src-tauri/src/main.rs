@@ -21,6 +21,15 @@ use uploader::{ServerConfig, Uploader};
 struct Settings {
     server_url: String,
     device_key: String,
+    /// Manager chosen last time — preselected so the daily routine is one click.
+    #[serde(default)]
+    last_employee_id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Employee {
+    id: String,
+    full_name: String,
 }
 
 struct ActiveSession {
@@ -123,10 +132,39 @@ struct StartDayResponse {
     id: String,
 }
 
-fn start_day_inner(state: &tauri::State<AppState>) -> Result<()> {
+#[tauri::command]
+fn list_employees(state: tauri::State<AppState>) -> Result<Vec<Employee>, String> {
+    let settings = state.settings.lock().unwrap().clone();
+    if settings.server_url.is_empty() || settings.device_key.is_empty() {
+        return Err("Заполните адрес сервера и ключ устройства в настройках".into());
+    }
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .get(format!(
+            "{}/api/recordings/employees",
+            settings.server_url.trim_end_matches('/')
+        ))
+        .header("X-Device-Key", &settings.device_key)
+        .send()
+        .map_err(|e| format!("Сервер недоступен: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Сервер ответил {}: {}",
+            resp.status(),
+            resp.text().unwrap_or_default()
+        ));
+    }
+    resp.json::<Vec<Employee>>()
+        .map_err(|e| format!("Некорректный ответ сервера: {e}"))
+}
+
+fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Result<()> {
     let settings = state.settings.lock().unwrap().clone();
     if settings.server_url.is_empty() || settings.device_key.is_empty() {
         anyhow::bail!("Заполните адрес сервера и ключ устройства в настройках");
+    }
+    if employee_id.is_empty() {
+        anyhow::bail!("Выберите менеджера, который начинает рабочий день");
     }
 
     let date = Local::now().format("%Y-%m-%d").to_string();
@@ -139,7 +177,7 @@ fn start_day_inner(state: &tauri::State<AppState>) -> Result<()> {
             settings.server_url.trim_end_matches('/')
         ))
         .header("X-Device-Key", &settings.device_key)
-        .json(&serde_json::json!({ "date": date }))
+        .json(&serde_json::json!({ "date": date, "employee_id": employee_id }))
         .send()
         .context("Сервер недоступен")?;
     if !resp.status().is_success() {
@@ -148,7 +186,10 @@ fn start_day_inner(state: &tauri::State<AppState>) -> Result<()> {
     let day: StartDayResponse = resp.json().context("Некорректный ответ сервера")?;
 
     let data_dir = state.data_dir.lock().unwrap().clone();
-    let chunks_dir = data_dir.join("recordings").join(&date);
+    // Chunks live under the recording id: a second session on the same date
+    // (app crashed and was restarted) gets its own directory and its own
+    // segment numbering instead of colliding with the first one.
+    let chunks_dir = data_dir.join("recordings").join(&day.id);
     std::fs::create_dir_all(&chunks_dir)?;
 
     // Resume-safe: continue numbering after any chunk already on disk.
@@ -198,11 +239,23 @@ fn next_chunk_idx(chunks_dir: &PathBuf) -> u32 {
 }
 
 #[tauri::command]
-fn start_day(state: tauri::State<AppState>) -> Result<(), String> {
+fn start_day(state: tauri::State<AppState>, employee_id: String) -> Result<(), String> {
     if state.session.lock().unwrap().is_some() {
         return Err("Запись уже идёт".into());
     }
-    start_day_inner(&state).map_err(|e| e.to_string())
+    start_day_inner(&state, employee_id.clone()).map_err(|e| e.to_string())?;
+
+    // Remember the choice for tomorrow.
+    let mut settings = state.settings.lock().unwrap();
+    if settings.last_employee_id != employee_id {
+        settings.last_employee_id = employee_id;
+        let data_dir = state.data_dir.lock().unwrap().clone();
+        let _ = std::fs::write(
+            settings_path(&data_dir),
+            serde_json::to_string_pretty(&*settings).unwrap(),
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -284,6 +337,7 @@ fn main() {
             get_settings,
             save_settings,
             get_status,
+            list_employees,
             start_day,
             toggle_pause,
             finish_day

@@ -9,15 +9,30 @@ from fastapi import Depends
 from .. import storage
 from ..auth import DeviceContext, require_device
 from ..db import get_db
-from ..models import AudioSegment, DayRecording, Location
+from ..models import AudioSegment, DayRecording, Employee, Location
 from ..schemas import (
     DayFinishRequest,
     DayRecordingOut,
     DayStartRequest,
+    EmployeeOut,
     SegmentUploadedOut,
 )
 
 router = APIRouter(prefix="/api/recordings", tags=["recordings"])
+
+
+@router.get("/employees", response_model=list[EmployeeOut])
+async def list_location_employees(
+    device: DeviceContext = Depends(require_device),
+    db: AsyncSession = Depends(get_db),
+):
+    """Active managers of this device's location, for the app's picker."""
+    q = (
+        select(Employee)
+        .where(Employee.location_id == device.location_id, Employee.active.is_(True))
+        .order_by(Employee.full_name)
+    )
+    return (await db.scalars(q)).all()
 
 
 @router.post("/start", response_model=DayRecordingOut)
@@ -26,19 +41,37 @@ async def start_day(
     device: DeviceContext = Depends(require_device),
     db: AsyncSession = Depends(get_db),
 ):
-    """Idempotent: returns the existing day recording if already started."""
+    """Resume the session still in progress, otherwise open a new one.
+
+    Only a recording that is still in the `recording` state is resumed — that
+    is the app-restarted-after-a-crash case. A day that was already finished
+    stays untouched and a second session gets its own recording and report.
+    """
     location = await db.get(Location, device.location_id)
     if not location:
         raise HTTPException(404, "Location not found")
 
-    existing = await db.scalar(
-        select(DayRecording).where(
+    if body.employee_id:
+        employee = await db.get(Employee, body.employee_id)
+        if not employee or employee.location_id != device.location_id:
+            raise HTTPException(404, "Менеджер не найден на этой точке")
+
+    in_progress = await db.scalar(
+        select(DayRecording)
+        .where(
             DayRecording.location_id == device.location_id,
             DayRecording.date == body.date,
+            DayRecording.status == "recording",
         )
+        .order_by(DayRecording.created_at.desc())
     )
-    if existing:
-        return existing
+    if in_progress:
+        # Let a resumed session pick up the manager chosen on restart.
+        if body.employee_id and in_progress.employee_id != body.employee_id:
+            in_progress.employee_id = body.employee_id
+            await db.commit()
+            await db.refresh(in_progress)
+        return in_progress
 
     rec = DayRecording(
         org_id=location.org_id,
