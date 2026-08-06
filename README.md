@@ -87,12 +87,28 @@ npm run dev        # http://localhost:5173, проксирует /api на :8000
 
 ### 4. Десктоп-клиент
 
+Что должно быть установлено на машине сборки:
+
+| Инструмент | macOS | Windows |
+|---|---|---|
+| Компилятор C | `xcode-select --install` | Build Tools for Visual Studio (C++) |
+| Rust | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | rustup-init.exe с rustup.rs |
+| Node.js LTS | nodejs.org или `brew install node` | nodejs.org |
+| **CMake** | `brew install cmake` | входит в Build Tools / cmake.org |
+
+CMake обязателен: крейт `opus` собирает libopus из исходников. Без него сборка
+падает с `is cmake not installed?`. После установки инструментов открыть новое
+окно терминала (обновится PATH).
+
 ```bash
 cd desktop
 npm install
 npm run tauri dev      # разработка
 npm run tauri build    # сборка установщика
 ```
+
+Готовое приложение: `desktop/src-tauri/target/release/bundle/`
+(`macos/Audio Recorder.app` и `dmg/`).
 
 В настройках приложения указать адрес сервера и ключ устройства
 (из `DEVICE_API_KEYS`). Кнопки: начать день / пауза (личный разговор) /
