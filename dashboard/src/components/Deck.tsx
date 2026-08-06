@@ -144,8 +144,10 @@ export const Deck = forwardRef<DeckHandle, Props>(function Deck(
                 }}
               />
             ))}
-          <span className="tape-play" style={{ left: `${pct(time)}%` }} />
         </div>
+        {/* Головка живёт над дорожкой, а не внутри неё: у дорожки обрезка по
+            краям, и кружок-ручка на нуле и в конце срезался бы пополам. */}
+        <span className="tape-play" style={{ left: `${pct(time)}%` }} />
         {/* Настоящий range: перемотка стрелками и работа со скринридером
             достаются даром, а отрезки под ним остаются декорацией. */}
         <input

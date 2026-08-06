@@ -47,7 +47,8 @@
   /* Тени: одна стратегия глубины на весь интерфейс */
   --sh-1: 0 1px 2px rgba(11, 13, 22, 0.05), 0 1px 3px rgba(11, 13, 22, 0.04);
   --sh-2: 0 2px 4px -2px rgba(11, 13, 22, 0.06), 0 10px 24px -10px rgba(11, 13, 22, 0.16);
-  --sh-deck: 0 -10px 44px -14px rgba(11, 13, 22, 0.5);
+  --sh-deck: 0 2px 6px rgba(11, 13, 22, 0.18), 0 18px 40px -12px rgba(11, 13, 22, 0.5),
+    0 32px 70px -30px rgba(11, 13, 22, 0.7);
   --ring: 0 0 0 3px rgba(239, 19, 112, 0.2);
 
   /* Ритм */
@@ -376,7 +377,10 @@ input::placeholder,
 textarea::placeholder {
   color: var(--ink-4);
 }
-input:focus,
+/* Только текстовые контролы: общий `input:focus` цеплял и ползунок перемотки
+   и заливал ленту смены белым. */
+input[type="text"]:focus,
+input[type="password"]:focus,
 textarea:focus,
 select:focus {
   outline: none;
@@ -901,15 +905,30 @@ textarea.prompt-editor {
 .tape-seg.service {
   background: #ffab2e;
 }
+/* Головка воспроизведения: тонкая линия во всю ленту плюс кружок-ручка,
+   чтобы было видно, за что тянуть. Позиция одна на оба элемента, поэтому
+   при перемотке они не разъезжаются. */
 .tape-play {
   position: absolute;
-  inset: 4px auto 4px 0;
+  inset: 6px auto 6px 0;
   width: 2px;
-  background: var(--accent);
+  background: #fff;
   border-radius: 1px;
   box-shadow: 0 0 10px 1px rgba(239, 19, 112, 0.9);
   pointer-events: none;
   transform: translateX(-1px);
+}
+.tape-play::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* Ползунок — настоящий input[type=range]: клавиатура и доступность даром. */
@@ -925,14 +944,30 @@ textarea.prompt-editor {
   -webkit-appearance: none;
   cursor: pointer;
 }
-.tape-input:focus {
-  outline: none;
+/* Ползунок остаётся полностью прозрачным в любом состоянии: видимая часть —
+   лента под ним. Дорожку тоже гасим явно, иначе движок рисует свою. */
+.tape-input:focus,
+.tape-input:active,
+.tape-input:hover {
+  background: transparent;
+  border-color: transparent;
   box-shadow: none;
+  outline: none;
 }
 .tape-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-radius: 6px;
+}
+.tape-input::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+  height: 100%;
+}
+.tape-input::-moz-range-track,
+.tape-input::-moz-range-progress {
+  background: transparent;
+  border: none;
 }
 .tape-input::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -949,16 +984,23 @@ textarea.prompt-editor {
   cursor: pointer;
 }
 
+/* Дека висит над страницей, а не приклеена к её низу: капсула с зазором от
+   края, размытым фоном и глубокой тенью. Sticky, а не fixed, — так она
+   остаётся в потоке и не накрывает конец отчёта, когда он дочитан. */
 .deck {
   position: sticky;
-  bottom: 0;
-  z-index: 20;
+  bottom: 20px;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 24px -40px -56px;
-  padding: 12px 40px;
-  background: var(--deck);
+  margin: 32px 0 0;
+  padding: 9px 20px 9px 9px;
+  border-radius: 999px;
+  background: rgba(11, 13, 22, 0.86);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   color: var(--ink-deck);
   box-shadow: var(--sh-deck);
 }
@@ -1151,8 +1193,9 @@ tbody tr:hover {
     padding: 20px 16px 40px;
   }
   .deck {
-    margin: 20px -16px -40px;
-    padding: 10px 16px;
+    bottom: 12px;
+    margin: 24px 0 0;
+    padding: 8px 16px 8px 8px;
     gap: 10px;
   }
   .deck-legend {
