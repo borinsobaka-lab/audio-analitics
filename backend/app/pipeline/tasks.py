@@ -1,8 +1,11 @@
 """Celery orchestration: the full day-processing pipeline."""
 import json
+import logging
 import tempfile
 import traceback
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 
@@ -178,7 +181,10 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     llm = LlmClient()
     seg_content, seg_model = load_active_prompt(db, rec.org_id, "dialog_segmentation")
     dialogs_meta = llm.segment_dialogs(
-        day_text, seg_content, seg_model or settings.llm_model_stage1
+        day_text,
+        seg_content,
+        seg_model or settings.llm_model_stage1,
+        day_duration_s=rec.total_duration_s,
     )
 
     # 5. LLM stage 2: per-dialog script analysis (editable prompt + script).
@@ -189,10 +195,13 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     sales = upsells = 0
     scores: list[float] = []
 
+    failed_dialogs = 0
+
     for meta in dialogs_meta:
-        d_start = float(meta.get("start_s", 0))
-        d_end = float(meta.get("end_s", 0))
-        d_type = str(meta.get("type", "irrelevant"))
+        # Timestamps and type are already validated by normalize_dialogs().
+        d_start = meta["start_s"]
+        d_end = meta["end_s"]
+        d_type = meta["type"]
         d_turns = [t for t in turns if t.start >= d_start - 1 and t.end <= d_end + 1]
 
         dialog = Dialog(
@@ -222,18 +231,25 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
                 )
 
         if d_type in ANALYZABLE_TYPES and d_turns:
-            analysis = llm.analyze_dialog(
-                render_transcript(d_turns),
-                script_body,
-                stages,
-                an_content,
-                an_model or settings.llm_model_stage2,
-            )
+            # One dialog the model mangles must not cost the whole day's report.
+            try:
+                analysis = llm.analyze_dialog(
+                    render_transcript(d_turns),
+                    script_body,
+                    stages,
+                    an_content,
+                    an_model or settings.llm_model_stage2,
+                )
+            except Exception as e:
+                failed_dialogs += 1
+                logger.warning("dialog analysis failed at %.1fs: %s", d_start, e)
+                dialog.analysis_json = {"error": str(e)[:500]}
+                continue
+
             dialog.analysis_json = analysis
             dialog.outcome = analysis.get("outcome")
-            dialog.upsell_count = int(analysis.get("upsell_count") or 0)
-            eff = analysis.get("manager_effectiveness")
-            dialog.effectiveness_score = float(eff) if eff is not None else None
+            dialog.upsell_count = analysis["upsell_count"]
+            dialog.effectiveness_score = analysis["manager_effectiveness"]
 
             analyses.append({"start_s": d_start, "type": d_type, **analysis})
             if dialog.outcome == "sale":
@@ -258,9 +274,15 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     summary = None
     if analyses:
         sum_content, sum_model = load_active_prompt(db, rec.org_id, "daily_summary")
-        summary = llm.summarize_day(
-            analyses, stats, sum_content, sum_model or settings.llm_model_stage1
-        )
+        # The per-dialog analyses are the valuable part; a failed summary must
+        # not discard them.
+        try:
+            summary = llm.summarize_day(
+                analyses, stats, sum_content, sum_model or settings.llm_model_stage1
+            )
+        except Exception as e:
+            logger.warning("daily summary failed: %s", e)
+            summary = {"error": str(e)[:500]}
 
     existing = db.scalar(
         select(MetricsDaily).where(
@@ -285,4 +307,10 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         )
     )
     db.commit()
-    return f"processed: {len(dialogs_meta)} dialogs, {sales} sales"
+    if failed_dialogs:
+        rec.status_detail = f"{failed_dialogs} диалогов не удалось разобрать"
+        db.commit()
+    return (
+        f"processed: {len(dialogs_meta)} dialogs, {sales} sales, "
+        f"{failed_dialogs} failed"
+    )

@@ -63,6 +63,35 @@ async def day_report(
     )
 
 
+@router.post("/days/{recording_id}/reprocess", response_model=DayRecordingOut)
+async def reprocess_day(
+    recording_id: uuid.UUID,
+    user: UserContext = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-run the pipeline for a day: after a failure, or after editing prompts.
+
+    Previous dialogs and transcripts are replaced by the new run.
+    """
+    rec = await db.get(DayRecording, recording_id)
+    if not rec:
+        raise HTTPException(404, "Recording not found")
+    if rec.status == "processing":
+        raise HTTPException(409, "День уже обрабатывается")
+    if rec.status == "recording":
+        raise HTTPException(409, "Запись ещё не завершена в приложении")
+
+    rec.status = "uploaded"
+    rec.status_detail = "поставлен в очередь на повторную обработку"
+    await db.commit()
+    await db.refresh(rec)
+
+    from ..pipeline.tasks import process_day_recording
+
+    process_day_recording.delay(str(recording_id))
+    return rec
+
+
 @router.get("/dialogs/{dialog_id}", response_model=DialogDetailOut)
 async def dialog_detail(
     dialog_id: uuid.UUID,

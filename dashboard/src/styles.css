@@ -79,6 +79,8 @@ th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--bo
 th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: #f8fafc; }
+td.clickable-cell { cursor: pointer; color: var(--accent); font-weight: 600; }
+td.clickable-cell:hover { text-decoration: underline; }
 
 button {
   background: var(--accent);

@@ -26,6 +26,8 @@ export default function DayReportPage() {
   const { id } = useParams<{ id: string }>();
   const [report, setReport] = useState<DayReport | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reprocessing, setReprocessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -42,14 +44,46 @@ export default function DayReportPage() {
     el.play();
   };
 
-  if (error) return <div className="error">{error}</div>;
+  const reprocess = async () => {
+    if (!id) return;
+    if (
+      !confirm(
+        "Пересчитать отчёт по текущим промптам и скрипту? Прежний разбор дня будет заменён."
+      )
+    )
+      return;
+    setReprocessing(true);
+    setError("");
+    try {
+      await api.reprocessDay(id);
+      setNotice("Поставлено в очередь. Обновите страницу через пару минут.");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
+  if (error && !report) return <div className="error">{error}</div>;
   if (!report) return <div className="muted">Загрузка…</div>;
 
   const { recording, summary } = report;
 
   return (
     <div>
-      <h2>Отчёт за {recording.date}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <h2 style={{ marginRight: "auto" }}>Отчёт за {recording.date}</h2>
+        <button
+          className="secondary"
+          onClick={reprocess}
+          disabled={reprocessing}
+          title="Прогнать ту же запись через анализ заново — например, после правки промптов"
+        >
+          {reprocessing ? "Запуск…" : "Обработать заново"}
+        </button>
+      </div>
+      {notice && <div className="success">{notice}</div>}
+      {error && <div className="error">{error}</div>}
 
       <div className="stat-row">
         <Stat value={report.dialogs_total} label="Разговоров" />

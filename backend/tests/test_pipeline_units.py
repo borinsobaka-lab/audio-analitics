@@ -8,7 +8,13 @@ import pytest
 
 from app.pipeline.audio_prep import map_to_original_ts
 from app.pipeline.asr import Word
-from app.pipeline.llm import extract_json, render_prompt
+from app.pipeline.llm import (
+    extract_json,
+    normalize_analysis,
+    normalize_dialogs,
+    parse_timestamp,
+    render_prompt,
+)
 from app.pipeline.segmentation import (
     format_ts,
     group_conversations,
@@ -105,3 +111,91 @@ def test_extract_json_with_prose():
 def test_extract_json_invalid_raises():
     with pytest.raises(ValueError):
         extract_json("не json вообще")
+
+
+# --- timestamp coercion (LLM output is not trustworthy) ---
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (123, 123.0),
+        (12.5, 12.5),
+        ("125", 125.0),
+        ("125.5", 125.5),
+        ("125,5", 125.5),
+        ("125s", 125.0),
+        ("02:05", 125.0),
+        ("00:12:34", 754.0),
+        ("1:00:00", 3600.0),
+    ],
+)
+def test_parse_timestamp_accepts_common_formats(value, expected):
+    assert parse_timestamp(value) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("value", [None, "", "скоро", "1:2:3:4", {}])
+def test_parse_timestamp_returns_default_on_garbage(value):
+    assert parse_timestamp(value) is None
+    assert parse_timestamp(value, default=0.0) == 0.0
+
+
+# --- stage-1 normalization ---
+
+def test_normalize_dialogs_coerces_and_sorts():
+    raw = [
+        {"start_s": "00:02:00", "end_s": "00:03:00", "type": "SALE", "brief": "b"},
+        {"start_s": 10, "end_s": 20, "type": "consultation"},
+    ]
+    result = normalize_dialogs(raw)
+    assert [d["start_s"] for d in result] == [10.0, 120.0]
+    assert result[1]["type"] == "sale"
+    assert result[1]["end_s"] == 180.0
+
+
+def test_normalize_dialogs_skips_unusable_entries():
+    raw = [{"end_s": 20, "type": "sale"}, "не объект", {"start_s": 5, "type": "sale"}]
+    result = normalize_dialogs(raw)
+    assert len(result) == 1
+    assert result[0]["start_s"] == 5.0
+    assert result[0]["end_s"] == 65.0  # missing end gets a 60s window
+
+
+def test_normalize_dialogs_clamps_to_recording_length():
+    result = normalize_dialogs([{"start_s": 50, "end_s": 9999, "type": "sale"}], 100.0)
+    assert result[0]["end_s"] == 100.0
+
+
+def test_normalize_dialogs_unknown_type_becomes_irrelevant():
+    result = normalize_dialogs([{"start_s": 1, "end_s": 2, "type": "продажа"}])
+    assert result[0]["type"] == "irrelevant"
+
+
+# --- stage-2 normalization ---
+
+def test_normalize_analysis_coerces_fields():
+    raw = {
+        "script": {
+            "greeting": {"status": "done", "evidence": "Здравствуйте", "evidence_ts": "00:00:05"},
+            "closing": {"status": "выполнен", "evidence": None},
+        },
+        "outcome": "Sale",
+        "upsell_count": "2",
+        "manager_effectiveness": "0.8",
+        "deviations": "не отработал цену",
+        "recommendations": None,
+    }
+    result = normalize_analysis(raw)
+    assert result["script"]["greeting"]["evidence_ts"] == 5.0
+    assert result["script"]["closing"]["status"] == "not_done"
+    assert result["outcome"] == "sale"
+    assert result["upsell_count"] == 2
+    assert result["manager_effectiveness"] == pytest.approx(0.8)
+    assert result["deviations"] == ["не отработал цену"]
+    assert result["recommendations"] == []
+
+
+def test_normalize_analysis_clamps_effectiveness_and_bad_outcome():
+    result = normalize_analysis({"manager_effectiveness": 7, "outcome": "продажа"})
+    assert result["manager_effectiveness"] == 1.0
+    assert result["outcome"] is None
+    assert result["upsell_count"] == 0

@@ -36,6 +36,7 @@ const meterFill = $("meter-fill");
 const warnSilence = $("warn-silence");
 
 let busy = false;
+let finishing = false;
 // Number of consecutive polls with a completely silent input while recording.
 // The OS denying microphone access looks exactly like this, so warn about it.
 let silentPolls = 0;
@@ -72,7 +73,14 @@ function renderMeter(status: Status) {
 function render(status: Status) {
   dot.className = "dot" + (status.recording ? (status.paused ? " paused" : " on") : "");
   renderMeter(status);
-  if (status.recording) {
+  if (finishing) {
+    statusText.textContent = "Завершение дня…";
+    statusSub.textContent = "Дозагружаем сегменты на сервер, не закрывайте окно";
+    statsEl.innerHTML =
+      `Записано сегментов: ${status.chunks_recorded}<br>` +
+      `Загружено на сервер: ${status.chunks_uploaded}` +
+      (status.chunks_pending > 0 ? ` (в очереди: ${status.chunks_pending})` : "");
+  } else if (status.recording) {
     statusText.textContent = status.paused ? "ПАУЗА" : "● ИДЁТ ЗАПИСЬ";
     statusSub.textContent = `${status.date}, с ${status.started_at}`;
     statsEl.innerHTML =
@@ -87,6 +95,7 @@ function render(status: Status) {
     statusSub.textContent = "";
     statsEl.textContent = "";
   }
+  if (!status.recording && confirmingFinish) resetFinishButton();
   btnStart.disabled = status.recording || busy;
   btnPause.disabled = !status.recording || busy;
   btnFinish.disabled = !status.recording || busy;
@@ -126,19 +135,45 @@ btnPause.addEventListener("click", async () => {
   refresh();
 });
 
+// Confirmation is done in-app, not with window.confirm(): the macOS WebView
+// never displays native JS dialogs and silently reports "cancelled", which
+// made this button look dead.
+const FINISH_LABEL = "■ Завершить день и отправить";
+let confirmingFinish = false;
+let confirmTimer: number | undefined;
+
+function resetFinishButton() {
+  confirmingFinish = false;
+  if (confirmTimer) clearTimeout(confirmTimer);
+  confirmTimer = undefined;
+  btnFinish.textContent = FINISH_LABEL;
+}
+
 btnFinish.addEventListener("click", async () => {
-  if (!confirm("Завершить рабочий день? Запись остановится и уйдёт на обработку.")) return;
+  if (!confirmingFinish) {
+    confirmingFinish = true;
+    btnFinish.textContent = "Нажмите ещё раз, чтобы завершить день";
+    confirmTimer = window.setTimeout(resetFinishButton, 8000);
+    return;
+  }
+  resetFinishButton();
+
   busy = true;
+  finishing = true;
   setError("");
-  statusText.textContent = "Завершение: дозагрузка сегментов…";
+  render(await invoke<Status>("get_status"));
   try {
     const message = await invoke<string>("finish_day");
+    finishing = false;
     setError("");
+    await refresh();
     statusSub.textContent = message;
   } catch (e) {
+    finishing = false;
     setError(String(e));
   } finally {
     busy = false;
+    finishing = false;
     refresh();
   }
 });

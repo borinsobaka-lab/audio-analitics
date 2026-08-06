@@ -115,6 +115,8 @@ export interface ScriptTemplate {
 export const api = {
   listDays: () => request<DayRecording[]>("/api/reports/days"),
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
+  reprocessDay: (id: string) =>
+    request<DayRecording>(`/api/reports/days/${id}/reprocess`, { method: "POST" }),
   dialogDetail: (id: string) => request<DialogDetail>(`/api/reports/dialogs/${id}`),
   dayAudioUrl: (id: string) =>
     request<{ url: string; expires_in_s: number }>(`/api/audio/day/${id}`),

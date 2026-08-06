@@ -157,6 +157,122 @@ def extract_json(text: str):
     raise ValueError(f"LLM reply is not valid JSON: {text[:500]}")
 
 
+def parse_timestamp(value, default: float | None = None) -> float | None:
+    """Coerce an LLM-supplied timestamp to seconds.
+
+    Prompts ask for plain seconds, but models sometimes answer with
+    "00:12:34", "12:34", "125s" or null. Anything unparsable yields `default`
+    instead of crashing the whole day's processing.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", ".")
+    if not text:
+        return default
+    if text.endswith("s") and text[:-1].replace(".", "", 1).isdigit():
+        text = text[:-1]
+    if ":" in text:
+        parts = text.split(":")
+        if len(parts) > 3:
+            return default
+        seconds = 0.0
+        for part in parts:
+            try:
+                seconds = seconds * 60 + float(part or 0)
+            except ValueError:
+                return default
+        return seconds
+    try:
+        return float(text)
+    except ValueError:
+        return default
+
+
+def normalize_dialogs(items: list, day_duration_s: float | None = None) -> list[dict]:
+    """Validate stage-1 output: coerce timestamps, drop unusable entries.
+
+    A malformed dialog is skipped rather than aborting the day — one bad
+    entry should not cost the whole report.
+    """
+    valid_types = {"sale", "consultation", "refusal", "service", "irrelevant"}
+    result: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        start = parse_timestamp(item.get("start_s"))
+        end = parse_timestamp(item.get("end_s"))
+        if start is None:
+            continue
+        if end is None or end <= start:
+            # Missing or nonsensical end: keep the dialog with a short window
+            # so its turns can still be collected.
+            end = start + 60.0
+        if day_duration_s:
+            start = max(0.0, min(start, day_duration_s))
+            end = max(start, min(end, day_duration_s))
+        dialog_type = str(item.get("type", "")).strip().lower()
+        if dialog_type not in valid_types:
+            dialog_type = "irrelevant"
+        result.append(
+            {
+                **item,
+                "start_s": start,
+                "end_s": end,
+                "type": dialog_type,
+                "brief": str(item.get("brief", "") or ""),
+            }
+        )
+    result.sort(key=lambda d: d["start_s"])
+    return result
+
+
+def normalize_analysis(analysis: dict) -> dict:
+    """Validate stage-2 output: coerce numbers and per-stage evidence timestamps."""
+    valid_statuses = {"done", "partial", "not_done"}
+    script = {}
+    for key, raw in (analysis.get("script") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status", "")).strip().lower()
+        script[str(key)] = {
+            "status": status if status in valid_statuses else "not_done",
+            "evidence": raw.get("evidence") or None,
+            "evidence_ts": parse_timestamp(raw.get("evidence_ts")),
+        }
+
+    outcome = str(analysis.get("outcome", "")).strip().lower()
+    if outcome not in {"sale", "consultation", "refusal"}:
+        outcome = None
+
+    try:
+        upsell_count = max(0, int(float(analysis.get("upsell_count") or 0)))
+    except (TypeError, ValueError):
+        upsell_count = 0
+
+    effectiveness = analysis.get("manager_effectiveness")
+    try:
+        effectiveness = min(1.0, max(0.0, float(effectiveness)))
+    except (TypeError, ValueError):
+        effectiveness = None
+
+    def as_str_list(value) -> list[str]:
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        return [str(value)] if value else []
+
+    return {
+        **analysis,
+        "script": script,
+        "outcome": outcome,
+        "upsell_count": upsell_count,
+        "manager_effectiveness": effectiveness,
+        "deviations": as_str_list(analysis.get("deviations")),
+        "recommendations": as_str_list(analysis.get("recommendations")),
+    }
+
+
 class LlmClient:
     def __init__(self, api_key: str | None = None):
         settings = get_settings()
@@ -174,12 +290,24 @@ class LlmClient:
         text = "".join(block.text for block in message.content if block.type == "text")
         return extract_json(text)
 
-    def segment_dialogs(self, transcript: str, prompt_content: str, model: str) -> list[dict]:
+    def segment_dialogs(
+        self,
+        transcript: str,
+        prompt_content: str,
+        model: str,
+        day_duration_s: float | None = None,
+    ) -> list[dict]:
         prompt = render_prompt(prompt_content, transcript=transcript)
         result = self.complete_json(prompt, model)
+        # Tolerate a model that wraps the array in an object.
+        if isinstance(result, dict):
+            for key in ("dialogs", "interactions", "items", "result"):
+                if isinstance(result.get(key), list):
+                    result = result[key]
+                    break
         if not isinstance(result, list):
             raise ValueError("dialog_segmentation prompt must return a JSON array")
-        return result
+        return normalize_dialogs(result, day_duration_s)
 
     def analyze_dialog(
         self,
@@ -199,7 +327,7 @@ class LlmClient:
         result = self.complete_json(prompt, model)
         if not isinstance(result, dict):
             raise ValueError("sale_analysis prompt must return a JSON object")
-        return result
+        return normalize_analysis(result)
 
     def summarize_day(
         self, analyses: list[dict], stats: dict, prompt_content: str, model: str
