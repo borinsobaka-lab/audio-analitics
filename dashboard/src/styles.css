@@ -1,8 +1,8 @@
 /* ---------------------------------------------------------------------------
    Аналитика ресепшена Lady Stretch.
-   Мир — не бумага, а сама студия: холодный светлый зал, зеркала, и на этом
-   фоне единственный горячий цвет — фуксия, энергия женской студии растяжки.
-   Цвет ничего не украшает, у каждого своя работа: фуксия — действие и бренд,
+   Мир — не бумага, а сама студия: холодный светлый зал, тёмное боковое меню
+   и единственный горячий цвет — магента, энергия женской студии растяжки.
+   Цвет ничего не украшает, у каждого своя работа: магента — действие и бренд,
    красный — идёт запись и необратимое, янтарь — в работе, зелёный — готово.
    Глубина — мягкие многослойные тени на белых карточках; границы только там,
    где нужно провести черту.
@@ -33,12 +33,25 @@
   --edge-strong: rgba(11, 13, 22, 0.14);
   --edge-deck: rgba(255, 255, 255, 0.1);
 
-  /* Цвет со смыслом */
-  --accent: #ef1370;
-  --accent-hot: #d40f61;
-  --accent-tint: rgba(239, 19, 112, 0.09);
-  --red: #ff3b30;
-  --red-tint: rgba(255, 59, 48, 0.1);
+  /* Тёмное боковое меню */
+  --nav: #1a2027;
+  --nav-2: #232b35;
+  --nav-ink: #e8ecf1;
+  --nav-ink-2: #98a2b0;
+  --nav-edge: rgba(255, 255, 255, 0.09);
+
+  /* Цвет со смыслом.
+     Акцент светлый, поэтому у него три роли, а не одна: заливка, текст на
+     заливке и акцентный текст на светлом фоне. Белый на #fc5fff даёт 2.6:1 и
+     нечитаем, сам #fc5fff как текст на белом — тоже 2.6:1. Значения ниже
+     посчитаны, а не подобраны на глаз. */
+  --accent: #fc5fff;        /* заливки: кнопки, знак, лид-плитка, кружок play */
+  --accent-hot: #f43df8;    /* та же заливка под курсором */
+  --accent-on: #0b0d16;     /* текст НА акцентной заливке — 7.6:1 */
+  --accent-ink: #a81bad;    /* акцентный текст на светлом — 6.1:1 */
+  --accent-tint: rgba(252, 95, 255, 0.14);
+  --red: #e0271c;           /* белый текст на нём — 4.7:1 */
+  --red-tint: rgba(224, 39, 28, 0.1);
   --amber: #f08a00;
   --amber-tint: rgba(240, 138, 0, 0.12);
   --green: #00a874;
@@ -49,7 +62,7 @@
   --sh-2: 0 2px 4px -2px rgba(11, 13, 22, 0.06), 0 10px 24px -10px rgba(11, 13, 22, 0.16);
   --sh-deck: 0 2px 6px rgba(11, 13, 22, 0.18), 0 18px 40px -12px rgba(11, 13, 22, 0.5),
     0 32px 70px -30px rgba(11, 13, 22, 0.7);
-  --ring: 0 0 0 3px rgba(239, 19, 112, 0.2);
+  --ring: 0 0 0 3px rgba(252, 95, 255, 0.4);
 
   /* Ритм */
   --u: 4px;
@@ -157,11 +170,15 @@ a {
   min-height: 100vh;
 }
 
+/* Меню тёмное — единственный тёмный блок страницы наряду с декой. Светлый
+   акцент, нечитаемый как текст на белом, здесь даёт 6.4:1 и работает в полную
+   силу. */
 .sidebar {
   width: 244px;
   flex-shrink: 0;
-  background: var(--bg);
-  border-right: 1px solid var(--edge);
+  background: var(--nav);
+  color: var(--nav-ink);
+  border-right: none;
   padding: 22px 14px 16px;
   display: flex;
   flex-direction: column;
@@ -182,7 +199,7 @@ a {
   height: 28px;
   border-radius: 9px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -197,7 +214,7 @@ a {
 .brand-sub {
   display: block;
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--nav-ink-2);
   line-height: 1.25;
 }
 
@@ -208,7 +225,7 @@ a {
   min-height: 38px;
   padding: 0 11px;
   border-radius: var(--r-sm);
-  color: var(--ink-2);
+  color: var(--nav-ink-2);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -217,12 +234,15 @@ a {
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
 .nav-link svg {
-  color: var(--ink-4);
+  color: rgba(255, 255, 255, 0.4);
   transition: color 140ms var(--ease);
 }
 .nav-link:hover {
-  background: var(--card-2);
-  color: var(--ink);
+  background: var(--nav-2);
+  color: var(--nav-ink);
+}
+.nav-link:hover svg {
+  color: var(--nav-ink);
 }
 .nav-link.active {
   background: var(--accent-tint);
@@ -236,7 +256,41 @@ a {
 .sidebar-foot {
   margin-top: auto;
   padding-top: 16px;
-  border-top: 1px solid var(--edge-soft);
+  border-top: 1px solid var(--nav-edge);
+}
+/* Поля и кнопки внутри меню живут на тёмном: общие светлые стили здесь
+   пришлось бы читать белым по светло-серому. */
+.sidebar input[type="password"] {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--nav-ink);
+}
+.sidebar input[type="password"]::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+.sidebar input[type="password"]:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+}
+.sidebar .label {
+  color: var(--nav-ink-2);
+}
+.sidebar button.ghost {
+  color: var(--nav-ink-2);
+}
+.sidebar button.ghost:hover {
+  background: var(--nav-2);
+  color: var(--nav-ink);
+}
+.sidebar button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--nav-ink);
+  border-color: var(--nav-edge);
+  box-shadow: none;
+}
+.sidebar button.secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .content {
@@ -277,7 +331,7 @@ button {
   border-radius: var(--r-sm);
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -336,10 +390,11 @@ button.ghost:hover {
 
 button.danger {
   background: var(--red);
+  color: #fff;
   box-shadow: var(--sh-1);
 }
 button.danger:hover {
-  background: #e02a20;
+  background: #c41f15;
 }
 
 button.small {
@@ -386,7 +441,7 @@ textarea:focus,
 select:focus {
   outline: none;
   background: var(--card);
-  border-color: var(--accent);
+  border-color: var(--accent-ink);
   box-shadow: var(--ring);
 }
 select {
@@ -464,7 +519,7 @@ textarea.prompt-editor {
 }
 .pill.refusal {
   background: var(--red-tint);
-  color: #d92b21;
+  color: #c41f15;
 }
 .pill.service {
   background: var(--amber-tint);
@@ -518,7 +573,7 @@ textarea.prompt-editor {
   color: var(--green);
 }
 .status.error {
-  color: #d92b21;
+  color: #c41f15;
 }
 
 @keyframes beacon {
@@ -653,7 +708,7 @@ textarea.prompt-editor {
 /* Зоны те же, что у полосы: ниже половины — красный, около половины —
    янтарь, выше — зелёный. */
 .chip-score.low b {
-  color: #d92b21;
+  color: #c41f15;
 }
 .chip-score.mid b {
   color: #c96f00;
@@ -708,14 +763,14 @@ textarea.prompt-editor {
 /* Главный показатель смены забирает акцент — на экране он один. */
 .stat.lead {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   box-shadow: var(--sh-1);
 }
 .stat.lead .label {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(11, 13, 22, 0.62);
 }
 .stat.lead .v .of {
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(11, 13, 22, 0.5);
 }
 
 /* --- Полоса оценки ------------------------------------------------------ */
@@ -850,7 +905,7 @@ textarea.prompt-editor {
   color: var(--green);
 }
 .notes-title.bad {
-  color: #d92b21;
+  color: #c41f15;
 }
 
 .turns {
@@ -873,7 +928,7 @@ textarea.prompt-editor {
   white-space: nowrap;
 }
 .turn.manager .who {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* Метка времени — кнопка воспроизведения, а не текст. */
@@ -881,7 +936,7 @@ textarea.prompt-editor {
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-tint);
   border: 1px solid transparent;
   border-radius: 6px;
@@ -893,7 +948,7 @@ textarea.prompt-editor {
 }
 .cue:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   box-shadow: none;
 }
 /* В транскрипте таймкод стоит у каждой реплики: там он должен быть тихим,
@@ -904,7 +959,7 @@ textarea.prompt-editor {
 }
 .cue.quiet:hover {
   background: var(--accent-tint);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .cue svg {
   opacity: 0.8;
@@ -1060,7 +1115,7 @@ textarea.prompt-editor {
   padding: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   flex-shrink: 0;
 }
 .deck-play:hover {
@@ -1112,7 +1167,7 @@ textarea.prompt-editor {
 }
 .note.error {
   background: var(--red-tint);
-  color: #c22a21;
+  color: #c41f15;
 }
 .note.success {
   background: var(--green-tint);
@@ -1215,13 +1270,12 @@ tbody tr:hover {
     position: sticky;
     top: 0;
     z-index: 30;
-    background: var(--bg);
+    background: var(--nav);
     flex-direction: row;
     align-items: center;
     gap: 4px;
     padding: 10px 14px;
-    border-right: none;
-    border-bottom: 1px solid var(--edge);
+    border-bottom: 1px solid var(--nav-edge);
     overflow-x: auto;
   }
   .brand {
@@ -1426,7 +1480,7 @@ tbody tr:hover {
   color: var(--green);
 }
 .delta.down {
-  color: #d92b21;
+  color: #c41f15;
 }
 .delta.flat,
 .delta.none {
@@ -1434,7 +1488,7 @@ tbody tr:hover {
 }
 /* На акцентной плашке своя палитра: зелёное на фуксии нечитаемо. */
 .stat.lead .delta {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(11, 13, 22, 0.7);
 }
 
 .num-col {
@@ -1444,7 +1498,7 @@ tbody tr:hover {
 }
 
 .score-val.low {
-  color: #d92b21;
+  color: #c41f15;
 }
 .score-val.mid {
   color: #c96f00;
