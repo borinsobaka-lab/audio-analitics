@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from .. import storage
-from ..auth import DeviceContext, require_device
+from ..auth import DeviceContext, require_app, require_device
 from ..db import get_db
 from ..models import AudioSegment, DayRecording, Employee, Location
 from ..schemas import (
@@ -15,10 +15,26 @@ from ..schemas import (
     DayRecordingOut,
     DayStartRequest,
     EmployeePickOut,
+    LocationPickOut,
     SegmentUploadedOut,
 )
 
 router = APIRouter(prefix="/api/recordings", tags=["recordings"])
+
+
+@router.get("/locations", response_model=list[LocationPickOut])
+async def list_pickable_locations(
+    _: None = Depends(require_app),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список точек продажи для настройки приложения.
+
+    Отвечает на ключ приложения, без привязки к точке: приложение только что
+    установили, и точку как раз предстоит выбрать. Наружу отдаются имя и
+    адрес — по ним сотрудник узнаёт свою студию.
+    """
+    q = select(Location).where(Location.active.is_(True)).order_by(Location.name)
+    return (await db.scalars(q)).all()
 
 
 @router.get("/employees", response_model=list[EmployeePickOut])

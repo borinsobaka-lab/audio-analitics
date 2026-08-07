@@ -15,17 +15,29 @@ interface Status {
   upload_error: string;
   input_level: number;
   device_name: string;
+  location_name: string;
+  configured: boolean;
 }
 
 interface Settings {
   server_url: string;
+  app_key: string;
+  location_id: string;
+  location_name: string;
   device_key: string;
   last_employee_id: string;
+  autostart_configured: boolean;
 }
 
 interface Employee {
   id: string;
   full_name: string;
+}
+
+interface LocationPick {
+  id: string;
+  name: string;
+  address: string;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -38,10 +50,16 @@ const btnStart = $("btn-start") as HTMLButtonElement;
 const btnPause = $("btn-pause") as HTMLButtonElement;
 const btnFinish = $("btn-finish") as HTMLButtonElement;
 const serverUrl = $("server-url") as HTMLInputElement;
+const appKey = $("app-key") as HTMLInputElement;
 const deviceKey = $("device-key") as HTMLInputElement;
+const locationSelect = $("location") as HTMLSelectElement;
+const locationHint = $("location-hint");
+const autostart = $("autostart") as HTMLInputElement;
 const employeeSelect = $("employee") as HTMLSelectElement;
 const employeePicker = $("employee-picker");
 const employeeHint = $("employee-hint");
+const setupLocation = $("setup-location");
+const setupMic = $("setup-mic");
 const meter = $("meter");
 const meterTitle = $("meter-title");
 const meterFill = $("meter-fill");
@@ -82,9 +100,29 @@ function renderMeter(status: Status) {
   warnSilence.classList.toggle("show", silentPolls >= SILENT_POLLS_BEFORE_WARNING);
 }
 
+/** Что именно сейчас пишется — студия и микрофон. Обе строки видны до начала
+ *  смены: ошибку в них надо заметить сейчас, а не при разборе пустой записи. */
+function renderSetup(status: Status) {
+  if (status.location_name) {
+    setupLocation.textContent = status.location_name;
+    setupLocation.className = "val";
+  } else {
+    setupLocation.textContent = "не выбрана — откройте настройки";
+    setupLocation.className = "val missing";
+  }
+  if (status.device_name) {
+    setupMic.textContent = status.device_name;
+    setupMic.className = "val";
+  } else {
+    setupMic.textContent = "система не отдаёт микрофон";
+    setupMic.className = "val missing";
+  }
+}
+
 function render(status: Status) {
   dot.className = "dot" + (status.recording ? (status.paused ? " paused" : " on") : "");
   renderMeter(status);
+  renderSetup(status);
   if (finishing) {
     statusText.textContent = "Завершение дня…";
     statusSub.textContent = "Дозагружаем сегменты на сервер, не закрывайте окно";
@@ -111,7 +149,9 @@ function render(status: Status) {
   // Kept visible but locked while recording, so it always shows who is on shift.
   employeeSelect.disabled = status.recording || busy;
   employeePicker.style.opacity = status.recording ? "0.6" : "1";
-  btnStart.disabled = status.recording || busy;
+  // Точку продажи нельзя менять на ходу: смена уже открыта на другой студии.
+  locationSelect.disabled = status.recording;
+  btnStart.disabled = status.recording || busy || !status.configured;
   btnPause.disabled = !status.recording || busy;
   btnFinish.disabled = !status.recording || busy;
   btnPause.textContent = status.paused
@@ -135,7 +175,7 @@ async function loadEmployees(preselectId?: string) {
     if (employees.length === 0) {
       employeeSelect.innerHTML = '<option value="">Менеджеры не заведены</option>';
       employeeHint.textContent =
-        "Заведите менеджеров в веб-админке, на вкладке «Менеджеры».";
+        "Заведите сотрудников этой студии в веб-админке, в разделе «Сотрудники».";
       return;
     }
     employeeSelect.append(new Option("— выберите менеджера —", ""));
@@ -149,6 +189,34 @@ async function loadEmployees(preselectId?: string) {
   } catch (e) {
     employeeSelect.innerHTML = '<option value="">Список недоступен</option>';
     employeeHint.textContent = String(e);
+  }
+}
+
+let knownLocations: LocationPick[] = [];
+
+async function loadLocations(selectedId: string) {
+  try {
+    knownLocations = await invoke<LocationPick[]>("list_locations");
+    locationSelect.innerHTML = "";
+    if (knownLocations.length === 0) {
+      locationSelect.innerHTML = '<option value="">Точки не заведены</option>';
+      locationHint.textContent =
+        "Заведите точку продажи в веб-админке, в разделе «Точки продажи».";
+      return;
+    }
+    locationSelect.append(new Option("— выберите точку —", ""));
+    for (const location of knownLocations) {
+      const label = location.address
+        ? `${location.name} — ${location.address}`
+        : location.name;
+      locationSelect.append(new Option(label, location.id));
+    }
+    if (selectedId && knownLocations.some((l) => l.id === selectedId)) {
+      locationSelect.value = selectedId;
+    }
+  } catch (e) {
+    locationSelect.innerHTML = '<option value="">Список недоступен</option>';
+    locationHint.textContent = String(e);
   }
 }
 
@@ -224,20 +292,39 @@ btnFinish.addEventListener("click", async () => {
   }
 });
 
+autostart.addEventListener("change", async () => {
+  try {
+    await invoke("set_autostart", { enabled: autostart.checked });
+    setError("");
+  } catch (e) {
+    // Возвращаем галочку на место: состояние переключателя должно совпадать
+    // с тем, что реально настроено в системе.
+    autostart.checked = !autostart.checked;
+    setError(String(e));
+  }
+});
+
 $("btn-save-settings").addEventListener("click", async () => {
   try {
     const current = await invoke<Settings>("get_settings");
+    const locationId = locationSelect.value;
+    const chosen = knownLocations.find((l) => l.id === locationId);
     await invoke("save_settings", {
       settings: {
         server_url: serverUrl.value.trim(),
+        app_key: appKey.value.trim(),
+        location_id: locationId,
+        location_name: chosen?.name ?? "",
         device_key: deviceKey.value.trim(),
         last_employee_id: current.last_employee_id ?? "",
+        autostart_configured: current.autostart_configured,
       },
     });
     setError("");
     ($("settings-block") as HTMLDetailsElement).open = false;
-    // New server or key means a different list of managers.
+    // Другая точка — другой список менеджеров.
     await loadEmployees(current.last_employee_id);
+    await refresh();
   } catch (e) {
     setError(String(e));
   }
@@ -248,17 +335,27 @@ async function init() {
   try {
     settings = await invoke<Settings>("get_settings");
     serverUrl.value = settings.server_url;
+    appKey.value = settings.app_key;
     deviceKey.value = settings.device_key;
-    if (!settings.server_url) {
-      ($("settings-block") as HTMLDetailsElement).open = true;
-    }
   } catch (e) {
     setError(String(e));
   }
-  if (settings?.server_url && settings?.device_key) {
+
+  try {
+    autostart.checked = await invoke<boolean>("get_autostart");
+  } catch {
+    // Автозапуск может быть недоступен (например, приложение запущено из
+    // сборки без установки) — переключатель просто останется выключенным.
+  }
+
+  await loadLocations(settings?.location_id ?? "");
+
+  if (settings?.location_id || settings?.device_key) {
     await loadEmployees(settings.last_employee_id);
   } else {
-    employeeSelect.innerHTML = '<option value="">Сначала заполните настройки</option>';
+    employeeSelect.innerHTML = '<option value="">Сначала выберите точку продажи</option>';
+    // Настройки открыты сразу: без точки продажи начать смену нельзя.
+    ($("settings-block") as HTMLDetailsElement).open = true;
   }
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);

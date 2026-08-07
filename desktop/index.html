@@ -22,7 +22,7 @@
         background: #1e293b;
         border-radius: 14px;
         padding: 18px;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
       }
       .dot {
         width: 18px;
@@ -42,6 +42,25 @@
       }
       .indicator .text { font-size: 15px; font-weight: 600; }
       .indicator .sub { font-size: 12px; color: #94a3b8; font-weight: 400; }
+
+      /* Что именно сейчас записывается: студия и микрофон. Стоит до кнопки
+         «Начать», потому что ошибку в этих двух строках надо заметить до
+         смены, а не после разбора пустой дорожки. */
+      .setup {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .setup .row { display: flex; gap: 8px; }
+      .setup .row + .row { margin-top: 6px; }
+      .setup .key { color: #94a3b8; flex-shrink: 0; }
+      .setup .val { font-weight: 600; word-break: break-word; }
+      .setup .val.missing { color: #fca5a5; font-weight: 400; }
+      .setup .hint { color: #64748b; font-size: 12px; margin-top: 8px; }
+
       .meter {
         background: #1e293b;
         border-radius: 12px;
@@ -112,7 +131,22 @@
       }
       .picker select { font-size: 15px; padding: 11px; }
       .picker .hint { font-size: 12px; color: #64748b; margin-top: 6px; }
-      #btn-save-settings { background: #2563eb; margin-top: 10px; }
+      #location { font-size: 15px; padding: 11px; }
+      /* Переключатель — строка, а не поле: галочка и подпись в одну линию. */
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 14px 0 4px;
+        font-size: 13px;
+        color: #e2e8f0;
+        cursor: pointer;
+      }
+      .toggle input { width: auto; margin: 0; }
+      .toggle-hint { font-size: 12px; color: #64748b; margin: 0 0 4px 25px; }
+      #btn-save-settings { background: #2563eb; margin-top: 12px; }
+      details details { margin-left: 2px; }
+      details details summary { color: #64748b; font-size: 12px; }
     </style>
   </head>
   <body>
@@ -123,6 +157,21 @@
       <div>
         <div class="text" id="status-text">Запись не идёт</div>
         <div class="sub" id="status-sub"></div>
+      </div>
+    </div>
+
+    <div class="setup">
+      <div class="row">
+        <span class="key">Точка продажи:</span>
+        <span class="val" id="setup-location">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Микрофон:</span>
+        <span class="val" id="setup-mic">—</span>
+      </div>
+      <div class="hint" id="setup-hint">
+        Если это не микрофон стойки, смените его в системных настройках звука
+        («Вход») и перезапустите приложение.
       </div>
     </div>
 
@@ -157,11 +206,35 @@
 
     <details id="settings-block">
       <summary>Настройки</summary>
-      <label>Адрес сервера</label>
-      <input id="server-url" placeholder="https://api.example.com" />
-      <label>Ключ устройства</label>
-      <input id="device-key" type="password" placeholder="ключ из DEVICE_API_KEYS" />
+
+      <label for="location">Точка продажи</label>
+      <select id="location">
+        <option value="">Загрузка списка…</option>
+      </select>
+      <div class="toggle-hint" id="location-hint" style="margin-left: 0">
+        Выбирается один раз при установке — компьютер стоит на этой стойке.
+      </div>
+
+      <label class="toggle" for="autostart">
+        <input type="checkbox" id="autostart" />
+        Запускать вместе с компьютером
+      </label>
+      <div class="toggle-hint">
+        Приложение откроется само после включения или перезагрузки — запись
+        останется начать одной кнопкой.
+      </div>
+
       <button id="btn-save-settings">Сохранить настройки</button>
+
+      <details id="advanced-block">
+        <summary>Для настройщика</summary>
+        <label>Адрес сервера</label>
+        <input id="server-url" placeholder="задан в сборке" />
+        <label>Ключ приложения</label>
+        <input id="app-key" type="password" placeholder="задан в сборке" />
+        <label>Ключ устройства — прежняя схема</label>
+        <input id="device-key" type="password" placeholder="не используется" />
+      </details>
     </details>
 
     <script type="module" src="/src/main.ts"></script>

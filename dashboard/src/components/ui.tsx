@@ -45,6 +45,13 @@ export const IconPeople = ({ size = 17 }: IconProps) => (
   </svg>
 );
 
+export const IconStudio = ({ size = 17 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M4 21V10.5L12 4l8 6.5V21" />
+    <path d="M9.5 21v-5.5h5V21" />
+  </svg>
+);
+
 export const IconCalendar = ({ size = 15 }: IconProps) => (
   <svg {...base(size)}>
     <rect x="3" y="5" width="18" height="16" rx="2.5" />

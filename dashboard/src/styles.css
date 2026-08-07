@@ -1381,6 +1381,15 @@ tbody tr:hover {
     margin-bottom: 0;
     white-space: nowrap;
   }
+  .studio {
+    margin-bottom: 0;
+  }
+  .studio .label {
+    display: none;
+  }
+  .studio select {
+    min-width: 140px;
+  }
   .sidebar-foot .btn-block {
     width: auto;
   }
@@ -1746,6 +1755,25 @@ tbody tr:hover {
 }
 .login-card .btn-block + .btn-block {
   margin-top: 8px;
+}
+
+/* Переключатель студии внизу меню: тёмный фон, как у всего бокового меню. */
+.studio {
+  display: block;
+  margin-bottom: 12px;
+}
+.studio .label {
+  display: block;
+  margin-bottom: 5px;
+}
+.sidebar select {
+  background: var(--nav-fill);
+  color: var(--nav-ink);
+  border-color: var(--nav-edge);
+}
+.sidebar select:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
 }
 
 /* Кто вошёл — внизу меню, на месте прежнего поля токена. */

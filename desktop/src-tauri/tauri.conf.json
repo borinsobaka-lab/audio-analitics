@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Запись рабочего дня",
-        "width": 420,
-        "height": 560,
+        "width": 440,
+        "height": 680,
         "resizable": false
       }
     ],

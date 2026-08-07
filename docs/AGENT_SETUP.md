@@ -161,7 +161,7 @@
    | `ELEVENLABS_API_KEY` | из Шага 2 |
    | `ANTHROPIC_API_KEY` | из Шага 1 |
    | `ADMIN_API_TOKEN` | сгенерируй в Шаге 8 (пока не добавляй) |
-   | `DEVICE_API_KEYS` | заполним в Шаге 8 (пока не добавляй) |
+   | `APP_KEY` | сгенерируй в Шаге 8 (пока не добавляй) |
    | `CORS_ORIGINS` | заполним в Шаге 9 (пока не добавляй) |
 
 8. Нажми **Deploy** и дождись успешной сборки (первая сборка 5–10 минут).
@@ -183,15 +183,16 @@
    `Created location: ...` / финальной подсказки).
 4. Там же сгенерируй два секрета:
    ```
-   python -c "import secrets; print('DEVICE KEY:', secrets.token_urlsafe(32)); print('ADMIN TOKEN:', secrets.token_urlsafe(32))"
+   python -c "import secrets; print('APP KEY:', secrets.token_urlsafe(32)); print('ADMIN TOKEN:', secrets.token_urlsafe(32))"
    ```
-   📝 Сохрани оба значения.
+   📝 Сохрани оба значения. `APP KEY` — один на всю сеть студий: он
+   вшивается в сборку приложения записи, а точку продажи сотрудник
+   выбирает из списка сам.
 
 ## Шаг 8. Дозаполнение переменных и перезапуск
 
 1. Вернись в Environment Variables ресурса в Coolify и добавь:
-   - `DEVICE_API_KEYS` = `<DEVICE KEY из Шага 7>:<location_id из Шага 7>`
-     (формат строго `ключ:uuid`, без пробелов)
+   - `APP_KEY` = `<APP KEY из Шага 7>`
    - `ADMIN_API_TOKEN` = `<ADMIN TOKEN из Шага 7>`
 2. Нажми **Redeploy** (или Restart) ресурса, дождись Running.
 3. Проверка: открой `https://api-audio.<домен>/api/prompts` — должен
@@ -236,10 +237,12 @@
 - ✅/❌ по каждому шагу;
 - адрес API и адрес дашборда;
 - где сохранены: пароль БД Supabase, `DATABASE_URL`, ключи R2, ключи
-  Anthropic/ElevenLabs, `DEVICE_API_KEYS`, `ADMIN_API_TOKEN`, `location_id`;
+  Anthropic/ElevenLabs, `APP_KEY`, `ADMIN_API_TOKEN`, `location_id`;
 - какие тарифы/платежи были подключены (Anthropic credits, ElevenLabs
   Starter, R2);
 - проблемы, если были.
 
-Значения `API_URL`, `DEVICE KEY` и `ADMIN_API_TOKEN` понадобятся владельцу
-для настройки десктоп-приложения и дашборда.
+Значения `API_URL`, `APP KEY` и `ADMIN_API_TOKEN` понадобятся владельцу:
+первые два — чтобы собрать приложение записи
+(`AA_SERVER_URL=… AA_APP_KEY=… npm run build:mac:universal`), третий — чтобы
+войти в админку и завести там сотрудников и точки продажи.

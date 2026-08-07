@@ -20,6 +20,7 @@ from ..models import (
     DialogFeedback,
     DialogTurn,
     Employee,
+    Location,
     MetricEvaluation,
     MetricsDaily,
     Transcript,
@@ -41,12 +42,15 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 async def to_day_out(db: AsyncSession, rec: DayRecording) -> DayRecordingOut:
-    """Day recording plus the manager's name for display."""
+    """Day recording plus the names of the manager and the studio."""
     out = DayRecordingOut.model_validate(rec)
     if rec.employee_id:
         employee = await db.get(Employee, rec.employee_id)
         if employee:
             out.employee_name = employee.full_name
+    location = await db.get(Location, rec.location_id)
+    if location:
+        out.location_name = location.name
     return out
 
 

@@ -2,8 +2,11 @@
 
 Три входа, и это не наследие, а три разных клиента:
 
-1. Приложение на ресепшене — статический ключ устройства (X-Device-Key),
-   привязанный к точке через DEVICE_API_KEYS.
+1. Приложение на ресепшене — ключ приложения (X-App-Key, один на всю сеть,
+   вшит в сборку) плюс выбранная точка продажи (X-Location-Id). Прежняя схема
+   со своим ключом на каждое устройство (X-Device-Key + DEVICE_API_KEYS)
+   продолжает работать: обновление не должно останавливать запись там, где
+   приложение уже настроено.
 2. Сотрудник в админке — логин и пароль, в обмен выдаётся сессионный токен
    (Authorization: Bearer). Область видимости берётся из его карточки.
 3. Владелец — ADMIN_API_TOKEN. Оставлен намеренно: это ключ, которым в
@@ -23,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
 from .db import get_db
-from .models import Employee
+from .models import Employee, Location
 from .security import read_session
 
 settings = get_settings()
@@ -82,11 +85,38 @@ class UserContext:
         return employee_id is not None and employee_id == self.employee_id
 
 
-async def require_device(x_device_key: str = Header(default="")) -> DeviceContext:
-    key_map = settings.device_key_map()
-    if not key_map:
-        raise HTTPException(500, "DEVICE_API_KEYS is not configured")
-    location_id = key_map.get(x_device_key)
+def _app_key_ok(x_app_key: str) -> bool:
+    return bool(settings.app_key) and x_app_key == settings.app_key
+
+
+async def require_app(x_app_key: str = Header(default="")) -> None:
+    """Приложение записи без привязки к точке — только чтобы получить список
+    точек продажи для выбора в настройках."""
+    if not settings.app_key:
+        raise HTTPException(500, "APP_KEY is not configured")
+    if not _app_key_ok(x_app_key):
+        raise HTTPException(401, "Invalid app key")
+
+
+async def require_device(
+    x_device_key: str = Header(default=""),
+    x_app_key: str = Header(default=""),
+    x_location_id: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+) -> DeviceContext:
+    # Новая схема: общий ключ приложения плюс выбранная точка продажи.
+    if _app_key_ok(x_app_key):
+        try:
+            location_id = uuid.UUID(x_location_id)
+        except ValueError:
+            raise HTTPException(400, "Не выбрана точка продажи") from None
+        location = await db.get(Location, location_id)
+        if not location or not location.active:
+            raise HTTPException(404, "Точка продажи не найдена или закрыта")
+        return DeviceContext(location_id=location.id)
+
+    # Прежняя схема: свой ключ на каждое устройство.
+    location_id = settings.device_key_map().get(x_device_key) if x_device_key else None
     if not location_id:
         raise HTTPException(401, "Invalid device key")
     return DeviceContext(location_id=uuid.UUID(location_id))

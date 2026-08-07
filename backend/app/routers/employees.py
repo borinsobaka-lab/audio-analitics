@@ -37,10 +37,16 @@ router = APIRouter(prefix="/api/employees", tags=["employees"])
 MIN_LOGIN_LEN = 3
 
 
-def to_out(employee: Employee) -> EmployeeOut:
+def to_out(employee: Employee, location_names: dict | None = None) -> EmployeeOut:
     out = EmployeeOut.model_validate(employee)
     out.has_password = bool(employee.password_hash)
+    if location_names:
+        out.location_name = location_names.get(employee.location_id, "")
     return out
+
+
+async def location_names(db: AsyncSession) -> dict:
+    return {row.id: row.name for row in await db.scalars(select(Location))}
 
 
 async def default_location(db: AsyncSession) -> Location:
@@ -85,7 +91,8 @@ async def list_employees(
     q = select(Employee).order_by(Employee.active.desc(), Employee.full_name)
     if not include_inactive:
         q = q.where(Employee.active.is_(True))
-    return [to_out(e) for e in (await db.scalars(q)).all()]
+    names = await location_names(db)
+    return [to_out(e, names) for e in (await db.scalars(q)).all()]
 
 
 @router.post("", response_model=EmployeeCredentialsOut, status_code=201)
@@ -129,7 +136,9 @@ async def create_employee(
     # копирует его и передаёт сотруднику, повторно посмотреть нельзя.
     password = await issue_password(db, employee) if login else ""
     return EmployeeCredentialsOut(
-        employee=to_out(employee), login=login or "", password=password
+        employee=to_out(employee, await location_names(db)),
+        login=login or "",
+        password=password,
     )
 
 
@@ -176,7 +185,9 @@ async def update_employee(
         password = await issue_password(db, employee)
 
     return EmployeeCredentialsOut(
-        employee=to_out(employee), login=employee.login or "", password=password
+        employee=to_out(employee, await location_names(db)),
+        login=employee.login or "",
+        password=password,
     )
 
 
@@ -195,7 +206,9 @@ async def reset_password(
         raise HTTPException(400, "У сотрудника нет логина — сначала выдайте доступ")
     password = await issue_password(db, employee)
     return EmployeeCredentialsOut(
-        employee=to_out(employee), login=employee.login, password=password
+        employee=to_out(employee, await location_names(db)),
+        login=employee.login,
+        password=password,
     )
 
 

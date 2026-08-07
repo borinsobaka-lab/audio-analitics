@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     price_llm_output_per_mtok_usd: float = 15.00
 
     # --- Auth ---
+    # Ключ приложения записи. Он один на всю сеть студий и вшивается в сборку
+    # приложения: точку продажи сотрудник выбирает из списка, а не вводит ключ.
+    # Прежняя схема (свой ключ на каждое устройство) продолжает работать.
+    app_key: str = ""
     # Static API keys for desktop clients: "key1:location_id1,key2:location_id2"
     device_api_keys: str = ""
     # Static admin token for the dashboard: the owner's master key. Works even

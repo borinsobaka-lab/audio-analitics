@@ -12,24 +12,115 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use keep_awake::KeepAwake;
 use recorder::RecorderHandle;
 use uploader::{ServerConfig, Uploader};
 
+/// Адрес сервера и ключ приложения вшиваются в сборку:
+///
+///   AA_SERVER_URL=https://api.example.com AA_APP_KEY=… npm run build:mac
+///
+/// Смысл в том, чтобы у сотрудника на ресепшене осталась ровно одна
+/// настройка — точка продажи. Адрес и ключ он всё равно набирал с чужих слов,
+/// и любая опечатка выглядела как «сервер недоступен». Если сборку сделали без
+/// этих переменных, поля остаются в разделе «Для настройщика».
+const BUILT_IN_SERVER_URL: &str = match option_env!("AA_SERVER_URL") {
+    Some(v) => v,
+    None => "",
+};
+const BUILT_IN_APP_KEY: &str = match option_env!("AA_APP_KEY") {
+    Some(v) => v,
+    None => "",
+};
+
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
+    /// Пусто — берётся вшитый в сборку адрес.
+    #[serde(default)]
     server_url: String,
+    /// Пусто — берётся вшитый в сборку ключ приложения.
+    #[serde(default)]
+    app_key: String,
+    /// Точка продажи: единственное, что выбирает сотрудник.
+    #[serde(default)]
+    location_id: String,
+    /// Имя точки — чтобы показать выбор, не дожидаясь ответа сервера.
+    #[serde(default)]
+    location_name: String,
+    /// Прежняя схема: свой ключ на каждое устройство. Оставлен, чтобы
+    /// обновление не остановило запись там, где приложение уже настроено.
+    #[serde(default)]
     device_key: String,
     /// Manager chosen last time — preselected so the daily routine is one click.
     #[serde(default)]
     last_employee_id: String,
+    /// Автозапуск настраивался хотя бы раз. До этого приложение включает его
+    /// само: компьютер на ресепшене перезагружают, и запись должна подняться
+    /// вместе с ним, а не ждать, пока кто-то вспомнит.
+    #[serde(default)]
+    autostart_configured: bool,
+}
+
+impl Settings {
+    fn base_url(&self) -> String {
+        let url = if self.server_url.is_empty() {
+            BUILT_IN_SERVER_URL
+        } else {
+            &self.server_url
+        };
+        url.trim_end_matches('/').to_string()
+    }
+
+    fn app_key(&self) -> String {
+        if self.app_key.is_empty() {
+            BUILT_IN_APP_KEY.to_string()
+        } else {
+            self.app_key.clone()
+        }
+    }
+
+    /// Настроено ли приложение достаточно, чтобы обращаться к серверу.
+    fn ready(&self) -> Result<(), String> {
+        if self.base_url().is_empty() {
+            return Err("Не задан адрес сервера — раздел «Для настройщика»".into());
+        }
+        let by_app = !self.app_key().is_empty() && !self.location_id.is_empty();
+        if !by_app && self.device_key.is_empty() {
+            return Err("Выберите точку продажи в настройках".into());
+        }
+        Ok(())
+    }
+}
+
+/// Заголовки авторизации: новая схема (ключ приложения + точка продажи), а на
+/// уже настроенных машинах — прежний ключ устройства.
+fn with_auth(
+    req: reqwest::blocking::RequestBuilder,
+    settings: &Settings,
+) -> reqwest::blocking::RequestBuilder {
+    let app_key = settings.app_key();
+    if !app_key.is_empty() && !settings.location_id.is_empty() {
+        req.header("X-App-Key", app_key)
+            .header("X-Location-Id", &settings.location_id)
+    } else {
+        req.header("X-Device-Key", &settings.device_key)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Employee {
     id: String,
     full_name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LocationPick {
+    id: String,
+    name: String,
+    #[serde(default)]
+    address: String,
 }
 
 struct ActiveSession {
@@ -62,7 +153,11 @@ struct Status {
     upload_error: String,
     /// 0.0..1.0 peak input level; stays at 0 if the mic is muted or blocked.
     input_level: f32,
+    /// Микрофон: во время записи — тот, с которого реально идёт звук, до
+    /// записи — тот, который система отдаст при старте.
     device_name: String,
+    location_name: String,
+    configured: bool,
 }
 
 fn settings_path(data_dir: &PathBuf) -> PathBuf {
@@ -76,6 +171,15 @@ fn load_settings(data_dir: &PathBuf) -> Settings {
         .unwrap_or_default()
 }
 
+fn write_settings(data_dir: &PathBuf, settings: &Settings) -> Result<(), String> {
+    std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+    std::fs::write(
+        settings_path(data_dir),
+        serde_json::to_string_pretty(settings).unwrap(),
+    )
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_settings(state: tauri::State<AppState>) -> Settings {
     state.settings.lock().unwrap().clone()
@@ -84,18 +188,24 @@ fn get_settings(state: tauri::State<AppState>) -> Settings {
 #[tauri::command]
 fn save_settings(state: tauri::State<AppState>, settings: Settings) -> Result<(), String> {
     let data_dir = state.data_dir.lock().unwrap().clone();
-    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-    std::fs::write(
-        settings_path(&data_dir),
-        serde_json::to_string_pretty(&settings).unwrap(),
-    )
-    .map_err(|e| e.to_string())?;
-    *state.settings.lock().unwrap() = settings;
+    // Выбор менеджера и признак настройки автозапуска приходят не из формы —
+    // их нельзя терять при сохранении настроек.
+    let mut merged = settings;
+    {
+        let current = state.settings.lock().unwrap();
+        if merged.last_employee_id.is_empty() {
+            merged.last_employee_id = current.last_employee_id.clone();
+        }
+        merged.autostart_configured = current.autostart_configured;
+    }
+    write_settings(&data_dir, &merged)?;
+    *state.settings.lock().unwrap() = merged;
     Ok(())
 }
 
 #[tauri::command]
 fn get_status(state: tauri::State<AppState>) -> Status {
+    let settings = state.settings.lock().unwrap().clone();
     let session = state.session.lock().unwrap();
     match session.as_ref() {
         Some(s) => Status {
@@ -110,6 +220,8 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             upload_error: s.uploader.last_error.lock().unwrap().clone(),
             input_level: s.recorder.input_level(),
             device_name: s.recorder.device_name.clone(),
+            location_name: settings.location_name.clone(),
+            configured: settings.ready().is_ok(),
         },
         None => Status {
             recording: false,
@@ -122,7 +234,11 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             chunks_pending: 0,
             upload_error: String::new(),
             input_level: 0.0,
-            device_name: String::new(),
+            // До начала записи микрофон уже виден: сотрудник должен заметить
+            // «наушники» вместо микрофона стойки ДО того, как запишет смену.
+            device_name: recorder::default_input_name().unwrap_or_default(),
+            location_name: settings.location_name.clone(),
+            configured: settings.ready().is_ok(),
         },
     }
 }
@@ -133,20 +249,44 @@ struct StartDayResponse {
 }
 
 #[tauri::command]
-fn list_employees(state: tauri::State<AppState>) -> Result<Vec<Employee>, String> {
+fn list_locations(state: tauri::State<AppState>) -> Result<Vec<LocationPick>, String> {
     let settings = state.settings.lock().unwrap().clone();
-    if settings.server_url.is_empty() || settings.device_key.is_empty() {
-        return Err("Заполните адрес сервера и ключ устройства в настройках".into());
+    let base = settings.base_url();
+    if base.is_empty() {
+        return Err("Не задан адрес сервера — раздел «Для настройщика»".into());
+    }
+    let app_key = settings.app_key();
+    if app_key.is_empty() {
+        return Err("Не задан ключ приложения — раздел «Для настройщика»".into());
     }
     let client = reqwest::blocking::Client::new();
     let resp = client
-        .get(format!(
-            "{}/api/recordings/employees",
-            settings.server_url.trim_end_matches('/')
-        ))
-        .header("X-Device-Key", &settings.device_key)
+        .get(format!("{base}/api/recordings/locations"))
+        .header("X-App-Key", app_key)
         .send()
         .map_err(|e| format!("Сервер недоступен: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Сервер ответил {}: {}",
+            resp.status(),
+            resp.text().unwrap_or_default()
+        ));
+    }
+    resp.json::<Vec<LocationPick>>()
+        .map_err(|e| format!("Некорректный ответ сервера: {e}"))
+}
+
+#[tauri::command]
+fn list_employees(state: tauri::State<AppState>) -> Result<Vec<Employee>, String> {
+    let settings = state.settings.lock().unwrap().clone();
+    settings.ready()?;
+    let client = reqwest::blocking::Client::new();
+    let resp = with_auth(
+        client.get(format!("{}/api/recordings/employees", settings.base_url())),
+        &settings,
+    )
+    .send()
+    .map_err(|e| format!("Сервер недоступен: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!(
             "Сервер ответил {}: {}",
@@ -158,10 +298,43 @@ fn list_employees(state: tauri::State<AppState>) -> Result<Vec<Employee>, String
         .map_err(|e| format!("Некорректный ответ сервера: {e}"))
 }
 
+/// Микрофон, с которого пойдёт запись, — до её начала.
+#[tauri::command]
+fn input_device() -> String {
+    recorder::default_input_name().unwrap_or_default()
+}
+
+#[tauri::command]
+fn get_autostart(app: tauri::AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    result.map_err(|e| e.to_string())?;
+    // Ручной выбор запоминается, чтобы приложение больше не включало
+    // автозапуск само при следующем старте.
+    let data_dir = state.data_dir.lock().unwrap().clone();
+    let mut settings = state.settings.lock().unwrap();
+    settings.autostart_configured = true;
+    let _ = write_settings(&data_dir, &settings);
+    Ok(())
+}
+
 fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Result<()> {
     let settings = state.settings.lock().unwrap().clone();
-    if settings.server_url.is_empty() || settings.device_key.is_empty() {
-        anyhow::bail!("Заполните адрес сервера и ключ устройства в настройках");
+    if let Err(message) = settings.ready() {
+        anyhow::bail!(message);
     }
     if employee_id.is_empty() {
         anyhow::bail!("Выберите менеджера, который начинает рабочий день");
@@ -171,15 +344,13 @@ fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Resul
 
     // Register (or resume) the day on the server.
     let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(format!(
-            "{}/api/recordings/start",
-            settings.server_url.trim_end_matches('/')
-        ))
-        .header("X-Device-Key", &settings.device_key)
-        .json(&serde_json::json!({ "date": date, "employee_id": employee_id }))
-        .send()
-        .context("Сервер недоступен")?;
+    let resp = with_auth(
+        client.post(format!("{}/api/recordings/start", settings.base_url())),
+        &settings,
+    )
+    .json(&serde_json::json!({ "date": date, "employee_id": employee_id }))
+    .send()
+    .context("Сервер недоступен")?;
     if !resp.status().is_success() {
         anyhow::bail!("Сервер ответил {}: {}", resp.status(), resp.text().unwrap_or_default());
     }
@@ -200,7 +371,9 @@ fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Resul
         chunks_dir.clone(),
         day.id.clone(),
         ServerConfig {
-            base_url: settings.server_url.clone(),
+            base_url: settings.base_url(),
+            app_key: settings.app_key(),
+            location_id: settings.location_id.clone(),
             device_key: settings.device_key.clone(),
         },
     );
@@ -246,14 +419,11 @@ fn start_day(state: tauri::State<AppState>, employee_id: String) -> Result<(), S
     start_day_inner(&state, employee_id.clone()).map_err(|e| e.to_string())?;
 
     // Remember the choice for tomorrow.
+    let data_dir = state.data_dir.lock().unwrap().clone();
     let mut settings = state.settings.lock().unwrap();
     if settings.last_employee_id != employee_id {
         settings.last_employee_id = employee_id;
-        let data_dir = state.data_dir.lock().unwrap().clone();
-        let _ = std::fs::write(
-            settings_path(&data_dir),
-            serde_json::to_string_pretty(&*settings).unwrap(),
-        );
+        let _ = write_settings(&data_dir, &settings);
     }
     Ok(())
 }
@@ -294,16 +464,17 @@ fn finish_day(state: tauri::State<AppState>) -> Result<String, String> {
 
     // 3. Tell the server the day is complete → processing starts.
     let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(format!(
+    let resp = with_auth(
+        client.post(format!(
             "{}/api/recordings/{}/finish",
-            settings.server_url.trim_end_matches('/'),
+            settings.base_url(),
             recording_id
-        ))
-        .header("X-Device-Key", &settings.device_key)
-        .json(&serde_json::json!({ "total_segments": total_segments }))
-        .send()
-        .map_err(|e| format!("Сервер недоступен: {e}"))?;
+        )),
+        &settings,
+    )
+    .json(&serde_json::json!({ "total_segments": total_segments }))
+    .send()
+    .map_err(|e| format!("Сервер недоступен: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!(
             "Сервер ответил {}: {}",
@@ -321,15 +492,38 @@ fn finish_day(state: tauri::State<AppState>) -> Result<String, String> {
 fn main() {
     env_logger::init();
     tauri::Builder::default()
+        // Автозапуск при входе в систему: LaunchAgent на macOS, ключ Run на
+        // Windows. Приложение стоит на ресепшене, его никто не «запускает» —
+        // оно должно быть открыто с утра само.
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .expect("no app data dir");
             std::fs::create_dir_all(&data_dir).ok();
-            let state = app.state::<AppState>();
-            *state.settings.lock().unwrap() = load_settings(&data_dir);
-            *state.data_dir.lock().unwrap() = data_dir;
+            let settings = load_settings(&data_dir);
+            let configured = settings.autostart_configured;
+            {
+                let state = app.state::<AppState>();
+                *state.settings.lock().unwrap() = settings;
+                *state.data_dir.lock().unwrap() = data_dir.clone();
+            }
+            // При первом запуске автозапуск включается сам: это то поведение,
+            // которого от программы на ресепшене и ждут. Дальше решает
+            // переключатель в настройках.
+            if !configured {
+                if let Err(e) = app.autolaunch().enable() {
+                    log::warn!("не удалось включить автозапуск: {e}");
+                }
+                let state = app.state::<AppState>();
+                let mut settings = state.settings.lock().unwrap();
+                settings.autostart_configured = true;
+                let _ = write_settings(&data_dir, &settings);
+            }
             Ok(())
         })
         .manage(AppState::default())
@@ -337,7 +531,11 @@ fn main() {
             get_settings,
             save_settings,
             get_status,
+            list_locations,
             list_employees,
+            input_device,
+            get_autostart,
+            set_autostart,
             start_day,
             toggle_pause,
             finish_day

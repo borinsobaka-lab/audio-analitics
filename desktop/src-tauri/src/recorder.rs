@@ -73,6 +73,17 @@ impl RecorderHandle {
     }
 }
 
+/// Имя микрофона, который система отдаст при старте записи.
+///
+/// Нужно до начала смены: «наушники» вместо микрофона стойки должны быть
+/// замечены ДО того, как записан рабочий день, а не после разбора пустой
+/// дорожки. Устройство только опрашивается — поток не открывается.
+pub fn default_input_name() -> Option<String> {
+    cpal::default_host()
+        .default_input_device()
+        .and_then(|d| d.name().ok())
+}
+
 /// Start capturing into `chunks_dir`, producing seg_{idx:05}.opus files.
 /// `first_chunk_idx` allows resuming a day after an app restart.
 pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> {

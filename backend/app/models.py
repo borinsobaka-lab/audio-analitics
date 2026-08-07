@@ -45,12 +45,20 @@ class Organization(UUIDMixin, Base):
 
 
 class Location(UUIDMixin, Base):
+    """Точка продажи — одна студия с одним ресепшеном.
+
+    Приложение записи выбирает её один раз в настройках и больше не трогает:
+    компьютер стоит на конкретной стойке. Закрытая точка (active=False) не
+    показывается в выборе, но её смены остаются в отчётах.
+    """
+
     __tablename__ = "locations"
 
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     address: Mapped[str] = mapped_column(String(512), default="")
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Tbilisi")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Employee(UUIDMixin, Base):

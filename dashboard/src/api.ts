@@ -62,6 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface DayRecording {
   id: string;
   location_id: string;
+  location_name: string | null;
   date: string;
   status: string;
   status_detail: string;
@@ -106,9 +107,20 @@ export interface MetricEvaluation {
   comment: string;
 }
 
+export interface Location {
+  id: string;
+  name: string;
+  address: string;
+  timezone: string;
+  active: boolean;
+  employees_count: number;
+  shifts_count: number;
+}
+
 export interface Employee {
   id: string;
   location_id: string;
+  location_name: string;
   full_name: string;
   role: string;
   active: boolean;
@@ -273,7 +285,10 @@ export const api = {
     }),
   me: () => request<Me>("/api/auth/me"),
 
-  listDays: () => request<DayRecording[]>("/api/reports/days"),
+  listDays: (locationId?: string) =>
+    request<DayRecording[]>(
+      `/api/reports/days${locationId ? `?location_id=${locationId}` : ""}`
+    ),
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
   reprocessDay: (id: string) =>
     request<DayRecording>(`/api/reports/days/${id}/reprocess`, { method: "POST" }),
@@ -296,18 +311,42 @@ export const api = {
   deleteMetric: (id: string) =>
     request<void>(`/api/metrics/${id}`, { method: "DELETE" }),
 
-  summary: (params: { date_from: string; date_to: string; employee_id?: string }) => {
+  summary: (params: {
+    date_from: string;
+    date_to: string;
+    employee_id?: string;
+    location_id?: string;
+  }) => {
     const q = new URLSearchParams({
       date_from: params.date_from,
       date_to: params.date_to,
     });
     if (params.employee_id) q.set("employee_id", params.employee_id);
+    if (params.location_id) q.set("location_id", params.location_id);
     return request<Summary>(`/api/analytics/summary?${q}`);
   },
+
+  listLocations: () => request<Location[]>("/api/locations"),
+  createLocation: (body: { name: string; address?: string }) =>
+    request<Location>("/api/locations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateLocation: (
+    id: string,
+    body: { name?: string; address?: string; active?: boolean }
+  ) =>
+    request<Location>(`/api/locations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteLocation: (id: string) =>
+    request<void>(`/api/locations/${id}`, { method: "DELETE" }),
 
   listEmployees: () => request<Employee[]>("/api/employees"),
   createEmployee: (body: {
     full_name: string;
+    location_id?: string | null;
     login?: string | null;
     access_scope?: "own" | "all";
   }) =>

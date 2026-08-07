@@ -9,6 +9,7 @@ from .routers import (
     auth_router,
     employees,
     feedback,
+    locations,
     metrics,
     prompts,
     recordings,
@@ -38,6 +39,7 @@ app.include_router(feedback.router)
 app.include_router(agreements.router)
 app.include_router(analytics.router)
 app.include_router(employees.router)
+app.include_router(locations.router)
 app.include_router(metrics.router)
 app.include_router(prompts.router)
 app.include_router(prompts.script_router)

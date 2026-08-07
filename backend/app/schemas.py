@@ -15,6 +15,7 @@ class DayStartRequest(BaseModel):
 class DayRecordingOut(BaseModel):
     id: uuid.UUID
     location_id: uuid.UUID
+    location_name: str | None = None
     date: date
     status: str
     status_detail: str = ""
@@ -56,11 +57,49 @@ class SessionOut(BaseModel):
     user: MeOut
 
 
+# --- Точки продажи (студии) ---
+
+class LocationOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    address: str = ""
+    timezone: str = "Asia/Tbilisi"
+    active: bool = True
+    employees_count: int = 0
+    shifts_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class LocationCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    address: str = Field(default="", max_length=512)
+    timezone: str = "Asia/Tbilisi"
+
+
+class LocationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    address: str | None = Field(default=None, max_length=512)
+    timezone: str | None = None
+    active: bool | None = None
+
+
+class LocationPickOut(BaseModel):
+    """То, что видит приложение на ресепшене в списке «Точка продажи»."""
+
+    id: uuid.UUID
+    name: str
+    address: str = ""
+
+    model_config = {"from_attributes": True}
+
+
 # --- Employees (managers) ---
 
 class EmployeeOut(BaseModel):
     id: uuid.UUID
     location_id: uuid.UUID
+    location_name: str = ""
     full_name: str
     role: str
     active: bool

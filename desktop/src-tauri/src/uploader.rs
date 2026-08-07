@@ -11,7 +11,25 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct ServerConfig {
     pub base_url: String,
+    /// Новая схема: общий ключ приложения плюс выбранная точка продажи.
+    pub app_key: String,
+    pub location_id: String,
+    /// Прежняя схема: свой ключ на каждое устройство.
     pub device_key: String,
+}
+
+impl ServerConfig {
+    fn auth(
+        &self,
+        req: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        if !self.app_key.is_empty() && !self.location_id.is_empty() {
+            req.header("X-App-Key", &self.app_key)
+                .header("X-Location-Id", &self.location_id)
+        } else {
+            req.header("X-Device-Key", &self.device_key)
+        }
+    }
 }
 
 pub struct Uploader {
@@ -159,11 +177,7 @@ fn upload_pending(
             recording_id,
             idx
         );
-        let resp = client
-            .put(&url)
-            .header("X-Device-Key", &config.device_key)
-            .multipart(form)
-            .send()?;
+        let resp = config.auth(client.put(&url)).multipart(form).send()?;
         if !resp.status().is_success() {
             anyhow::bail!("PUT {url} → {}: {}", resp.status(), resp.text().unwrap_or_default());
         }

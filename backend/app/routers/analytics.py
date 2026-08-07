@@ -100,6 +100,7 @@ async def collect(
     date_from: date,
     date_to: date,
     employee_id: uuid.UUID | None,
+    location_id: uuid.UUID | None = None,
 ) -> Slice:
     """Одна выборка периода. Вызывается дважды: текущий период и предыдущий."""
     result = Slice()
@@ -122,6 +123,8 @@ async def collect(
     )
     if employee_id:
         shift_q = shift_q.where(DayRecording.employee_id == employee_id)
+    if location_id:
+        shift_q = shift_q.where(DayRecording.location_id == location_id)
 
     for row in (await db.execute(shift_q)).all():
         result.shifts.append(
@@ -157,6 +160,8 @@ async def collect(
     )
     if employee_id:
         score_q = score_q.where(DayRecording.employee_id == employee_id)
+    if location_id:
+        score_q = score_q.where(DayRecording.location_id == location_id)
 
     for metric_id, emp_id, day, count, score_sum in (await db.execute(score_q)).all():
         n = int(count or 0)
@@ -175,6 +180,7 @@ async def summary(
     date_from: date = Query(..., description="Начало периода включительно"),
     date_to: date = Query(..., description="Конец периода включительно"),
     employee_id: uuid.UUID | None = Query(default=None),
+    location_id: uuid.UUID | None = Query(default=None, description="Точка продажи"),
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -196,8 +202,8 @@ async def summary(
     prev_to = date_from - timedelta(days=1)
     prev_from = prev_to - timedelta(days=length - 1)
 
-    current = await collect(db, date_from, date_to, employee_id)
-    previous = await collect(db, prev_from, prev_to, employee_id)
+    current = await collect(db, date_from, date_to, employee_id, location_id)
+    previous = await collect(db, prev_from, prev_to, employee_id, location_id)
 
     metrics = list(
         await db.scalars(select(AnalysisMetric).order_by(AnalysisMetric.position))
