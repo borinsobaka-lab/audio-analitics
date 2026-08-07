@@ -5,9 +5,17 @@
 # prompt and silently feeds the app digital silence. Tauri is supposed to
 # merge src-tauri/Info.plist, but this step makes it deterministic — and
 # re-signs the bundle, because editing Info.plist invalidates the signature.
+#
+# Аргумент — цель сборки (например universal-apple-darwin). Без аргумента
+# берётся обычная сборка под архитектуру текущей машины.
 set -euo pipefail
 
-APP="src-tauri/target/release/bundle/macos/Audio Recorder.app"
+TARGET="${1:-}"
+if [ -n "$TARGET" ]; then
+  APP="src-tauri/target/$TARGET/release/bundle/macos/Audio Recorder.app"
+else
+  APP="src-tauri/target/release/bundle/macos/Audio Recorder.app"
+fi
 PLIST="$APP/Contents/Info.plist"
 DESCRIPTION="Приложение записывает разговоры на ресепшене для аналитики качества обслуживания и продаж."
 
@@ -21,3 +29,5 @@ codesign --force --sign - "$APP"
 
 echo "Info.plist обновлён, приложение переподписано:"
 plutil -p "$PLIST" | grep -i microphone
+echo "Архитектуры бандла:"
+lipo -archs "$APP/Contents/MacOS/Audio Recorder"

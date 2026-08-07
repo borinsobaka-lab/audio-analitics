@@ -135,12 +135,34 @@ CMake обязателен: крейт `opus` собирает libopus из ис
 ```bash
 cd desktop
 npm install
-npm run tauri dev      # разработка
-npm run tauri build    # сборка установщика
+npm run tauri dev            # разработка
+npm run build:mac            # сборка под архитектуру этой машины
+npm run build:mac:universal  # сборка сразу под Apple Silicon и Intel
 ```
 
 Готовое приложение: `desktop/src-tauri/target/release/bundle/`
-(`macos/Audio Recorder.app` и `dmg/`).
+(`macos/Audio Recorder.app` и `dmg/`), для универсальной сборки —
+`target/universal-apple-darwin/release/bundle/`.
+
+#### Маки на Intel
+
+Обычная сборка содержит только архитектуру машины, на которой собиралась.
+Приложение, собранное на Apple Silicon, **на Intel не запустится**: Rosetta
+переводит только в одну сторону — Intel-код на Apple Silicon, не наоборот.
+
+Один раз на машине сборки:
+
+```bash
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+```
+
+Дальше собирать `npm run build:mac:universal` — получается один `.app` под обе
+архитектуры. Скрипт в конце печатает `lipo -archs`, там должно быть
+`x86_64 arm64`.
+
+Требуется macOS 11 Big Sur или новее (`minimumSystemVersion` в
+`tauri.conf.json`) — это Intel-маки примерно с 2013 года. Версия проверяется
+в «Об этом Mac».
 
 В настройках приложения указать адрес сервера и ключ устройства
 (из `DEVICE_API_KEYS`). Кнопки: начать день / пауза (личный разговор) /
@@ -148,7 +170,13 @@ npm run tauri build    # сборка установщика
 
 - **macOS без подписки Apple Developer:** собирать локально на Mac
   (`signingIdentity: "-"` уже настроен) и переносить `.app` через
-  AirDrop/флешку, либо после скачивания: `xattr -cr "/Applications/Audio Recorder.app"`.
+  AirDrop/флешку. На машине, куда перенесли, macOS пометит приложение
+  карантином и откажется его открывать («повреждено»), потому что подпись
+  ad-hoc, а не Developer ID. Снимается один раз:
+  `xattr -cr "/Applications/Audio Recorder.app"`.
+- **Доступ к микрофону выдаётся заново на каждой машине** — при первом запуске
+  система спросит разрешение. Если окно не появилось, проверить
+  «Системные настройки → Конфиденциальность и безопасность → Микрофон».
 - **Windows без сертификата:** в SmartScreen «Подробнее → Выполнить в любом
   случае».
 
