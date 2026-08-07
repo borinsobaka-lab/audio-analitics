@@ -14,14 +14,14 @@ from ..schemas import (
     DayFinishRequest,
     DayRecordingOut,
     DayStartRequest,
-    EmployeeOut,
+    EmployeePickOut,
     SegmentUploadedOut,
 )
 
 router = APIRouter(prefix="/api/recordings", tags=["recordings"])
 
 
-@router.get("/employees", response_model=list[EmployeeOut])
+@router.get("/employees", response_model=list[EmployeePickOut])
 async def list_location_employees(
     device: DeviceContext = Depends(require_device),
     db: AsyncSession = Depends(get_db),

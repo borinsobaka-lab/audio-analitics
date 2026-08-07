@@ -57,7 +57,8 @@
   --amber: #f08a00;
   --amber-ink: #c96f00;
   --amber-tint: rgba(240, 138, 0, 0.12);
-  --green: #00a874;         /* читается как текст и как заливка */
+  --green: #00a874;         /* заливка: кружки, полосы оценки, кнопка «согласен» */
+  --green-ink: #067a56;     /* тот же смысл, но как ТЕКСТ на светлом — 5.4:1 */
   --green-tint: rgba(0, 168, 116, 0.11);
 
   /* Заливки внутри тёмного меню */
@@ -933,18 +934,55 @@ textarea.prompt-editor {
 .notes.bad li::before {
   background: var(--red);
 }
-.notes-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+/* Плашка разбора: цвет подложки отвечает «хорошо или плохо» раньше, чем
+   прочитан заголовок. Красноватая — провалено, зеленоватая — вышло, серая —
+   всё прочее, то есть советы на будущее.
+
+   Заголовок здесь не капслочная микроподпись, как в остальном интерфейсе, а
+   нормальный подзаголовок: эти блоки читают вслух на разборе с сотрудником,
+   и в них надо попадать глазами через весь стол. */
+.panel {
+  border-radius: var(--r-md);
+  padding: 14px 16px 15px;
+  /* Подложка задана прозрачностью, а не готовым цветом: плашки лежат и на
+     фоне страницы, и внутри белой карточки разбора, и в обоих местах должны
+     читаться как подложка, а не совпадать с ней. */
+  background: rgba(11, 13, 22, 0.05);
+}
+.panel + .panel {
   margin-top: 10px;
 }
-.notes-title.good {
-  color: var(--green);
+.panel.bad {
+  background: var(--red-tint);
 }
-.notes-title.bad {
+.panel.good {
+  background: var(--green-tint);
+}
+.panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+}
+.panel.bad .panel-title {
   color: var(--red-ink);
+}
+.panel.good .panel-title {
+  color: var(--green-ink);
+}
+.panel-hint {
+  font-size: 12.5px;
+  font-weight: 400;
+  /* На подложке ступень --ink-3 проваливается до 3.7:1 — для 12.5px мало. */
+  color: var(--ink-2);
+}
+/* Внутри плашки штрих у пункта дублировал бы цвет подложки. */
+.panel .notes li::before {
+  opacity: 0.55;
 }
 
 .turns {
@@ -1333,6 +1371,18 @@ tbody tr:hover {
     margin: 0 0 0 auto;
     padding: 0 0 0 12px;
     border-top: none;
+    /* В горизонтальной полосе имя и «Выйти» встают в строку: блочная
+       вёрстка бокового меню растянула бы кнопку на всю ширину полосы. */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .who {
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
+  .sidebar-foot .btn-block {
+    width: auto;
   }
   .content {
     padding: 20px 16px 40px;
@@ -1672,6 +1722,255 @@ tbody tr:hover {
 }
 
 
+/* --- Экран входа --------------------------------------------------------- */
+
+/* Вход — единственный экран без бокового меню: пока не понятно, кто пришёл,
+   показывать разделы нечестно, а половину из них ещё и нельзя. */
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+}
+.login-brand {
+  margin-bottom: 22px;
+}
+.login-hint {
+  margin: -6px 0 14px;
+  line-height: 1.5;
+}
+.login-card .btn-block + .btn-block {
+  margin-top: 8px;
+}
+
+/* Кто вошёл — внизу меню, на месте прежнего поля токена. */
+.who {
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+.who-name {
+  display: block;
+  color: var(--nav-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.who-role {
+  display: block;
+  color: var(--nav-ink-2);
+  font-size: 11.5px;
+}
+
+/* --- Выданный пароль ----------------------------------------------------- */
+
+/* Пароль виден один раз, поэтому карточка кричит: акцентная рамка, крупный
+   моноширинный шрифт и кнопка «скопировать» рядом. */
+.creds {
+  margin-bottom: 16px;
+  border: 1px solid var(--accent);
+}
+.creds-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.creds-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+}
+.creds-pair .label {
+  display: block;
+  margin-bottom: 3px;
+}
+.creds-pair code,
+.mono {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink);
+  /* Пароль переписывают с экрана: разрядка и табличные цифры не дают
+     слипнуться соседним знакам. */
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}
+.mono {
+  font-size: 13px;
+}
+
+/* --- Согласен / не согласен ---------------------------------------------- */
+
+.feedback {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge-soft);
+}
+.feedback-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.feedback-label {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-right: 2px;
+}
+/* Голос — тихая кнопка, пока не нажата: этот блок не должен спорить за
+   внимание с самой оценкой. Нажатая заливается смыслом. */
+button.vote {
+  min-height: var(--control-h-sm);
+  font-size: 12.5px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+button.vote:hover {
+  background: var(--card-2);
+  color: var(--ink);
+  box-shadow: none;
+}
+/* Заливка нажатого «согласен» — притемнённый зелёный, а не основной:
+   белым по #00a874 это 3.1:1, надпись на кнопке так читаться не может. */
+button.vote.on.agree {
+  background: var(--green-ink);
+  color: #fff;
+}
+button.vote.on.disagree {
+  background: var(--red);
+  color: #fff;
+}
+.feedback-others {
+  font-size: 12.5px;
+  color: var(--red-ink);
+}
+.feedback-why {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.feedback-why input {
+  flex: 1 1 auto;
+}
+.feedback-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.feedback-list b.agree {
+  color: var(--green-ink);
+}
+.feedback-list b.disagree {
+  color: var(--red-ink);
+}
+.feedback-note {
+  color: var(--ink-3);
+}
+.feedback-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--red-ink);
+}
+
+/* --- Договорённости ------------------------------------------------------ */
+
+.agreements {
+  display: grid;
+  gap: 10px;
+}
+.agreement {
+  background: var(--card);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sh-1);
+  padding: 12px 14px;
+}
+/* Закрытая договорённость остаётся в списке, но перестаёт тянуть взгляд:
+   она уже не задача, а история. */
+.agreement.done,
+.agreement.cancelled,
+.agreement.missed {
+  box-shadow: none;
+  background: var(--card-2);
+}
+.agreement-text {
+  color: var(--ink);
+  line-height: 1.5;
+}
+.agreement-meta {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.agreement-meta a {
+  color: var(--accent-ink);
+}
+.agreement .actions {
+  margin-top: 8px;
+}
+.agreement-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge-soft);
+}
+
+/* --- Несогласия в разделе метрик ----------------------------------------- */
+
+.votes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge-soft);
+}
+.votes-count b.disagree {
+  color: var(--red-ink);
+}
+.votes-count b.agree {
+  color: var(--green-ink);
+}
+.disagreements {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.disagreements li {
+  background: var(--red-tint);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.disagreement-day {
+  font-weight: 600;
+  color: var(--accent-ink);
+  margin-right: 8px;
+}
+.disagreement-who {
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.disagreement-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+}
+.metrics-foot {
+  max-width: 70ch;
+  line-height: 1.55;
+}
+
 /* --- Мелкие раскладочные классы вместо инлайн-стилей --------------------- */
 /* Инлайн-стиль не переопределить темой и не найти поиском по системе,
    поэтому даже одиночные отступы живут здесь, под именем. */
@@ -1712,18 +2011,46 @@ tbody tr:hover {
 .btn-block {
   width: 100%;
 }
-.token-label {
-  display: block;
-  margin-bottom: 6px;
-}
-.token-input {
-  margin-bottom: 6px;
-}
 .input-inline {
   max-width: 300px;
 }
+.select-inline {
+  min-width: 168px;
+}
+.form-hint {
+  margin: 10px 0 0;
+  max-width: 70ch;
+}
+.no-margin {
+  margin: 0;
+}
+/* Кнопка в ряду полей встаёт вровень с их рамками, а не с подписями. */
+.field-row > button {
+  align-self: flex-start;
+  margin-top: 21px;
+}
+/* Имя не должно съедать половину строки: колонок пять, и кнопкам нужно
+   место, иначе каждая уезжает на свою строку. */
 .col-name {
-  width: 45%;
+  width: 18%;
+}
+.col-access {
+  min-width: 210px;
+}
+/* Ряд действий держится в одну строку: перенос кнопок делает строки разной
+   высоты, и таблица перестаёт читаться как таблица. */
+.col-row-actions {
+  white-space: nowrap;
+}
+.col-row-actions .actions {
+  flex-wrap: nowrap;
+}
+.actions.tight {
+  gap: 4px;
+  margin-top: 4px;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .col-score {
   width: 40%;
@@ -1731,9 +2058,6 @@ tbody tr:hover {
 .skeleton-stack {
   display: grid;
   gap: 8px;
-}
-.summary-group {
-  margin-bottom: 14px;
 }
 .dialog-note {
   margin: 0;

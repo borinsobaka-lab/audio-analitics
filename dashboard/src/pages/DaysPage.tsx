@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd } from "../api";
+import { useSession } from "../session";
 import {
   ConfirmAction,
   Empty,
@@ -16,6 +17,7 @@ import {
 const IN_FLIGHT = ["recording", "uploaded", "processing"];
 
 export default function DaysPage() {
+  const me = useSession();
   const [days, setDays] = useState<DayRecording[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -144,7 +146,10 @@ export default function DaysPage() {
                   {openable && (
                     <button onClick={() => navigate(`/days/${d.id}`)}>Открыть разбор</button>
                   )}
-                  {d.status === "recording" && (
+                  {/* Обслуживание смены — дело администратора: пересчёт
+                      тратит деньги, удаление необратимо. Менеджеру эти
+                      кнопки не показываются, сервер их всё равно отклонит. */}
+                  {me.can_manage && d.status === "recording" && (
                     <button
                       className="secondary"
                       disabled={busyId === d.id}
@@ -160,7 +165,7 @@ export default function DaysPage() {
                       Завершить принудительно
                     </button>
                   )}
-                  {(d.status === "done" || d.status === "error") && (
+                  {me.can_manage && (d.status === "done" || d.status === "error") && (
                     <button
                       className="secondary"
                       disabled={busyId === d.id}
@@ -172,7 +177,7 @@ export default function DaysPage() {
                       Пересчитать
                     </button>
                   )}
-                  {d.status !== "processing" && (
+                  {me.can_manage && d.status !== "processing" && (
                     <ConfirmAction
                       label="Удалить"
                       confirmLabel="Удалить навсегда"
@@ -190,7 +195,7 @@ export default function DaysPage() {
         </div>
       )}
 
-      {days !== null && days.length > 0 && (
+      {days !== null && days.length > 0 && me.can_manage && (
         <p className="muted page-note">
           «Пересчитать» прогоняет ту же запись по текущим метрикам — аудио
           заново не загружается. «Завершить принудительно» закрывает смену,

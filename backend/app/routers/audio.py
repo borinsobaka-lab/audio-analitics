@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import storage
+from ..access import visible_day
 from ..auth import UserContext, require_user
 from ..config import get_settings
 from ..db import get_db
@@ -22,8 +23,8 @@ async def day_audio_url(
     db: AsyncSession = Depends(get_db),
 ):
     """URL of the merged day audio; the player seeks to dialog timestamps."""
-    rec = await db.get(DayRecording, recording_id)
-    if not rec or not rec.raw_audio_uri:
+    rec = await visible_day(db, recording_id, user)
+    if not rec.raw_audio_uri:
         raise HTTPException(404, "Merged audio not available")
     url = storage.presigned_get_url(rec.raw_audio_uri)
     return AudioUrlOut(url=url, expires_in_s=settings.presigned_url_ttl_s)

@@ -18,6 +18,7 @@ import {
   toApiDate,
 } from "../api";
 import { TrendChart } from "../components/TrendChart";
+import { useSession } from "../session";
 import {
   DateField,
   Delta,
@@ -54,6 +55,7 @@ const PRESETS: Preset[] = [
 ];
 
 export default function DashboardPage() {
+  const me = useSession();
   const [preset, setPreset] = useState("30");
   const [range, setRange] = useState<[string, string]>(() => {
     const [a, b] = PRESETS[1].range();
@@ -65,8 +67,9 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!me.can_view_all) return;
     api.listEmployees().then(setEmployees).catch(() => {});
-  }, []);
+  }, [me.can_view_all]);
 
   const load = useCallback(() => {
     setData(null);
@@ -166,17 +169,21 @@ export default function DashboardPage() {
             />
           </div>
         </div>
-        <label className="filter">
-          <span className="label">менеджер</span>
-          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-            <option value="">все</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* Менеджеру с доступом «только свои» выбирать не из чего: сервер
+            всё равно покажет его собственные смены. */}
+        {me.can_view_all && (
+          <label className="filter">
+            <span className="label">менеджер</span>
+            <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+              <option value="">все</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {error && <Note kind="error">{error}</Note>}

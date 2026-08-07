@@ -12,10 +12,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -53,7 +55,14 @@ class Location(UUIDMixin, Base):
 
 class Employee(UUIDMixin, Base):
     """A sales manager. Deactivated employees stay in the database so past
-    reports keep their author; they just disappear from the app's picker."""
+    reports keep their author; they just disappear from the app's picker.
+
+    Сотрудник и пользователь админки — одна и та же строка. Разделять их не
+    стали намеренно: вся идея доступа «вижу только свои записи» держится на
+    том, что вошедший — это тот самый менеджер, чьё имя стоит на смене.
+    Логин появляется только у тех, кому доступ выдали; остальные существуют
+    как имя в списке приложения и войти не могут.
+    """
 
     __tablename__ = "employees"
 
@@ -64,6 +73,21 @@ class Employee(UUIDMixin, Base):
     voiceprint_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # --- Доступ в админку ---
+    login: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Момент последней выдачи пароля. Лежит в сессионном токене: после сброса
+    # старые сессии сотрудника перестают подходить сами собой.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # own | all — чьи смены видно. Право редактировать раздел сотрудников
+    # выводится отсюда же: им обладают только те, кто видит все записи.
+    access_scope: Mapped[str] = mapped_column(String(16), default="own")
 
 
 class DayRecording(UUIDMixin, Base):
@@ -274,3 +298,112 @@ class MetricsDaily(UUIDMixin, Base):
     avg_script_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Reduce-stage output: top deviations + recommendations for the day.
     summary_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class DialogFeedback(UUIDMixin, Base):
+    """«Согласен / не согласен» с разбором одного разговора.
+
+    Смысл двойной. Сотруднику это способ ответить машине, а не молча принять
+    её оценку. Владельцу — обратная связь на промпт: если метрика собирает
+    несогласия на разных сменах у разных людей, дело не в людях, а в
+    формулировке промпта, и её надо править.
+
+    metric_id пустой — несогласие с разбором в целом; заполненный — с оценкой
+    конкретной метрики. Именно по нему несогласия и собираются в разделе
+    метрик. Имена автора и менеджера сохраняются строкой рядом со ссылками:
+    сотрудника могут переименовать, а запись о том, кто возразил, должна
+    остаться читаемой.
+    """
+
+    __tablename__ = "dialog_feedback"
+    __table_args__ = (
+        # Один голос от одного человека на одну оценку — повторное нажатие
+        # меняет мнение, а не добавляет второй голос. Два индекса, потому что
+        # в Postgres NULL-и в уникальном индексе считаются разными.
+        Index(
+            "uq_feedback_dialog_overall",
+            "dialog_id",
+            "author_key",
+            unique=True,
+            postgresql_where=text("metric_id IS NULL"),
+        ),
+        Index(
+            "uq_feedback_dialog_metric",
+            "dialog_id",
+            "metric_id",
+            "author_key",
+            unique=True,
+            postgresql_where=text("metric_id IS NOT NULL"),
+        ),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
+    metric_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("analysis_metrics.id"), nullable=True, index=True
+    )
+    # «emp:<uuid>» для сотрудника, «owner» для входа по ADMIN_API_TOKEN.
+    author_key: Mapped[str] = mapped_column(String(64), index=True)
+    author_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    # Менеджер, чью смену разбирали: несогласия смотрят и по людям тоже.
+    subject_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
+    subject_name: Mapped[str] = mapped_column(String(255), default="")
+    agree: Mapped[bool] = mapped_column(Boolean)
+    comment: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Agreement(UUIDMixin, Base):
+    """Договорённость по итогам разбора смены.
+
+    Разбор без договорённости — это разговор, который забыт к вечеру. Здесь
+    фиксируется, о чём условились после конкретной смены (и, если нужно, по
+    какому именно разговору), а в следующей смене того же менеджера
+    договорённость показывается сверху с вопросом «сделано?». Так проверка
+    сама всплывает в нужный день, а не живёт в чьей-то памяти.
+
+    Статусы: open — ждёт следующей смены; done — выполнено; missed — не
+    выполнено; cancelled — снято как неактуальное.
+    """
+
+    __tablename__ = "agreements"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
+    employee_name: Mapped[str] = mapped_column(String(255), default="")
+    # Смена, по итогам которой договорились.
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    day_date: Mapped[date] = mapped_column(Date, index=True)
+    # Разговор, из которого выросла договорённость (необязательно).
+    dialog_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dialogs.id"), nullable=True
+    )
+    dialog_start_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    created_by_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    created_by_name: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Чем закончилось и на какой смене это отметили.
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by_name: Mapped[str] = mapped_column(String(255), default="")
+    resolved_day_recording_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("day_recordings.id"), nullable=True
+    )
+    resolution_note: Mapped[str] = mapped_column(Text, default="")

@@ -3,9 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .routers import (
+    agreements,
     analytics,
     audio,
+    auth_router,
     employees,
+    feedback,
     metrics,
     prompts,
     recordings,
@@ -28,8 +31,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router)
 app.include_router(recordings.router)
 app.include_router(reports.router)
+app.include_router(feedback.router)
+app.include_router(agreements.router)
 app.include_router(analytics.router)
 app.include_router(employees.router)
 app.include_router(metrics.router)

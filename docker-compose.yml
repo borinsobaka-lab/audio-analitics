@@ -36,6 +36,7 @@ services:
       LLM_MODEL_STAGE2: ${LLM_MODEL_STAGE2:-claude-sonnet-5}
       DEVICE_API_KEYS: ${DEVICE_API_KEYS:-}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
     expose:
       - "8000"

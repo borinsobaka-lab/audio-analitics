@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
-import { AnalysisMetric, api, plural } from "../api";
-import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
+import { Link } from "react-router-dom";
+import {
+  AnalysisMetric,
+  api,
+  fmtDate,
+  fmtTs,
+  fmtWhen,
+  MetricFeedbackItem,
+  MetricFeedbackStat,
+  plural,
+} from "../api";
+import { ConfirmAction, Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
 
 const EXAMPLE_PROMPT = `Оцени, насколько качественно менеджер провёл продажу.
 
@@ -19,6 +29,7 @@ const EXAMPLE_PROMPT = `Оцени, насколько качественно м
 
 export default function MetricsPage() {
   const [metrics, setMetrics] = useState<AnalysisMetric[] | null>(null);
+  const [votes, setVotes] = useState<MetricFeedbackStat[]>([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -30,11 +41,16 @@ export default function MetricsPage() {
         setMetrics([]);
         setError(String(e));
       });
+    // Несогласия сотрудников — обратная связь на сами промпты, поэтому
+    // читаются здесь же, где промпты правят.
+    api.feedbackByMetric().then(setVotes).catch(() => setVotes([]));
   };
 
   useEffect(load, []);
 
   const activeCount = metrics?.filter((m) => m.active).length ?? 0;
+  const overall = votes.find((v) => v.metric_id === null);
+  const totalDisagreements = votes.reduce((sum, v) => sum + v.disagree_count, 0);
 
   return (
     <div>
@@ -74,9 +90,56 @@ export default function MetricsPage() {
       )}
 
       {metrics?.map((m) => (
-        <MetricCard key={m.id} metric={m} onChanged={load} />
+        <MetricCard
+          key={m.id}
+          metric={m}
+          votes={votes.find((v) => v.metric_id === m.id)}
+          onChanged={load}
+        />
       ))}
+
+      {overall && overall.disagreements.length > 0 && (
+        <Section
+          title="Несогласия с разбором в целом"
+          hint="не привязаны к конкретной метрике"
+        >
+          <div className="sheet sheet-pad">
+            <Disagreements items={overall.disagreements} />
+          </div>
+        </Section>
+      )}
+
+      {totalDisagreements > 0 && (
+        <p className="muted metrics-foot">
+          Всего несогласий: {totalDisagreements}. Это не жалобы, а материал:
+          метрика, с оценками которой спорят на разных сменах разные люди,
+          почти наверняка сформулирована неточно — правьте промпт и
+          пересчитывайте смены.
+        </p>
+      )}
     </div>
+  );
+}
+
+/** Список несогласий: когда, у кого, что сказали и куда идти слушать. */
+function Disagreements({ items }: { items: MetricFeedbackItem[] }) {
+  return (
+    <ul className="disagreements">
+      {items.map((d) => (
+        <li key={d.id}>
+          <Link to={`/days/${d.day_recording_id}`} className="disagreement-day">
+            {fmtDate(d.day_date).day}
+            {d.dialog_start_s != null && ` · ${fmtTs(d.dialog_start_s)}`}
+          </Link>
+          <span className="disagreement-who">
+            {d.subject_name || "менеджер не указан"}
+            {d.author_name && ` · возразил ${d.author_name}`}
+            {` · ${fmtWhen(d.created_at)}`}
+          </span>
+          {d.comment && <span className="disagreement-note">{d.comment}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -166,13 +229,16 @@ function MetricEditor({
 
 function MetricCard({
   metric,
+  votes,
   onChanged,
 }: {
   metric: AnalysisMetric;
+  votes?: MetricFeedbackStat;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [showVotes, setShowVotes] = useState(false);
   const [error, setError] = useState("");
 
   if (editing) {
@@ -239,6 +305,35 @@ function MetricCard({
           {expanded ? "Свернуть промпт" : "Показать промпт целиком"}
         </button>
       )}
+
+      {votes && (votes.disagree_count > 0 || votes.agree_count > 0) && (
+        <div className="votes">
+          <span className="votes-count">
+            {votes.disagree_count > 0 ? (
+              <b className="disagree">
+                {votes.disagree_count}{" "}
+                {plural(
+                  votes.disagree_count,
+                  "несогласие",
+                  "несогласия",
+                  "несогласий"
+                )}
+              </b>
+            ) : (
+              <b className="agree">возражений нет</b>
+            )}
+            {votes.agree_count > 0 && (
+              <span className="muted"> · согласий: {votes.agree_count}</span>
+            )}
+          </span>
+          {votes.disagree_count > 0 && (
+            <button className="ghost small" onClick={() => setShowVotes(!showVotes)}>
+              {showVotes ? "Свернуть" : "Показать где"}
+            </button>
+          )}
+        </div>
+      )}
+      {showVotes && votes && <Disagreements items={votes.disagreements} />}
 
       {error && <Note kind="error">{error}</Note>}
     </div>

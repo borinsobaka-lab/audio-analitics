@@ -1,27 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   api,
   DayReport,
   Dialog,
   DialogDetail,
+  DialogFeedback,
   fmtDate,
   fmtDur,
   fmtTs,
   fmtUsd,
   MetricEvaluation,
 } from "../api";
+import { CarriedAgreements, DayAgreements } from "../components/Agreements";
 import { Deck, DeckHandle } from "../components/Deck";
+import { FeedbackControl } from "../components/Feedback";
 import {
   Empty,
   IconPlay,
   Note,
+  Panel,
   Score,
   Section,
   Skeleton,
   Stat,
   scoreZone,
 } from "../components/ui";
+import { useSession } from "../session";
 
 const TYPE_LABELS: Record<string, string> = {
   sale: "Продажа",
@@ -33,18 +38,30 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function DayReportPage() {
   const { id } = useParams<{ id: string }>();
+  const me = useSession();
   const [report, setReport] = useState<DayReport | null>(null);
+  const [feedback, setFeedback] = useState<DialogFeedback[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reprocessing, setReprocessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const deck = useRef<DeckHandle>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return;
-    api.dayReport(id).then(setReport).catch((e) => setError(String(e)));
-    api.dayAudioUrl(id).then((r) => setAudioUrl(r.url)).catch(() => {});
+    api
+      .dayReport(id)
+      .then((r) => {
+        setReport(r);
+        setFeedback(r.feedback);
+      })
+      .catch((e) => setError(String(e)));
   }, [id]);
+
+  useEffect(() => {
+    load();
+    if (id) api.dayAudioUrl(id).then((r) => setAudioUrl(r.url)).catch(() => {});
+  }, [id, load]);
 
   const seek = (seconds: number) => deck.current?.seek(seconds);
 
@@ -84,37 +101,50 @@ export default function DayReportPage() {
             {fmtDur(recording.total_duration_s)} записи
           </p>
         </div>
-        <button
-          className="secondary"
-          onClick={reprocess}
-          disabled={reprocessing}
-          title="Прогнать ту же запись через анализ заново — например, после правки метрик"
-        >
-          {reprocessing ? "Запуск…" : "Пересчитать"}
-        </button>
+        {me.can_manage && (
+          <button
+            className="secondary"
+            onClick={reprocess}
+            disabled={reprocessing}
+            title="Прогнать ту же запись через анализ заново — например, после правки метрик"
+          >
+            {reprocessing ? "Запуск…" : "Пересчитать"}
+          </button>
+        )}
       </header>
 
       {notice && <Note kind="success">{notice}</Note>}
       {error && <Note kind="error">{error}</Note>}
+
+      {/* Разбор начинается с проверки того, о чём договорились в прошлый раз,
+          поэтому блок стоит выше цифр этого дня. */}
+      <CarriedAgreements
+        items={report.carried_agreements}
+        currentDayId={recording.id}
+        canManage={me.can_manage}
+        onChanged={load}
+      />
 
       <div className="stats">
         <Stat lead value={conversion} label="Конверсия" />
         <Stat value={report.sales_count} label="Продаж" />
         <Stat value={report.dialogs_total} label="Разговоров с клиентами" />
         <Stat value={fmtDur(recording.speech_duration_s)} label="Чистой речи" />
-        <Stat
-          value={fmtUsd(recording.cost_usd)}
-          label="Обработка"
-          title={
-            recording.cost_usd != null
-              ? `Распознавание ${fmtDur(recording.asr_seconds)} речи + ` +
-                `${recording.llm_calls} обращений к модели ` +
-                `(${recording.llm_input_tokens.toLocaleString("ru-RU")} вх. / ` +
-                `${recording.llm_output_tokens.toLocaleString("ru-RU")} исх. токенов). ` +
-                "Это стоимость последней обработки: «Пересчитать» тратит заново."
-              : undefined
-          }
-        />
+        {me.can_manage && (
+          <Stat
+            value={fmtUsd(recording.cost_usd)}
+            label="Обработка"
+            title={
+              recording.cost_usd != null
+                ? `Распознавание ${fmtDur(recording.asr_seconds)} речи + ` +
+                  `${recording.llm_calls} обращений к модели ` +
+                  `(${recording.llm_input_tokens.toLocaleString("ru-RU")} вх. / ` +
+                  `${recording.llm_output_tokens.toLocaleString("ru-RU")} исх. токенов). ` +
+                  "Это стоимость последней обработки: «Пересчитать» тратит заново."
+                : undefined
+            }
+          />
+        )}
       </div>
 
       {report.metric_stats.length > 0 && (
@@ -149,14 +179,43 @@ export default function DayReportPage() {
 
       {summary && (
         <Section title="Итоги смены">
-          <div className="sheet sheet-pad">
-            <SummaryList title="Главные отклонения" items={summary.top_deviations} kind="bad" />
-            <SummaryList title="Рекомендации менеджеру" items={summary.recommendations} />
-            <SummaryList title="Предложения по скрипту" items={summary.script_suggestions} />
-            <SummaryList title="Удачные моменты" items={summary.highlights} kind="good" />
-          </div>
+          {/* Выводы дня разложены по подложкам: провалы, удачи и советы —
+              это три разных разговора с менеджером, а не один список. */}
+          <SummaryList
+            title="Главные отклонения"
+            items={summary.top_deviations}
+            tone="bad"
+          />
+          <SummaryList
+            title="Удачные моменты"
+            items={summary.highlights}
+            tone="good"
+          />
+          <SummaryList
+            title="Рекомендации менеджеру"
+            items={summary.recommendations}
+            tone="neutral"
+          />
+          <SummaryList
+            title="Предложения по скрипту"
+            items={summary.script_suggestions}
+            tone="neutral"
+          />
         </Section>
       )}
+
+      <Section
+        title="Договорённости"
+        hint="всплывут в следующей смене этого менеджера"
+      >
+        <DayAgreements
+          items={report.agreements}
+          dayId={recording.id}
+          dialogs={shown}
+          canManage={me.can_manage}
+          onChanged={load}
+        />
+      </Section>
 
       <Section
         title="Разговоры"
@@ -178,7 +237,13 @@ export default function DayReportPage() {
           </Empty>
         )}
         {shown.map((d) => (
-          <DialogCard key={d.id} dialog={d} onSeek={seek} />
+          <DialogCard
+            key={d.id}
+            dialog={d}
+            onSeek={seek}
+            feedback={feedback}
+            onFeedback={setFeedback}
+          />
         ))}
       </Section>
 
@@ -197,22 +262,21 @@ export default function DayReportPage() {
 function SummaryList({
   title,
   items,
-  kind,
+  tone,
 }: {
   title: string;
   items?: string[];
-  kind?: "good" | "bad";
+  tone: "good" | "bad" | "neutral";
 }) {
   if (!items || items.length === 0) return null;
   return (
-    <div className="summary-group">
-      <div className={`notes-title ${kind ?? ""}`}>{title}</div>
-      <ul className={`notes ${kind ?? ""}`}>
+    <Panel tone={tone} title={title}>
+      <ul className={`notes ${tone === "neutral" ? "" : tone}`}>
         {items.map((item, i) => (
           <li key={i}>{item}</li>
         ))}
       </ul>
-    </div>
+    </Panel>
   );
 }
 
@@ -248,7 +312,19 @@ function WithCues({ text, onSeek }: { text: string; onSeek: (s: number) => void 
   return <>{nodes}</>;
 }
 
-function Evaluation({ ev, onSeek }: { ev: MetricEvaluation; onSeek: (s: number) => void }) {
+function Evaluation({
+  ev,
+  dialogId,
+  onSeek,
+  feedback,
+  onFeedback,
+}: {
+  ev: MetricEvaluation;
+  dialogId: string;
+  onSeek: (s: number) => void;
+  feedback: DialogFeedback[];
+  onFeedback: (items: DialogFeedback[]) => void;
+}) {
   return (
     <div className="eval">
       <div className="eval-head">
@@ -261,8 +337,7 @@ function Evaluation({ ev, onSeek }: { ev: MetricEvaluation; onSeek: (s: number) 
         </p>
       )}
       {ev.good.length > 0 && (
-        <>
-          <div className="notes-title good">Сработало</div>
+        <Panel tone="good" title="Сработало">
           <ul className="notes good">
             {ev.good.map((item, i) => (
               <li key={i}>
@@ -270,11 +345,10 @@ function Evaluation({ ev, onSeek }: { ev: MetricEvaluation; onSeek: (s: number) 
               </li>
             ))}
           </ul>
-        </>
+        </Panel>
       )}
       {ev.bad.length > 0 && (
-        <>
-          <div className="notes-title bad">Упущено</div>
+        <Panel tone="bad" title="Упущено">
           <ul className="notes bad">
             {ev.bad.map((item, i) => (
               <li key={i}>
@@ -282,13 +356,32 @@ function Evaluation({ ev, onSeek }: { ev: MetricEvaluation; onSeek: (s: number) 
               </li>
             ))}
           </ul>
-        </>
+        </Panel>
       )}
+      {/* Отзыв стоит у самой оценки: возражают именно ей, и именно по ней
+          несогласия потом собираются в разделе метрик. */}
+      <FeedbackControl
+        dialogId={dialogId}
+        metricId={ev.metric_id}
+        items={feedback}
+        onChanged={onFeedback}
+        label="Оценка справедлива?"
+      />
     </div>
   );
 }
 
-function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) => void }) {
+function DialogCard({
+  dialog,
+  onSeek,
+  feedback,
+  onFeedback,
+}: {
+  dialog: Dialog;
+  onSeek: (s: number) => void;
+  feedback: DialogFeedback[];
+  onFeedback: (items: DialogFeedback[]) => void;
+}) {
   const [detail, setDetail] = useState<DialogDetail | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -298,6 +391,9 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
   };
 
   const evals = dialog.evaluations.filter((e) => e.applicable);
+  const disagreed = feedback.some(
+    (f) => f.dialog_id === dialog.id && !f.agree
+  );
 
   return (
     <div className="dialog">
@@ -325,6 +421,9 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
             </span>
           ) : null
         )}
+        {/* Метка на свёрнутой карточке: спорные разборы должны быть видны,
+            не открывая каждый. */}
+        {disagreed && <span className="pill refusal">есть несогласие</span>}
         <button className="ghost small push" onClick={toggle}>
           {open ? "Свернуть" : "Разбор"}
         </button>
@@ -334,12 +433,28 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
       {open && (
         <div className="dialog-body">
           {evals.length > 0 ? (
-            evals.map((ev) => <Evaluation key={ev.metric_id} ev={ev} onSeek={onSeek} />)
+            evals.map((ev) => (
+              <Evaluation
+                key={ev.metric_id}
+                ev={ev}
+                dialogId={dialog.id}
+                onSeek={onSeek}
+                feedback={feedback}
+                onFeedback={onFeedback}
+              />
+            ))
           ) : (
             <p className="muted dialog-note">
               Ни одна метрика не сработала на этом разговоре.
             </p>
           )}
+
+          <FeedbackControl
+            dialogId={dialog.id}
+            items={feedback}
+            onChanged={onFeedback}
+            label="Согласны с разбором разговора?"
+          />
 
           {detail && detail.turns.length > 0 && (
             <div className="turns">

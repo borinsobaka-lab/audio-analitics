@@ -3,18 +3,21 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .. import storage
-from ..auth import UserContext, require_user
+from ..access import scope_days, visible_day
+from ..auth import UserContext, require_manage, require_user
 from ..db import get_db
 from ..models import (
+    Agreement,
     AnalysisMetric,
     AudioSegment,
     DayRecording,
     Dialog,
+    DialogFeedback,
     DialogTurn,
     Employee,
     MetricEvaluation,
@@ -29,6 +32,8 @@ from ..schemas import (
     DialogOut,
     MetricEvaluationOut,
 )
+from .agreements import agreements_of_day, carried_agreements
+from .feedback import feedback_for_day
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +122,7 @@ async def list_days(
     )
     if location_id:
         q = q.where(DayRecording.location_id == location_id)
+    q = scope_days(q, user)
     records = (await db.scalars(q)).all()
     result = []
     for rec in records:
@@ -133,9 +139,7 @@ async def day_report(
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rec = await db.get(DayRecording, recording_id)
-    if not rec:
-        raise HTTPException(404, "Recording not found")
+    rec = await visible_day(db, recording_id, user)
 
     dialogs = (
         await db.scalars(
@@ -166,13 +170,16 @@ async def day_report(
         summary=metrics.summary_json if metrics else None,
         metric_stats=await metric_stats_for(db, recording_id),
         dialogs=dialog_outs,
+        feedback=await feedback_for_day(db, recording_id, user),
+        agreements=await agreements_of_day(db, recording_id),
+        carried_agreements=await carried_agreements(db, rec),
     )
 
 
 @router.post("/days/{recording_id}/force-finish", response_model=DayRecordingOut)
 async def force_finish_day(
     recording_id: uuid.UUID,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     """Close a session the app never finished (crash, closed laptop, dead app)
@@ -207,7 +214,7 @@ async def force_finish_day(
 @router.delete("/days/{recording_id}", status_code=204)
 async def delete_day(
     recording_id: uuid.UUID,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a recording with its analysis and its audio in object storage.
@@ -223,6 +230,19 @@ async def delete_day(
     dialog_ids = (
         await db.scalars(select(Dialog.id).where(Dialog.day_recording_id == recording_id))
     ).all()
+    # Отзывы и договорённости ссылаются на смену и на разговоры: без их
+    # удаления база просто не даст стереть день.
+    await db.execute(
+        delete(DialogFeedback).where(DialogFeedback.day_recording_id == recording_id)
+    )
+    await db.execute(delete(Agreement).where(Agreement.day_recording_id == recording_id))
+    # Договорённость могли отметить выполненной на этой смене — ссылку
+    # снимаем, саму договорённость оставляем: она относится к другому дню.
+    await db.execute(
+        update(Agreement)
+        .where(Agreement.resolved_day_recording_id == recording_id)
+        .values(resolved_day_recording_id=None)
+    )
     await db.execute(
         delete(MetricEvaluation).where(MetricEvaluation.day_recording_id == recording_id)
     )
@@ -251,7 +271,7 @@ async def delete_day(
 @router.post("/days/{recording_id}/reprocess", response_model=DayRecordingOut)
 async def reprocess_day(
     recording_id: uuid.UUID,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-run the pipeline for a day: after a failure, or after editing prompts.
@@ -288,6 +308,9 @@ async def dialog_detail(
     )
     if not dialog:
         raise HTTPException(404, "Dialog not found")
+    # Расшифровка — самое чувствительное, что здесь есть: доступ проверяется
+    # по смене, которой принадлежит разговор.
+    await visible_day(db, dialog.day_recording_id, user)
     out = DialogDetailOut.model_validate(dialog)
     out.turns.sort(key=lambda t: t.start_s)
     return out

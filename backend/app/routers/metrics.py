@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import UserContext, require_user
+from ..auth import UserContext, require_manage, require_user
 from ..db import get_db
 from ..models import AnalysisMetric, MetricEvaluation, Organization
 from ..schemas import MetricCreate, MetricOut, MetricUpdate
@@ -30,7 +30,7 @@ async def list_metrics(
 @router.post("", response_model=MetricOut, status_code=201)
 async def create_metric(
     body: MetricCreate,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     org = await db.scalar(select(Organization).limit(1))
@@ -55,7 +55,7 @@ async def create_metric(
 async def update_metric(
     metric_id: uuid.UUID,
     body: MetricUpdate,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     metric = await db.get(AnalysisMetric, metric_id)
@@ -79,7 +79,7 @@ async def update_metric(
 @router.delete("/{metric_id}", status_code=204)
 async def delete_metric(
     metric_id: uuid.UUID,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     metric = await db.get(AnalysisMetric, metric_id)

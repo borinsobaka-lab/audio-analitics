@@ -34,9 +34,50 @@ class DayRecordingOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- Вход в админку ---
+
+class LoginRequest(BaseModel):
+    login: str = Field(min_length=2, max_length=64)
+    password: str = Field(min_length=4, max_length=128)
+
+
+class MeOut(BaseModel):
+    employee_id: uuid.UUID | None = None
+    full_name: str = ""
+    login: str | None = None
+    scope: str = "own"
+    can_view_all: bool = False
+    can_manage: bool = False
+    is_owner: bool = False
+
+
+class SessionOut(BaseModel):
+    token: str
+    user: MeOut
+
+
 # --- Employees (managers) ---
 
 class EmployeeOut(BaseModel):
+    id: uuid.UUID
+    location_id: uuid.UUID
+    full_name: str
+    role: str
+    active: bool
+    # Доступ в админку. Пароль наружу не отдаётся никогда — только признак
+    # того, что он выдан.
+    login: str | None = None
+    access_scope: str = "own"
+    has_password: bool = False
+    last_login_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class EmployeePickOut(BaseModel):
+    """То, что видит приложение на ресепшене: только выбор имени. Логины и
+    признаки доступа туда не уходят — устройство их не касается."""
+
     id: uuid.UUID
     location_id: uuid.UUID
     full_name: str
@@ -50,11 +91,25 @@ class EmployeeCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
     location_id: uuid.UUID | None = None
     role: str = "manager"
+    # Логин необязателен: менеджера можно завести только для приложения.
+    login: str | None = Field(default=None, max_length=64)
+    access_scope: str = Field(default="own", pattern="^(own|all)$")
 
 
 class EmployeeUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=255)
     active: bool | None = None
+    login: str | None = Field(default=None, max_length=64)
+    access_scope: str | None = Field(default=None, pattern="^(own|all)$")
+
+
+class EmployeeCredentialsOut(BaseModel):
+    """Единственный момент, когда пароль виден: сразу после выдачи или
+    сброса. В базе лежит только хеш, повторно показать его нельзя."""
+
+    employee: EmployeeOut
+    login: str
+    password: str
 
 
 class SegmentUploadedOut(BaseModel):
@@ -143,6 +198,88 @@ class DialogDetailOut(DialogOut):
     turns: list[DialogTurnOut] = []
 
 
+# --- Согласие / несогласие с разбором ---
+
+class FeedbackIn(BaseModel):
+    dialog_id: uuid.UUID
+    # Пусто — отзыв о разборе целиком; иначе о конкретной метрике.
+    metric_id: uuid.UUID | None = None
+    agree: bool
+    comment: str = Field(default="", max_length=2000)
+
+
+class DialogFeedbackOut(BaseModel):
+    id: uuid.UUID
+    dialog_id: uuid.UUID
+    metric_id: uuid.UUID | None = None
+    agree: bool
+    comment: str = ""
+    author_name: str = ""
+    subject_name: str = ""
+    created_at: datetime
+    # Свой ли это голос — по нему кнопка в интерфейсе рисуется нажатой.
+    is_mine: bool = False
+
+
+class MetricFeedbackItem(BaseModel):
+    """Одно несогласие в разрезе метрики: где было, у кого и что сказали."""
+
+    id: uuid.UUID
+    day_recording_id: uuid.UUID
+    day_date: date
+    dialog_id: uuid.UUID
+    dialog_start_s: float | None = None
+    subject_name: str = ""
+    author_name: str = ""
+    comment: str = ""
+    created_at: datetime
+
+
+class MetricFeedbackStat(BaseModel):
+    metric_id: uuid.UUID | None = None
+    metric_name: str = "Разбор целиком"
+    agree_count: int = 0
+    disagree_count: int = 0
+    disagreements: list[MetricFeedbackItem] = []
+
+
+# --- Договорённости по итогам разбора ---
+
+class AgreementCreate(BaseModel):
+    day_recording_id: uuid.UUID
+    dialog_id: uuid.UUID | None = None
+    text: str = Field(min_length=3, max_length=2000)
+
+
+class AgreementUpdate(BaseModel):
+    text: str | None = Field(default=None, min_length=3, max_length=2000)
+    status: str | None = Field(default=None, pattern="^(open|done|missed|cancelled)$")
+    resolution_note: str | None = Field(default=None, max_length=2000)
+    # Смена, на которой отметили выполнение, — чтобы из карточки договорённости
+    # можно было попасть в день, где её проверили.
+    resolved_day_recording_id: uuid.UUID | None = None
+
+
+class AgreementOut(BaseModel):
+    id: uuid.UUID
+    employee_id: uuid.UUID | None = None
+    employee_name: str = ""
+    day_recording_id: uuid.UUID
+    day_date: date
+    dialog_id: uuid.UUID | None = None
+    dialog_start_s: float | None = None
+    text: str
+    status: str
+    created_by_name: str = ""
+    created_at: datetime
+    resolved_at: datetime | None = None
+    resolved_by_name: str = ""
+    resolved_day_recording_id: uuid.UUID | None = None
+    resolution_note: str = ""
+
+    model_config = {"from_attributes": True}
+
+
 class DayReportOut(BaseModel):
     recording: DayRecordingOut
     dialogs_total: int
@@ -153,6 +290,12 @@ class DayReportOut(BaseModel):
     summary: dict | None
     metric_stats: list[DayMetricStat] = []
     dialogs: list[DialogOut]
+    feedback: list[DialogFeedbackOut] = []
+    # Договорённости, записанные по итогам этой смены.
+    agreements: list[AgreementOut] = []
+    # Незакрытые договорённости с прошлых смен того же менеджера: главное,
+    # ради чего они заводились, — чтобы проверка всплывала сама.
+    carried_agreements: list[AgreementOut] = []
 
 
 # --- Prompt templates ---

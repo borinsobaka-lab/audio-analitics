@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import UserContext, require_user
+from ..auth import UserContext, require_manage, require_user
 from ..db import get_db
 from ..models import PromptTemplate, ScriptTemplate
 from ..schemas import (
@@ -59,7 +59,7 @@ async def prompt_history(
 async def save_prompt(
     key: str,
     body: PromptTemplateUpdate,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     current = await db.scalar(
@@ -96,7 +96,7 @@ async def save_prompt(
 async def rollback_prompt(
     key: str,
     version: int,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-activate an older version as a new version (history stays linear)."""
@@ -143,7 +143,7 @@ async def get_active_script(
 @script_router.put("", response_model=ScriptTemplateOut)
 async def save_script(
     body: ScriptTemplateUpdate,
-    user: UserContext = Depends(require_user),
+    user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
     current = await db.scalar(

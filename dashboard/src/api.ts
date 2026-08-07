@@ -1,4 +1,5 @@
-// Thin API client. In production, set the Supabase session token via setToken().
+// Тонкий клиент API. Токен — либо сессия сотрудника (логин и пароль), либо
+// владельческий ADMIN_API_TOKEN; заголовок в обоих случаях один и тот же.
 
 const BASE = import.meta.env.VITE_API_URL || "";
 
@@ -16,6 +17,19 @@ export function getToken(): string | null {
   return authToken;
 }
 
+/** Сессию мог отозвать администратор — сбросом пароля или отключением. Тогда
+ *  токен в браузере уже мусор, и держать его значит показывать пользователю
+ *  ошибку на каждой странице вместо формы входа. */
+type Listener = () => void;
+const expiredListeners = new Set<Listener>();
+
+export function onSessionExpired(fn: Listener): () => void {
+  expiredListeners.add(fn);
+  return () => {
+    expiredListeners.delete(fn);
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -23,6 +37,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
   const resp = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (resp.status === 401 && authToken) {
+    setToken(null);
+    expiredListeners.forEach((fn) => fn());
+  }
   if (!resp.ok) {
     const body = await resp.text();
     // FastAPI puts the human-readable reason in {"detail": "..."}.
@@ -94,6 +112,81 @@ export interface Employee {
   full_name: string;
   role: string;
   active: boolean;
+  /** Логин в админку. Пусто — сотрудник есть только в приложении записи. */
+  login: string | null;
+  /** own — видит свои смены; all — видит все и настраивает систему. */
+  access_scope: "own" | "all";
+  has_password: boolean;
+  last_login_at: string | null;
+}
+
+/** Пароль приходит ровно один раз — при выдаче доступа или сбросе. */
+export interface EmployeeCredentials {
+  employee: Employee;
+  login: string;
+  password: string;
+}
+
+export interface Me {
+  employee_id: string | null;
+  full_name: string;
+  login: string | null;
+  scope: "own" | "all";
+  can_view_all: boolean;
+  can_manage: boolean;
+  is_owner: boolean;
+}
+
+export interface DialogFeedback {
+  id: string;
+  dialog_id: string;
+  metric_id: string | null;
+  agree: boolean;
+  comment: string;
+  author_name: string;
+  subject_name: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface MetricFeedbackItem {
+  id: string;
+  day_recording_id: string;
+  day_date: string;
+  dialog_id: string;
+  dialog_start_s: number | null;
+  subject_name: string;
+  author_name: string;
+  comment: string;
+  created_at: string;
+}
+
+export interface MetricFeedbackStat {
+  metric_id: string | null;
+  metric_name: string;
+  agree_count: number;
+  disagree_count: number;
+  disagreements: MetricFeedbackItem[];
+}
+
+export type AgreementStatus = "open" | "done" | "missed" | "cancelled";
+
+export interface Agreement {
+  id: string;
+  employee_id: string | null;
+  employee_name: string;
+  day_recording_id: string;
+  day_date: string;
+  dialog_id: string | null;
+  dialog_start_s: number | null;
+  text: string;
+  status: AgreementStatus;
+  created_by_name: string;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by_name: string;
+  resolved_day_recording_id: string | null;
+  resolution_note: string;
 }
 
 export interface Dialog {
@@ -136,6 +229,9 @@ export interface DayReport {
   } | null;
   metric_stats: MetricStat[];
   dialogs: Dialog[];
+  feedback: DialogFeedback[];
+  agreements: Agreement[];
+  carried_agreements: Agreement[];
 }
 
 export interface PromptTemplate {
@@ -169,6 +265,14 @@ export interface ScriptTemplate {
 // --- Endpoints ---
 
 export const api = {
+  authState: () => request<{ has_logins: boolean }>("/api/auth/state"),
+  login: (login: string, password: string) =>
+    request<{ token: string; user: Me }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ login, password }),
+    }),
+  me: () => request<Me>("/api/auth/me"),
+
   listDays: () => request<DayRecording[]>("/api/reports/days"),
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
   reprocessDay: (id: string) =>
@@ -202,16 +306,80 @@ export const api = {
   },
 
   listEmployees: () => request<Employee[]>("/api/employees"),
-  createEmployee: (full_name: string) =>
-    request<Employee>("/api/employees", {
+  createEmployee: (body: {
+    full_name: string;
+    login?: string | null;
+    access_scope?: "own" | "all";
+  }) =>
+    request<EmployeeCredentials>("/api/employees", {
       method: "POST",
-      body: JSON.stringify({ full_name }),
+      body: JSON.stringify(body),
     }),
-  updateEmployee: (id: string, body: { full_name?: string; active?: boolean }) =>
-    request<Employee>(`/api/employees/${id}`, {
+  updateEmployee: (
+    id: string,
+    body: {
+      full_name?: string;
+      active?: boolean;
+      login?: string | null;
+      access_scope?: "own" | "all";
+    }
+  ) =>
+    request<EmployeeCredentials>(`/api/employees/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  resetEmployeePassword: (id: string) =>
+    request<EmployeeCredentials>(`/api/employees/${id}/reset-password`, {
+      method: "POST",
+    }),
+  deleteEmployee: (id: string) =>
+    request<void>(`/api/employees/${id}`, { method: "DELETE" }),
+
+  leaveFeedback: (body: {
+    dialog_id: string;
+    metric_id?: string | null;
+    agree: boolean;
+    comment?: string;
+  }) =>
+    request<DialogFeedback>("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  withdrawFeedback: (id: string) =>
+    request<void>(`/api/feedback/${id}`, { method: "DELETE" }),
+  feedbackByMetric: () => request<MetricFeedbackStat[]>("/api/feedback/by-metric"),
+
+  listAgreements: (params?: { status?: AgreementStatus; employee_id?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.employee_id) q.set("employee_id", params.employee_id);
+    const tail = q.toString();
+    return request<Agreement[]>(`/api/agreements${tail ? `?${tail}` : ""}`);
+  },
+  createAgreement: (body: {
+    day_recording_id: string;
+    dialog_id?: string | null;
+    text: string;
+  }) =>
+    request<Agreement>("/api/agreements", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateAgreement: (
+    id: string,
+    body: {
+      text?: string;
+      status?: AgreementStatus;
+      resolution_note?: string;
+      resolved_day_recording_id?: string | null;
+    }
+  ) =>
+    request<Agreement>(`/api/agreements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteAgreement: (id: string) =>
+    request<void>(`/api/agreements/${id}`, { method: "DELETE" }),
   dialogDetail: (id: string) => request<DialogDetail>(`/api/reports/dialogs/${id}`),
   dayAudioUrl: (id: string) =>
     request<{ url: string; expires_in_s: number }>(`/api/audio/day/${id}`),
@@ -290,6 +458,21 @@ export function fmtClock(iso: string | null): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Момент в прошлом: «5 авг, 14:20». Для отзывов, входов и договорённостей —
+ *  день без времени врёт («сегодня» о вчерашнем вечере), время без дня
+ *  бесполезно. */
+export function fmtWhen(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 // --- Сводная статистика за период (дашборд) ---

@@ -55,8 +55,12 @@ class Settings(BaseSettings):
     # --- Auth ---
     # Static API keys for desktop clients: "key1:location_id1,key2:location_id2"
     device_api_keys: str = ""
-    # Static admin token for the dashboard (simplest production auth).
+    # Static admin token for the dashboard: the owner's master key. Works even
+    # before any employee login exists, and always sees everything.
     admin_api_token: str = ""
+    # Ключ подписи сессий сотрудников. Если пуст, берётся ADMIN_API_TOKEN —
+    # менять его значение означает разлогинить всех, это нормально.
+    auth_secret: str = ""
     # Supabase JWT secret for dashboard users (HS256), optional alternative.
     supabase_jwt_secret: str = ""
     # Comma-separated origins allowed for CORS (dashboard URLs).

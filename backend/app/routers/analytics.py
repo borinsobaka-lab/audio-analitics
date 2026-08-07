@@ -178,6 +178,13 @@ async def summary(
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Менеджер с доступом «только свои» видит здесь свой прогресс и ничей
+    # больше: фильтр по себе ставится принудительно, что бы ни пришло в
+    # параметрах запроса.
+    if not user.can_view_all:
+        if not user.employee_id:
+            raise HTTPException(403, "Учётной записи не сопоставлен менеджер")
+        employee_id = user.employee_id
     if date_to < date_from:
         raise HTTPException(400, "Конец периода раньше начала")
     length = (date_to - date_from).days + 1
