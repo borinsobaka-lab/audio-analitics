@@ -57,31 +57,6 @@ class SessionOut(BaseModel):
     user: MeOut
 
 
-# --- Обновление приложения записи ---
-
-class UpdateManifest(BaseModel):
-    """Ответ апдейтеру Tauri. Имена полей заданы им, менять нельзя."""
-
-    version: str
-    notes: str = ""
-    pub_date: datetime
-    url: str
-    signature: str
-
-
-class AppReleaseOut(BaseModel):
-    id: uuid.UUID
-    platform: str
-    version: str
-    notes: str = ""
-    size_bytes: int = 0
-    published: bool = True
-    created_by_name: str = ""
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 # --- Точки продажи (студии) ---
 
 class LocationOut(BaseModel):

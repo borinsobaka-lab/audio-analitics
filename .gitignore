@@ -23,8 +23,6 @@ desktop/src-tauri/target/
 desktop/src-tauri/gen/
 # Адрес сервера и ключ приложения для сборки — в репозиторий не кладём
 desktop/src-tauri/build.env
-# Приватный ключ подписи обновлений живёт только на маке владельца
-desktop/src-tauri/updater.key
 
 # Audio / data artifacts
 *.opus

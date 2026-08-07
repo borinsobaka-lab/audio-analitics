@@ -11,9 +11,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # Автозапуск при входе в систему: LaunchAgent на macOS, ключ Run на Windows.
 tauri-plugin-autostart = "2"
-# Обновление по кнопке: сборки лежат на нашем сервере, подпись проверяется
-# вшитым публичным ключом.
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

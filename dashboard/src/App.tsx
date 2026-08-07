@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { api, getToken, Location, Me, onSessionExpired, plural, setToken } from "./api";
 import {
-  IconApp,
   IconDashboard,
   IconDays,
   IconMetrics,
@@ -15,7 +14,6 @@ import DashboardPage from "./pages/DashboardPage";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
 import EmployeesPage from "./pages/EmployeesPage";
-import AppPage from "./pages/AppPage";
 import LocationsPage from "./pages/LocationsPage";
 import LoginPage from "./pages/LoginPage";
 import MetricsPage from "./pages/MetricsPage";
@@ -221,10 +219,6 @@ export default function App() {
                   <IconStudio />
                   Точки продажи
                 </NavLink>
-                <NavLink to="/app" className="nav-link">
-                  <IconApp />
-                  Приложение
-                </NavLink>
               </>
             )}
 
@@ -266,7 +260,6 @@ export default function App() {
               {me.can_manage && <Route path="/metrics" element={<MetricsPage />} />}
               {me.can_manage && <Route path="/employees" element={<EmployeesPage />} />}
               {me.can_manage && <Route path="/locations" element={<LocationsPage />} />}
-              {me.can_manage && <Route path="/app" element={<AppPage />} />}
             </Routes>
           </main>
         </div>

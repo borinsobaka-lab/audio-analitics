@@ -57,26 +57,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
-/** Загрузка файла: Content-Type не ставим — браузер сам добавит границу
- *  multipart, а наш заголовок её затёр бы. */
-async function upload<T>(path: string, form: FormData): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  const resp = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
-  if (!resp.ok) {
-    const body = await resp.text();
-    let message = body.slice(0, 300);
-    try {
-      const parsed = JSON.parse(body);
-      if (typeof parsed.detail === "string") message = parsed.detail;
-    } catch {
-      /* keep the raw body */
-    }
-    throw new Error(message);
-  }
-  return resp.json() as Promise<T>;
-}
-
 // --- Types mirrored from backend schemas ---
 
 export interface DayRecording {
@@ -125,17 +105,6 @@ export interface MetricEvaluation {
   good: string[];
   bad: string[];
   comment: string;
-}
-
-export interface AppRelease {
-  id: string;
-  platform: string;
-  version: string;
-  notes: string;
-  size_bytes: number;
-  published: boolean;
-  created_by_name: string;
-  created_at: string;
 }
 
 export interface Location {
@@ -359,16 +328,6 @@ export const api = {
     (params.location_ids ?? []).forEach((id) => q.append("location_id", id));
     return request<Summary>(`/api/analytics/summary?${q}`);
   },
-
-  listReleases: () => request<AppRelease[]>("/api/app/releases"),
-  uploadRelease: (form: FormData) => upload<AppRelease>("/api/app/releases", form),
-  updateRelease: (id: string, params: { published?: boolean }) => {
-    const q = new URLSearchParams();
-    if (params.published !== undefined) q.set("published", String(params.published));
-    return request<AppRelease>(`/api/app/releases/${id}?${q}`, { method: "PATCH" });
-  },
-  deleteRelease: (id: string) =>
-    request<void>(`/api/app/releases/${id}`, { method: "DELETE" }),
 
   listLocations: () => request<Location[]>("/api/locations"),
   createLocation: (body: { name: string; address?: string }) =>
@@ -617,14 +576,6 @@ export function addDays(d: Date, days: number): Date {
   const copy = new Date(d);
   copy.setDate(copy.getDate() + days);
   return copy;
-}
-
-/** Размер файла для человека: «24,3 МБ». */
-export function fmtSize(bytes: number): string {
-  if (!bytes) return "—";
-  const mb = bytes / (1024 * 1024);
-  if (mb < 1) return `${Math.round(bytes / 1024)} КБ`;
-  return `${mb.toFixed(1).replace(".", ",")} МБ`;
 }
 
 /** Стоимость: суммы здесь заметно меньше доллара, поэтому центов не хватает. */

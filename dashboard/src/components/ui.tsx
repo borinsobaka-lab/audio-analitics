@@ -52,13 +52,6 @@ export const IconStudio = ({ size = 17 }: IconProps) => (
   </svg>
 );
 
-export const IconApp = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <rect x="4" y="3" width="16" height="18" rx="2.5" />
-    <path d="M12 8v6M9 11.5l3 3 3-3" />
-  </svg>
-);
-
 export const IconCalendar = ({ size = 15 }: IconProps) => (
   <svg {...base(size)}>
     <rect x="3" y="5" width="18" height="16" rx="2.5" />

@@ -13,7 +13,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-use tauri_plugin_updater::UpdaterExt;
 
 use keep_awake::KeepAwake;
 use recorder::RecorderHandle;
@@ -305,98 +304,6 @@ fn input_device() -> String {
     recorder::default_input_name().unwrap_or_default()
 }
 
-/* --- Обновление приложения ------------------------------------------------
- *
- * Приложение стоит на компьютерах в студиях, куда владелец не ходит. Раньше
- * обновление означало собрать сборку, принести флешку и обойти точки; теперь
- * оно само спрашивает сервер и ставит новую версию по нажатию кнопки.
- *
- * Адрес обновлений собирается в рантайме, а не берётся из tauri.conf.json:
- * сервер там задать нельзя — он вшивается в сборку через build.env и у разных
- * владельцев разный. А вот публичный ключ подписи живёт именно в конфиге, и
- * менять его в рантайме нельзя намеренно: он и есть то, что не даёт подсунуть
- * приложению чужой архив.
- */
-
-#[derive(Serialize)]
-struct UpdateInfo {
-    available: bool,
-    /// Версия, которая стоит сейчас.
-    current: String,
-    /// Версия на сервере, если она новее.
-    version: String,
-    notes: String,
-}
-
-fn updater_for(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
-    // Настройки читаются в отдельном блоке: держать блокировку через await
-    // нельзя, а сразу после этого начинается сеть.
-    let (base_url, app_key) = {
-        let state = app.state::<AppState>();
-        let settings = state.settings.lock().unwrap();
-        (settings.base_url(), settings.app_key())
-    };
-    if base_url.is_empty() {
-        return Err("Не задан адрес сервера".into());
-    }
-    let endpoint = format!(
-        "{base_url}/api/app/update/{{{{target}}}}/{{{{arch}}}}/{{{{current_version}}}}"
-    );
-    app.updater_builder()
-        .endpoints(vec![endpoint.parse().map_err(|e| format!("{e}"))?])
-        .map_err(|e| e.to_string())?
-        .header("X-App-Key", app_key)
-        .map_err(|e| e.to_string())?
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
-    let current = app.package_info().version.to_string();
-    let update = updater_for(&app)?
-        .check()
-        .await
-        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?;
-    Ok(match update {
-        Some(update) => UpdateInfo {
-            available: true,
-            current,
-            version: update.version.clone(),
-            notes: update.body.clone().unwrap_or_default(),
-        },
-        None => UpdateInfo {
-            available: false,
-            current,
-            version: String::new(),
-            notes: String::new(),
-        },
-    })
-}
-
-#[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    // Обновление перезапускает приложение: посреди смены это оборвало бы
-    // запись, поэтому кнопка работает только когда запись не идёт.
-    {
-        let state = app.state::<AppState>();
-        if state.session.lock().unwrap().is_some() {
-            return Err("Идёт запись — обновитесь после завершения смены".into());
-        }
-    }
-    let update = updater_for(&app)?
-        .check()
-        .await
-        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?
-        .ok_or("Обновление уже не требуется")?;
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| format!("Не удалось установить обновление: {e}"))?;
-    app.restart();
-}
-
 #[tauri::command]
 fn get_autostart(app: tauri::AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
@@ -592,7 +499,6 @@ fn main() {
             MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -628,8 +534,6 @@ fn main() {
             list_locations,
             list_employees,
             input_device,
-            check_update,
-            install_update,
             get_autostart,
             set_autostart,
             start_day,

@@ -1,16 +1,14 @@
 {
   "name": "audio-recorder-ui",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "tauri": "tauri",
-    "keygen": "bash scripts/keygen.sh",
-    "bump": "node scripts/bump.mjs",
-    "build:mac": "bash scripts/build-mac.sh",
-    "build:mac:universal": "bash scripts/build-mac.sh"
+    "build:mac": "tauri build && bash scripts/patch-macos-plist.sh",
+    "build:mac:universal": "tauri build --target universal-apple-darwin && bash scripts/patch-macos-plist.sh universal-apple-darwin"
   },
   "dependencies": {
     "@fontsource-variable/roboto": "^5.3.0",
