@@ -17,8 +17,9 @@ import {
   IconPlay,
   Note,
   Score,
-  ScoreBar,
+  Section,
   Skeleton,
+  Stat,
   scoreZone,
 } from "../components/ui";
 
@@ -97,24 +98,13 @@ export default function DayReportPage() {
       {error && <Note kind="error">{error}</Note>}
 
       <div className="stats">
-        <div className="stat lead">
-          <div className="v display">{conversion}</div>
-          <div className="label">Конверсия</div>
-        </div>
-        <div className="stat">
-          <div className="v display">{report.sales_count}</div>
-          <div className="label">Продаж</div>
-        </div>
-        <div className="stat">
-          <div className="v display">{report.dialogs_total}</div>
-          <div className="label">Разговоров с клиентами</div>
-        </div>
-        <div className="stat">
-          <div className="v">{fmtDur(recording.speech_duration_s)}</div>
-          <div className="label">Чистой речи</div>
-        </div>
-        <div
-          className="stat"
+        <Stat lead value={conversion} label="Конверсия" />
+        <Stat value={report.sales_count} label="Продаж" />
+        <Stat value={report.dialogs_total} label="Разговоров с клиентами" />
+        <Stat value={fmtDur(recording.speech_duration_s)} label="Чистой речи" />
+        <Stat
+          value={fmtUsd(recording.cost_usd)}
+          label="Обработка"
           title={
             recording.cost_usd != null
               ? `Распознавание ${fmtDur(recording.asr_seconds)} речи + ` +
@@ -124,68 +114,54 @@ export default function DayReportPage() {
                 "Это стоимость последней обработки: «Пересчитать» тратит заново."
               : undefined
           }
-        >
-          <div className="v">{fmtUsd(recording.cost_usd)}</div>
-          <div className="label">Обработка</div>
-        </div>
+        />
       </div>
 
       {report.metric_stats.length > 0 && (
-        <div className="section">
-          <div className="section-head">
-            <h3>Метрики за смену</h3>
-            <span className="count">средняя оценка и сколько раз сработала</span>
-          </div>
+        <Section title="Метрики за смену" hint="средняя оценка и сколько раз сработала">
           <div className="stats">
             {report.metric_stats.map((s) => (
-              <div className="stat" key={s.metric_id}>
-                <div className="v display">
-                  {s.avg_score != null ? (
+              <Stat
+                key={s.metric_id}
+                value={
+                  s.avg_score != null ? (
                     <>
                       {s.avg_score}
                       <span className="of">/{s.scale_max}</span>
                     </>
                   ) : (
                     "—"
-                  )}
-                </div>
-                {/* Полоса под цифрой отвечает на «хорошо или плохо» цветом,
-                    до того как прочитано само число. */}
-                {s.avg_score != null && (
-                  <ScoreBar score={s.avg_score} scale={s.scale_max} />
-                )}
-                <div className="label">
-                  {s.name} · {s.triggered_count}×
-                </div>
-              </div>
+                  )
+                }
+                /* Полоса под цифрой отвечает на «хорошо или плохо» цветом,
+                   до того как прочитано само число. */
+                bar={
+                  s.avg_score != null
+                    ? { score: s.avg_score, scale: s.scale_max }
+                    : undefined
+                }
+                label={`${s.name} · ${s.triggered_count}×`}
+              />
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
       {summary && (
-        <div className="section">
-          <div className="section-head">
-            <h3>Итоги смены</h3>
-          </div>
+        <Section title="Итоги смены">
           <div className="sheet sheet-pad">
             <SummaryList title="Главные отклонения" items={summary.top_deviations} kind="bad" />
             <SummaryList title="Рекомендации менеджеру" items={summary.recommendations} />
             <SummaryList title="Предложения по скрипту" items={summary.script_suggestions} />
             <SummaryList title="Удачные моменты" items={summary.highlights} kind="good" />
           </div>
-        </div>
+        </Section>
       )}
 
-      <div className="section">
-        <div className="section-head">
-          <h3>Разговоры</h3>
-          <span className="count">
-            {shown.length > 0
-              ? `${shown.length} на ленте смены`
-              : "ничего не распознано"}
-          </span>
-        </div>
+      <Section
+        title="Разговоры"
+        hint={shown.length > 0 ? `${shown.length} на ленте смены` : "ничего не распознано"}
+      >
 
         {report.dialogs.length === 0 && (
           <Empty title="Разговоров не найдено">
@@ -204,7 +180,7 @@ export default function DayReportPage() {
         {shown.map((d) => (
           <DialogCard key={d.id} dialog={d} onSeek={seek} />
         ))}
-      </div>
+      </Section>
 
       {audioUrl && (
         <Deck
@@ -229,7 +205,7 @@ function SummaryList({
 }) {
   if (!items || items.length === 0) return null;
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div className="summary-group">
       <div className={`notes-title ${kind ?? ""}`}>{title}</div>
       <ul className={`notes ${kind ?? ""}`}>
         {items.map((item, i) => (
@@ -349,7 +325,7 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
             </span>
           ) : null
         )}
-        <button className="ghost small" style={{ marginLeft: "auto" }} onClick={toggle}>
+        <button className="ghost small push" onClick={toggle}>
           {open ? "Свернуть" : "Разбор"}
         </button>
       </div>
@@ -360,7 +336,7 @@ function DialogCard({ dialog, onSeek }: { dialog: Dialog; onSeek: (s: number) =>
           {evals.length > 0 ? (
             evals.map((ev) => <Evaluation key={ev.metric_id} ev={ev} onSeek={onSeek} />)
           ) : (
-            <p className="muted" style={{ margin: 0 }}>
+            <p className="muted dialog-note">
               Ни одна метрика не сработала на этом разговоре.
             </p>
           )}

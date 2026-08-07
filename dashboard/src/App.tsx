@@ -32,18 +32,16 @@ function AccessToken() {
   }
   return (
     <div>
-      <span className="label" style={{ display: "block", marginBottom: 6 }}>
-        Токен доступа
-      </span>
+      <span className="label token-label">Токен доступа</span>
       <input
         type="password"
         value={value}
         placeholder="ADMIN_API_TOKEN"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && save()}
-        style={{ marginBottom: 6 }}
+        className="token-input"
       />
-      <button className="secondary small" style={{ width: "100%" }} onClick={save}>
+      <button className="secondary small btn-block" onClick={save}>
         Сохранить и обновить
       </button>
     </div>

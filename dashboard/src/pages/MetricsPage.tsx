@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AnalysisMetric, api, plural } from "../api";
-import { Empty, Note, PageHead, Skeleton } from "../components/ui";
+import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
 
 const EXAMPLE_PROMPT = `Оцени, насколько качественно менеджер провёл продажу.
 
@@ -109,13 +109,13 @@ function MetricEditor({
   };
 
   return (
-    <div className="sheet sheet-pad" style={{ marginBottom: 12 }}>
-      <h4 style={{ marginBottom: 14 }}>
+    <div className="sheet sheet-pad metric-editor">
+      <h4 className="editor-title">
         {metric ? "Редактирование метрики" : "Новая метрика"}
       </h4>
 
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <label className="field" style={{ flex: "1 1 280px" }}>
+      <div className="field-row">
+        <label className="field field-grow">
           <span className="label">Название — видно в отчётах</span>
           <input
             type="text"
@@ -155,7 +155,7 @@ function MetricEditor({
         <button className="secondary" onClick={onCancel}>
           Отмена
         </button>
-        <span className="muted" style={{ marginLeft: "auto" }}>
+        <span className="muted push">
           Правки применяются к новым разборам. Чтобы пересчитать прошлую смену,
           нажмите «Пересчитать» в её карточке.
         </span>
@@ -173,7 +173,6 @@ function MetricCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   if (editing) {
@@ -202,9 +201,9 @@ function MetricCard({
   const lines = metric.prompt.split("\n").length;
 
   return (
-    <div className="sheet sheet-pad" style={{ marginBottom: 12, opacity: metric.active ? 1 : 0.65 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <strong style={{ fontSize: 15 }}>{metric.name}</strong>
+    <div className={`sheet sheet-pad metric-card ${metric.active ? "" : "is-off"}`}>
+      <div className="metric-card-head">
+        <strong className="metric-card-name">{metric.name}</strong>
         <span className={`pill ${metric.active ? "sale" : "irrelevant"}`}>
           {metric.active ? "Активна" : "Отключена"}
         </span>
@@ -212,7 +211,7 @@ function MetricCard({
           {metric.scale_max}-балльная · промпт: {lines}{" "}
           {plural(lines, "строка", "строки", "строк")}
         </span>
-        <div className="actions" style={{ marginLeft: "auto" }}>
+        <div className="actions push">
           <button className="secondary small" onClick={() => setEditing(true)}>
             Редактировать
           </button>
@@ -222,31 +221,17 @@ function MetricCard({
           >
             {metric.active ? "Отключить" : "Включить"}
           </button>
-          {confirmDelete ? (
-            <>
-              <button
-                className="danger small"
-                onClick={() => patch(() => api.deleteMetric(metric.id))}
-              >
-                Удалить навсегда
-              </button>
-              <button className="ghost small" onClick={() => setConfirmDelete(false)}>
-                Отмена
-              </button>
-            </>
-          ) : (
-            <button
-              className="ghost small"
-              title="Удалить метрику и все её оценки в прошлых отчётах"
-              onClick={() => setConfirmDelete(true)}
-            >
-              Удалить
-            </button>
-          )}
+          <ConfirmAction
+            small
+            label="Удалить"
+            confirmLabel="Удалить навсегда"
+            title="Удалить метрику и все её оценки в прошлых отчётах"
+            onConfirm={() => patch(() => api.deleteMetric(metric.id))}
+          />
         </div>
       </div>
 
-      <pre className={`prompt-preview ${expanded ? "open" : ""}`} style={{ marginTop: 12 }}>
+      <pre className={`prompt-preview ${expanded ? "open" : ""}`}>
         {metric.prompt}
       </pre>
       {lines > 8 && (

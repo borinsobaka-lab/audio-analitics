@@ -1,6 +1,6 @@
 /** Общие элементы админки: огонёк статуса, шкала оценки, пустые состояния,
  *  иконки. Всё на своих CSS-классах из styles.css — без внешних зависимостей. */
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 
 /* --- Иконки: один штрих 1.5px, размер 16 — набор держится единым. -------- */
 
@@ -119,16 +119,118 @@ export function ScoreBar({ score, scale }: { score: number; scale: number }) {
 
 /** Оценка целиком: цифра плюс полоса. Сегментная шкала вместо звёзд — на
  *  десятибалльной шкале десять звёзд шум, а десять сегментов читаются
- *  одним взглядом. */
-export function Score({ score, scale }: { score: number; scale: number }) {
+ *  одним взглядом.
+ *
+ *  `tone` красит саму цифру по зоне. Полоса цвет несёт всегда; цифра — только
+ *  там, где на неё смотрят отдельно от полосы. */
+export function Score({
+  score,
+  scale,
+  tone = false,
+}: {
+  score: number;
+  scale: number;
+  tone?: boolean;
+}) {
   return (
     <span className="score" title={`${score} из ${scale}`}>
-      <span className="score-val">
+      <span className={`score-val ${tone ? scoreZone(score, scale) : ""}`}>
         {score}
         <span className="of">/{scale}</span>
       </span>
       <ScoreBar score={score} scale={scale} />
     </span>
+  );
+}
+
+/* --- Дельта к прошлому периоду ------------------------------------------ */
+
+/** Направление и оценка — разные каналы. Стрелка показывает, куда сдвинулось
+ *  число; цвет — хорошо это или плохо. У расходов они расходятся: снижение
+ *  затрат рисуется стрелкой вниз, но зелёным. */
+export type DeltaValue = {
+  text: string;
+  dir: "up" | "down" | "flat";
+  good: boolean | null;
+} | null;
+
+const ARROW = { up: "↑ ", down: "↓ ", flat: "" };
+
+export function Delta({ value }: { value: DeltaValue }) {
+  if (!value) return <span className="delta none">—</span>;
+  const tone = value.good == null ? "flat" : value.good ? "up" : "down";
+  return (
+    <span className={`delta ${tone}`}>
+      {ARROW[value.dir]}
+      {value.text}
+    </span>
+  );
+}
+
+/* --- Показатель --------------------------------------------------------- */
+
+/** Плитка показателя. Одна на весь проект: и итоги смены, и итоги периода —
+ *  это одно и то же «крупная цифра + подпись», разошлись бы они только от
+ *  того, что их писали в разных файлах. */
+export function Stat({
+  value,
+  label,
+  lead = false,
+  delta,
+  bar,
+  title,
+}: {
+  value: ReactNode;
+  label: ReactNode;
+  lead?: boolean;
+  delta?: DeltaValue;
+  bar?: { score: number; scale: number };
+  title?: string;
+}) {
+  return (
+    <div className={`stat ${lead ? "lead" : ""}`} title={title}>
+      <div className="v">{value}</div>
+      {bar && <ScoreBar score={bar.score} scale={bar.scale} />}
+      <div className="label">{label}</div>
+      {delta !== undefined && <Delta value={delta} />}
+    </div>
+  );
+}
+
+/** Строка «оценка — название метрики»: колонка оценок фиксированной ширины,
+ *  поэтому полосы и названия выравниваются между строками. */
+export function MetricLine({
+  name,
+  score,
+  scale,
+  meta,
+  delta,
+  tone = false,
+  compact = false,
+  emptyLabel = "не сработала",
+}: {
+  name: string;
+  score: number | null;
+  scale: number;
+  meta?: ReactNode;
+  delta?: DeltaValue;
+  tone?: boolean;
+  compact?: boolean;
+  emptyLabel?: string;
+}) {
+  return (
+    <div className={`metric-line ${compact ? "compact" : ""}`}>
+      {score != null ? (
+        <Score score={score} scale={scale} tone={tone} />
+      ) : (
+        <span className="score-empty">{emptyLabel}</span>
+      )}
+      <span className="metric-name">
+        {name}
+        {meta != null && <span className="times"> {meta}</span>}
+        {delta !== undefined && <Delta value={delta} />}
+      </span>
+    </div>
   );
 }
 
@@ -176,12 +278,146 @@ export function Note({
   kind: "error" | "success" | "info";
   children: ReactNode;
 }) {
-  return <div className={`note ${kind}`}>{children}</div>;
+  // Сообщение появляется после действия пользователя — без aria-live
+  // скринридер о нём не узнает.
+  return (
+    <div className={`note ${kind}`} role="status" aria-live="polite">
+      {children}
+    </div>
+  );
+}
+
+/* --- Секция, таблица, подтверждение, поле даты -------------------------- */
+
+/** Заголовок раздела с необязательной поясняющей строкой. */
+export function Section({
+  title,
+  hint,
+  children,
+}: {
+  title?: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="section">
+      {title && (
+        <div className="section-head">
+          <h3>{title}</h3>
+          {hint && <span className="count">{hint}</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+export type Column = { label: string; num?: boolean; className?: string };
+
+/** Таблица в карточке. Обёртка прокручивается по горизонтали: на узком экране
+ *  лучше сдвинуть таблицу вбок, чем сжать колонку до двух символов. */
+export function TableCard({
+  columns,
+  children,
+}: {
+  columns: Column[];
+  children: ReactNode;
+}) {
+  return (
+    <div className="sheet table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {columns.map((c, i) => (
+              <th
+                key={i}
+                scope="col"
+                className={[c.num ? "num-col" : "", c.className ?? ""].join(" ").trim()}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Необратимое действие через второе нажатие. Нативный confirm() в этом
+ *  проекте не используется: на macOS WebView он молча не показывается, и
+ *  один раз это уже стоило нам неработающей кнопки. */
+export function ConfirmAction({
+  label,
+  confirmLabel,
+  title,
+  onConfirm,
+  disabled = false,
+  small = false,
+}: {
+  label: string;
+  confirmLabel: string;
+  title?: string;
+  onConfirm: () => void;
+  disabled?: boolean;
+  small?: boolean;
+}) {
+  const [armed, setArmed] = useState(false);
+  const size = small ? " small" : "";
+  if (!armed) {
+    return (
+      <button className={`ghost${size}`} title={title} onClick={() => setArmed(true)}>
+        {label}
+      </button>
+    );
+  }
+  return (
+    <>
+      <button className={`danger${size}`} disabled={disabled} onClick={onConfirm}>
+        {confirmLabel}
+      </button>
+      <button className={`ghost${size}`} onClick={() => setArmed(false)}>
+        Отмена
+      </button>
+    </>
+  );
+}
+
+/** Поле даты: оформление наше, поведение родное. Свой календарь — это
+ *  клавиатурная навигация, ловушка фокуса, ARIA и колесо даты на телефоне;
+ *  всё это уже есть в нативном поле, надо было только снять с него чужой вид. */
+export function DateField({
+  value,
+  min,
+  max,
+  onChange,
+  ...rest
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  onChange: (value: string) => void;
+  "aria-label": string;
+}) {
+  return (
+    <span className="date-field">
+      <input
+        type="date"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        {...rest}
+      />
+      <IconCalendar size={14} />
+    </span>
+  );
 }
 
 export function Skeleton({ height = 68, count = 3 }: { height?: number; count?: number }) {
   return (
-    <div style={{ display: "grid", gap: 8 }}>
+    <div className="skeleton-stack">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="skeleton" style={{ height }} />
       ))}

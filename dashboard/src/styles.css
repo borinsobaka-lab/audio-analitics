@@ -51,12 +51,30 @@
   --accent-on: #ffffff;     /* текст и иконки НА акцентной заливке */
   --accent-ink: #a81bad;    /* акцентный текст на светлом — 6.1:1 */
   --accent-tint: rgba(252, 95, 255, 0.14);
-  --red: #e0271c;           /* белый текст на нём — 4.7:1 */
+  --red: #e0271c;           /* заливка; белый текст на ней — 4.7:1 */
+  --red-ink: #c41f15;       /* тот же смысл, но как ТЕКСТ на светлом */
   --red-tint: rgba(224, 39, 28, 0.1);
   --amber: #f08a00;
+  --amber-ink: #c96f00;
   --amber-tint: rgba(240, 138, 0, 0.12);
-  --green: #00a874;
+  --green: #00a874;         /* читается как текст и как заливка */
   --green-tint: rgba(0, 168, 116, 0.11);
+
+  /* Заливки внутри тёмного меню */
+  --nav-fill: rgba(255, 255, 255, 0.07);
+  --nav-fill-2: rgba(255, 255, 255, 0.14);
+
+  /* Данные. Единственный цвет линий в графиках — намеренно вне набора
+     состояний: зелёная линия читалась бы как «хорошая метрика», розовая —
+     как «на неё можно нажать». Проверен валидатором палитры на белом. */
+  --data: #2a78d6;
+
+  /* Отрезки на ленте смены: те же смыслы, что у меток, но подняты по
+     светлоте под тёмный фон деки. */
+  --tape-sale: #17d69b;
+  --tape-consult: #8f97ae;
+  --tape-refusal: #ff5b52;
+  --tape-service: #ffab2e;
 
   /* Тени: одна стратегия глубины на весь интерфейс */
   --sh-1: 0 1px 2px rgba(11, 13, 22, 0.05), 0 1px 3px rgba(11, 13, 22, 0.04);
@@ -253,6 +271,12 @@ a {
 .nav-link.active svg {
   color: var(--accent);
 }
+/* Фокус с клавиатуры был виден только на кнопках: у ссылок меню его не было
+   вовсе, а у выбранного пресета его перебивала собственная тень. */
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 .sidebar-foot {
   margin-top: auto;
@@ -262,7 +286,7 @@ a {
 /* Поля и кнопки внутри меню живут на тёмном: общие светлые стили здесь
    пришлось бы читать белым по светло-серому. */
 .sidebar input[type="password"] {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--nav-fill);
   color: var(--nav-ink);
 }
 .sidebar input[type="password"]::placeholder {
@@ -289,7 +313,7 @@ a {
   box-shadow: none;
 }
 .sidebar button.secondary:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--nav-fill-2);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.2);
 }
@@ -395,7 +419,7 @@ button.danger {
   box-shadow: var(--sh-1);
 }
 button.danger:hover {
-  background: #c41f15;
+  background: #b01a11;
 }
 
 button.small {
@@ -520,11 +544,11 @@ textarea.prompt-editor {
 }
 .pill.refusal {
   background: var(--red-tint);
-  color: #c41f15;
+  color: var(--red-ink);
 }
 .pill.service {
   background: var(--amber-tint);
-  color: #c96f00;
+  color: var(--amber-ink);
 }
 .pill.consultation,
 .pill.irrelevant {
@@ -558,7 +582,7 @@ textarea.prompt-editor {
 }
 .status.processing,
 .status.uploaded {
-  color: #c96f00;
+  color: var(--amber-ink);
 }
 .status.processing .dot {
   color: var(--amber);
@@ -574,7 +598,7 @@ textarea.prompt-editor {
   color: var(--green);
 }
 .status.error {
-  color: #c41f15;
+  color: var(--red-ink);
 }
 
 @keyframes beacon {
@@ -709,10 +733,10 @@ textarea.prompt-editor {
 /* Зоны те же, что у полосы: ниже половины — красный, около половины —
    янтарь, выше — зелёный. */
 .chip-score.low b {
-  color: #c41f15;
+  color: var(--red-ink);
 }
 .chip-score.mid b {
-  color: #c96f00;
+  color: var(--amber-ink);
 }
 .chip-score.good b {
   color: var(--green);
@@ -906,7 +930,7 @@ textarea.prompt-editor {
   color: var(--green);
 }
 .notes-title.bad {
-  color: #c41f15;
+  color: var(--red-ink);
 }
 
 .turns {
@@ -1000,16 +1024,16 @@ textarea.prompt-editor {
   background: var(--ink-deck-2);
 }
 .tape-seg.sale {
-  background: #17d69b;
+  background: var(--tape-sale);
 }
 .tape-seg.consultation {
-  background: #8f97ae;
+  background: var(--tape-consult);
 }
 .tape-seg.refusal {
-  background: #ff5b52;
+  background: var(--tape-refusal);
 }
 .tape-seg.service {
-  background: #ffab2e;
+  background: var(--tape-service);
 }
 /* Головка воспроизведения: тонкая линия во всю ленту плюс кружок-ручка,
    чтобы было видно, за что тянуть. Позиция одна на оба элемента, поэтому
@@ -1168,7 +1192,7 @@ textarea.prompt-editor {
 }
 .note.error {
   background: var(--red-tint);
-  color: #c41f15;
+  color: var(--red-ink);
 }
 .note.success {
   background: var(--green-tint);
@@ -1401,6 +1425,7 @@ tbody tr:hover {
 .range .date-field input[type="date"] {
   background: transparent;
   min-height: 30px;
+  border-radius: 5px;
 }
 .range .date-field input[type="date"]:focus {
   background: var(--card);
@@ -1449,7 +1474,8 @@ tbody tr:hover {
 .seg-btn {
   min-height: 30px;
   padding: 0 12px;
-  border-radius: 6px;
+  /* Вложенный радиус = внешний (8) − отступ оправы (3). */
+  border-radius: 5px;
   background: transparent;
   color: var(--ink-2);
   box-shadow: none;
@@ -1466,6 +1492,10 @@ tbody tr:hover {
   font-weight: 600;
   box-shadow: var(--sh-1);
 }
+.seg-btn:focus-visible,
+.seg-btn.on:focus-visible {
+  box-shadow: var(--ring);
+}
 
 /* --- Дельта к прошлому периоду ------------------------------------------ */
 
@@ -1481,7 +1511,7 @@ tbody tr:hover {
   color: var(--green);
 }
 .delta.down {
-  color: #c41f15;
+  color: var(--red-ink);
 }
 .delta.flat,
 .delta.none {
@@ -1499,10 +1529,10 @@ tbody tr:hover {
 }
 
 .score-val.low {
-  color: #c41f15;
+  color: var(--red-ink);
 }
 .score-val.mid {
-  color: #c96f00;
+  color: var(--amber-ink);
 }
 .score-val.good {
   color: var(--green);
@@ -1558,6 +1588,25 @@ tbody tr:hover {
   color: var(--ink-4);
   font-size: 13px;
 }
+/* Марки данных. Заливка под линией — та же краска на 10%, кольцо у точек —
+   цветом подложки: так точки не сливаются там, где налезают друг на друга. */
+.chart-area {
+  fill: var(--data);
+  opacity: 0.1;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--data);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-dot {
+  fill: var(--data);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
 /* Сетка и подписи осей — фон: данные единственное, чему позволено быть
    заметным. */
 .chart-grid {
@@ -1600,4 +1649,94 @@ tbody tr:hover {
 }
 .chart-tip span {
   color: var(--ink-deck-2);
+}
+
+
+/* --- Мелкие раскладочные классы вместо инлайн-стилей --------------------- */
+/* Инлайн-стиль не переопределить темой и не найти поиском по системе,
+   поэтому даже одиночные отступы живут здесь, под именем. */
+
+.page-note {
+  margin-top: 14px;
+  max-width: 72ch;
+}
+.dashboard-note {
+  margin-top: 10px;
+}
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+}
+.form-card {
+  margin-bottom: 16px;
+}
+.form-row {
+  display: flex;
+  gap: 10px;
+  max-width: 460px;
+}
+.field-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.field-grow {
+  flex: 1 1 280px;
+}
+.actions.end {
+  justify-content: flex-end;
+}
+.push {
+  margin-left: auto;
+}
+.btn-block {
+  width: 100%;
+}
+.token-label {
+  display: block;
+  margin-bottom: 6px;
+}
+.token-input {
+  margin-bottom: 6px;
+}
+.input-inline {
+  max-width: 300px;
+}
+.col-name {
+  width: 45%;
+}
+.col-score {
+  width: 40%;
+}
+.skeleton-stack {
+  display: grid;
+  gap: 8px;
+}
+.summary-group {
+  margin-bottom: 14px;
+}
+.dialog-note {
+  margin: 0;
+}
+.metric-card,
+.metric-editor {
+  margin-bottom: 12px;
+}
+.metric-card.is-off {
+  opacity: 0.65;
+}
+.metric-card-name {
+  font-size: 15px;
+}
+.metric-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.editor-title {
+  margin-bottom: 14px;
+}
+.prompt-preview {
+  margin-top: 12px;
 }

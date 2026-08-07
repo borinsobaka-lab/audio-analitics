@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, Employee } from "../api";
-import { Empty, Note, PageHead, Skeleton } from "../components/ui";
+import { Empty, Note, PageHead, Skeleton, TableCard } from "../components/ui";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[] | null>(null);
@@ -66,11 +66,11 @@ export default function EmployeesPage() {
         </Note>
       )}
 
-      <div className="sheet sheet-pad" style={{ marginBottom: 16 }}>
-        <span className="label" style={{ display: "block", marginBottom: 8 }}>
+      <div className="sheet sheet-pad form-card">
+        <span className="label form-label">
           Добавить менеджера
         </span>
-        <div style={{ display: "flex", gap: 10, maxWidth: 460 }}>
+        <div className="form-row">
           <input
             type="text"
             value={newName}
@@ -94,19 +94,12 @@ export default function EmployeesPage() {
       )}
 
       {employees !== null && employees.length > 0 && (
-        <div className="sheet table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Имя</th>
-                <th>Статус</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((employee) => (
+        <TableCard
+          columns={[{ label: "Имя", className: "col-name" }, { label: "Статус" }, { label: "" }]}
+        >
+          {employees.map((employee) => (
                 <tr key={employee.id}>
-                  <td style={{ width: "45%" }}>
+                  <td className="col-name">
                     {editingId === employee.id ? (
                       <input
                         type="text"
@@ -118,7 +111,7 @@ export default function EmployeesPage() {
                             patch(employee.id, { full_name: editName.trim() });
                           if (e.key === "Escape") setEditingId(null);
                         }}
-                        style={{ maxWidth: 300 }}
+                        className="input-inline"
                       />
                     ) : (
                       employee.full_name
@@ -130,7 +123,7 @@ export default function EmployeesPage() {
                     </span>
                   </td>
                   <td>
-                    <div className="actions" style={{ justifyContent: "flex-end" }}>
+                    <div className="actions end">
                       {editingId === employee.id ? (
                         <>
                           <button
@@ -166,10 +159,8 @@ export default function EmployeesPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          ))}
+        </TableCard>
       )}
     </div>
   );

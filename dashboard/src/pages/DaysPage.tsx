@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd } from "../api";
-import { Empty, Note, PageHead, Score, Skeleton, StatusLight } from "../components/ui";
+import {
+  ConfirmAction,
+  Empty,
+  MetricLine,
+  Note,
+  PageHead,
+  Skeleton,
+  StatusLight,
+} from "../components/ui";
 
 // Пока что-то живо, список опрашивается сам: огоньки должны отражать
 // реальность без ручного обновления страницы.
@@ -12,7 +20,6 @@ export default function DaysPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const load = useCallback(() => {
@@ -43,7 +50,6 @@ export default function DaysPage() {
     try {
       await fn();
       setNotice(message);
-      setPendingDelete(null);
       load();
     } catch (e) {
       setError(String(e));
@@ -122,23 +128,19 @@ export default function DaysPage() {
                   {d.metric_stats.length > 0 && (
                     <div className="metric-lines">
                       {d.metric_stats.map((s) => (
-                        <div key={s.metric_id} className="metric-line">
-                          {s.avg_score != null ? (
-                            <Score score={s.avg_score} scale={s.scale_max} />
-                          ) : (
-                            <span className="score-empty">не сработала</span>
-                          )}
-                          <span className="metric-name">
-                            {s.name}
-                            <span className="times"> · {s.triggered_count}×</span>
-                          </span>
-                        </div>
+                        <MetricLine
+                          key={s.metric_id}
+                          name={s.name}
+                          score={s.avg_score}
+                          scale={s.scale_max}
+                          meta={`· ${s.triggered_count}×`}
+                        />
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div className="actions" style={{ justifyContent: "flex-end" }}>
+                <div className="actions end">
                   {openable && (
                     <button onClick={() => navigate(`/days/${d.id}`)}>Открыть разбор</button>
                   )}
@@ -170,29 +172,17 @@ export default function DaysPage() {
                       Пересчитать
                     </button>
                   )}
-                  {d.status !== "processing" &&
-                    (pendingDelete === d.id ? (
-                      <>
-                        <button
-                          className="danger"
-                          disabled={busyId === d.id}
-                          onClick={() => run(d.id, () => api.deleteDay(d.id), "Смена удалена")}
-                        >
-                          Удалить навсегда
-                        </button>
-                        <button className="ghost" onClick={() => setPendingDelete(null)}>
-                          Отмена
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        className="ghost"
-                        title="Удалить смену вместе с аудио и разбором"
-                        onClick={() => setPendingDelete(d.id)}
-                      >
-                        Удалить
-                      </button>
-                    ))}
+                  {d.status !== "processing" && (
+                    <ConfirmAction
+                      label="Удалить"
+                      confirmLabel="Удалить навсегда"
+                      title="Удалить смену вместе с аудио и разбором"
+                      disabled={busyId === d.id}
+                      onConfirm={() =>
+                        run(d.id, () => api.deleteDay(d.id), "Смена удалена")
+                      }
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -201,7 +191,7 @@ export default function DaysPage() {
       )}
 
       {days !== null && days.length > 0 && (
-        <p className="muted" style={{ marginTop: 14, maxWidth: "72ch" }}>
+        <p className="muted page-note">
           «Пересчитать» прогоняет ту же запись по текущим метрикам — аудио
           заново не загружается. «Завершить принудительно» закрывает смену,
           которую приложение не закрыло само. «Удалить» безвозвратно стирает

@@ -19,13 +19,18 @@ import {
 } from "../api";
 import { TrendChart } from "../components/TrendChart";
 import {
+  DateField,
+  Delta,
+  DeltaValue,
   Empty,
-  IconCalendar,
+  MetricLine,
   Note,
   PageHead,
-  ScoreBar,
+  Score,
+  Section,
   Skeleton,
-  scoreZone,
+  Stat,
+  TableCard,
 } from "../components/ui";
 
 type Preset = { key: string; label: string; range: () => [Date, Date] };
@@ -180,54 +185,51 @@ export default function DashboardPage() {
       {data && (
         <>
           <div className="stats">
-            <Kpi
+            <Stat
               lead
               value={data.totals.conversion != null ? `${Math.round(data.totals.conversion * 100)}%` : "—"}
               label="Конверсия"
               delta={deltaPercent(data.totals.conversion, data.previous.conversion)}
             />
-            <Kpi
+            <Stat
               value={String(data.totals.shifts)}
               label={plural(data.totals.shifts, "смена", "смены", "смен")}
               delta={deltaCount(data.totals.shifts, data.previous.shifts)}
             />
-            <Kpi
+            <Stat
               value={String(data.totals.dialogs)}
               label="Разговоров"
               delta={deltaCount(data.totals.dialogs, data.previous.dialogs)}
             />
-            <Kpi
+            <Stat
               value={String(data.totals.sales)}
               label="Продаж"
               delta={deltaCount(data.totals.sales, data.previous.sales)}
             />
-            <Kpi
+            <Stat
               value={fmtUsd(data.totals.cost_usd)}
               label="Обработка"
               delta={deltaCost(data.totals.cost_usd, data.previous.cost_usd)}
             />
           </div>
-          <p className="muted" style={{ marginTop: 10 }}>
+          <p className="muted dashboard-note">
             Сравнение с периодом {fmtDate(data.prev_date_from).day} —{" "}
             {fmtDate(data.prev_date_to).day}. Чистой речи разобрано:{" "}
             {fmtDur(data.totals.speech_seconds)}.
           </p>
 
           {data.totals.shifts === 0 ? (
-            <div className="section">
+            <Section>
               <Empty title="За этот период смен нет">
                 Выберите другой период или снимите фильтр по менеджеру.
               </Empty>
-            </div>
+            </Section>
           ) : (
             <>
-              <div className="section">
-                <div className="section-head">
-                  <h3>Динамика по дням</h3>
-                  <span className="count">
-                    каждый показатель на своей шкале — общей оси у них быть не может
-                  </span>
-                </div>
+              <Section
+                title="Динамика по дням"
+                hint="каждый показатель на своей шкале — общей оси у них быть не может"
+              >
                 <div className="charts">
                   {panels.map((p) => (
                     <TrendChart
@@ -239,99 +241,88 @@ export default function DashboardPage() {
                     />
                   ))}
                 </div>
-              </div>
+              </Section>
 
-              <div className="section">
-                <div className="section-head">
-                  <h3>Менеджеры</h3>
-                  <span className="count">оценки — среднее за период, стрелка — к прошлому</span>
-                </div>
-                <div className="sheet table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Менеджер</th>
-                        <th className="num-col">Смен</th>
-                        <th className="num-col">Разговоров</th>
-                        <th className="num-col">Продаж</th>
-                        <th className="num-col">Конверсия</th>
-                        <th>Метрики</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.employees.map((row) => (
-                        <tr key={row.employee_id ?? "none"}>
-                          <td>
-                            <strong>{row.full_name}</strong>
-                          </td>
-                          <td className="num-col">{row.totals.shifts}</td>
-                          <td className="num-col">{row.totals.dialogs}</td>
-                          <td className="num-col">{row.totals.sales}</td>
-                          <td className="num-col">
-                            {row.totals.conversion != null
-                              ? `${Math.round(row.totals.conversion * 100)}%`
-                              : "—"}
-                          </td>
-                          <td>
-                            <div className="metric-lines">
-                              {row.metrics.length === 0 && (
-                                <span className="score-empty">метрики не срабатывали</span>
-                              )}
-                              {row.metrics.map((m) => (
-                                <MetricLine key={m.metric_id} metric={m} />
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <Section
+                title="Менеджеры"
+                hint="оценки — среднее за период, стрелка — к прошлому"
+              >
+                <TableCard
+                  columns={[
+                    { label: "Менеджер" },
+                    { label: "Смен", num: true },
+                    { label: "Разговоров", num: true },
+                    { label: "Продаж", num: true },
+                    { label: "Конверсия", num: true },
+                    { label: "Метрики" },
+                  ]}
+                >
+                  {data.employees.map((row) => (
+                    <tr key={row.employee_id ?? "none"}>
+                      <td>
+                        <strong>{row.full_name}</strong>
+                      </td>
+                      <td className="num-col">{row.totals.shifts}</td>
+                      <td className="num-col">{row.totals.dialogs}</td>
+                      <td className="num-col">{row.totals.sales}</td>
+                      <td className="num-col">
+                        {row.totals.conversion != null
+                          ? `${Math.round(row.totals.conversion * 100)}%`
+                          : "—"}
+                      </td>
+                      <td>
+                        <div className="metric-lines">
+                          {row.metrics.length === 0 && (
+                            <span className="score-empty">метрики не срабатывали</span>
+                          )}
+                          {row.metrics.map((m) => (
+                            <MetricLine
+                              key={m.metric_id}
+                              name={m.name}
+                              score={m.avg_score}
+                              scale={m.scale_max}
+                              delta={scoreDelta(m)}
+                              tone
+                              compact
+                              emptyLabel="—"
+                            />
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </TableCard>
+              </Section>
 
-              <div className="section">
-                <div className="section-head">
-                  <h3>Метрики за период</h3>
-                </div>
-                <div className="sheet table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Метрика</th>
-                        <th className="num-col">Срабатываний</th>
-                        <th>Средняя оценка</th>
-                        <th className="num-col">К прошлому периоду</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.metrics.map((m) => (
-                        <tr key={m.metric_id}>
-                          <td>
-                            <strong>{m.name}</strong>
-                          </td>
-                          <td className="num-col">{m.triggered_count}</td>
-                          <td style={{ width: "40%" }}>
-                            {m.avg_score != null ? (
-                              <span className="score">
-                                <span className={`score-val ${scoreZone(m.avg_score, m.scale_max)}`}>
-                                  {m.avg_score}
-                                  <span className="of">/{m.scale_max}</span>
-                                </span>
-                                <ScoreBar score={m.avg_score} scale={m.scale_max} />
-                              </span>
-                            ) : (
-                              <span className="score-empty">не срабатывала</span>
-                            )}
-                          </td>
-                          <td className="num-col">
-                            <Delta value={scoreDelta(m)} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <Section title="Метрики за период">
+                <TableCard
+                  columns={[
+                    { label: "Метрика" },
+                    { label: "Срабатываний", num: true },
+                    { label: "Средняя оценка", className: "col-score" },
+                    { label: "К прошлому периоду", num: true },
+                  ]}
+                >
+                  {data.metrics.map((m) => (
+                    <tr key={m.metric_id}>
+                      <td>
+                        <strong>{m.name}</strong>
+                      </td>
+                      <td className="num-col">{m.triggered_count}</td>
+                      <td className="col-score">
+                        {m.avg_score != null ? (
+                          <Score score={m.avg_score} scale={m.scale_max} tone />
+                        ) : (
+                          <span className="score-empty">не срабатывала</span>
+                        )}
+                      </td>
+                      <td className="num-col">
+                        <Delta value={scoreDelta(m)} />
+                      </td>
+                    </tr>
+                  ))}
+                </TableCard>
+              </Section>
             </>
           )}
         </>
@@ -340,47 +331,7 @@ export default function DashboardPage() {
   );
 }
 
-/** Поле даты: оформление наше, поведение родное. Свой календарь — это
- *  клавиатурная навигация, ловушка фокуса, ARIA и колесо даты на телефоне;
- *  всё это уже есть в нативном поле, надо было только снять с него чужой вид. */
-function DateField({
-  value,
-  min,
-  max,
-  onChange,
-  ...rest
-}: {
-  value: string;
-  min?: string;
-  max?: string;
-  onChange: (value: string) => void;
-  "aria-label": string;
-}) {
-  return (
-    <span className="date-field">
-      <input
-        type="date"
-        value={value}
-        min={min}
-        max={max}
-        onChange={(e) => onChange(e.target.value)}
-        {...rest}
-      />
-      <IconCalendar size={14} />
-    </span>
-  );
-}
-
 /* --- Дельты ------------------------------------------------------------- */
-
-/** Направление и оценка — разные вещи, и путать их нельзя. Стрелка всегда
- *  показывает, куда сдвинулось число; цвет — хорошо это или плохо. У расходов
- *  они расходятся: снижение затрат — стрелка вниз, но зелёная. */
-type DeltaValue = {
-  text: string;
-  dir: "up" | "down" | "flat";
-  good: boolean | null;
-} | null;
 
 function direction(diff: number, epsilon = 0): "up" | "down" | "flat" {
   if (Math.abs(diff) <= epsilon) return "flat";
@@ -424,59 +375,4 @@ function scoreDelta(m: MetricPeriodStat): DeltaValue {
   const dir = direction(diff);
   if (dir === "flat") return { text: "без изменений", dir, good: null };
   return { text: `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`, dir, good: diff > 0 };
-}
-
-const ARROW = { up: "↑ ", down: "↓ ", flat: "" };
-
-function Delta({ value }: { value: DeltaValue }) {
-  if (!value) return <span className="delta none">—</span>;
-  const tone = value.good == null ? "flat" : value.good ? "up" : "down";
-  return (
-    <span className={`delta ${tone}`}>
-      {ARROW[value.dir]}
-      {value.text}
-    </span>
-  );
-}
-
-function Kpi({
-  value,
-  label,
-  delta,
-  lead,
-}: {
-  value: string;
-  label: string;
-  delta: DeltaValue;
-  lead?: boolean;
-}) {
-  return (
-    <div className={`stat ${lead ? "lead" : ""}`}>
-      <div className="v display">{value}</div>
-      <div className="label">{label}</div>
-      <Delta value={delta} />
-    </div>
-  );
-}
-
-function MetricLine({ metric }: { metric: MetricPeriodStat }) {
-  return (
-    <div className="metric-line compact">
-      {metric.avg_score != null ? (
-        <span className="score">
-          <span className={`score-val ${scoreZone(metric.avg_score, metric.scale_max)}`}>
-            {metric.avg_score}
-            <span className="of">/{metric.scale_max}</span>
-          </span>
-          <ScoreBar score={metric.avg_score} scale={metric.scale_max} />
-        </span>
-      ) : (
-        <span className="score-empty">—</span>
-      )}
-      <span className="metric-name">
-        {metric.name}
-        <Delta value={scoreDelta(metric)} />
-      </span>
-    </div>
-  );
 }
