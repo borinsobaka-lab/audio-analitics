@@ -85,6 +85,10 @@
 
   /* Ритм */
   --u: 4px;
+  /* Высота контролов. 40px — минимум, при котором в кнопку попадают пальцем;
+     мелкие остаются 36px визуально, но добирают зону нажатия псевдоэлементом. */
+  --control-h: 40px;
+  --control-h-sm: 36px;
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
@@ -241,7 +245,7 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
+  min-height: var(--control-h);
   padding: 0 11px;
   border-radius: var(--r-sm);
   color: var(--nav-ink-2);
@@ -351,9 +355,10 @@ button {
   font-size: 13.5px;
   font-weight: 500;
   line-height: 1;
-  min-height: 36px;
-  padding: 0 15px;
+  min-height: var(--control-h);
+  padding: 0 16px;
   border-radius: var(--r-sm);
+  position: relative;
   border: 1px solid transparent;
   background: var(--accent);
   color: var(--accent-on);
@@ -423,9 +428,17 @@ button.danger:hover {
 }
 
 button.small {
-  min-height: 30px;
+  min-height: var(--control-h-sm);
   font-size: 12.5px;
-  padding: 0 11px;
+  padding: 0 12px;
+}
+/* Видимая кнопка остаётся мелкой, а попадать в неё можно по 44px: пальцу
+   нужна зона, а строке — компактность. Растёт только по вертикали, поэтому
+   соседние кнопки в ряду не перекрываются. */
+button.small::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
 }
 
 .actions {
@@ -449,6 +462,7 @@ select {
   background: var(--sunk);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
+  min-height: var(--control-h);
   padding: 9px 12px;
   transition: border-color 130ms var(--ease), background 130ms var(--ease),
     box-shadow 130ms var(--ease);
@@ -472,7 +486,7 @@ select:focus {
 select {
   width: auto;
   min-width: 150px;
-  min-height: 36px;
+  min-height: var(--control-h);
   cursor: pointer;
 }
 
@@ -956,7 +970,10 @@ textarea.prompt-editor {
   color: var(--accent-ink);
 }
 
-/* Метка времени — кнопка воспроизведения, а не текст. */
+/* Метка времени — кнопка воспроизведения, а не текст. Высота 24px здесь
+   намеренная: правило про 44px не распространяется на цели, встроенные в
+   строку текста, а растянуть их по вертикали значило бы наложить зоны
+   нажатия соседних строк транскрипта друг на друга. */
 .cue {
   font-variant-numeric: tabular-nums;
   font-size: 12px;
@@ -1134,9 +1151,9 @@ textarea.prompt-editor {
   box-shadow: var(--sh-deck);
 }
 .deck-play {
-  width: 42px;
-  height: 42px;
-  min-height: 42px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
   padding: 0;
   border-radius: 50%;
   background: var(--accent);
@@ -1205,12 +1222,15 @@ textarea.prompt-editor {
   font-weight: 400;
 }
 
+/* Пустое состояние — обычная карточка. Пунктирная рамка была декоративной
+   линией и вдобавок ломала единственную стратегию глубины: у неё была
+   обводка и не было тени, тогда как у всех остальных карточек наоборот. */
 .empty {
-  border: 1px dashed var(--edge-strong);
   border-radius: var(--r-md);
   padding: 38px 24px;
   text-align: center;
   background: var(--card);
+  box-shadow: var(--sh-1);
 }
 .empty h4 {
   margin-bottom: 5px;
@@ -1376,7 +1396,7 @@ tbody tr:hover {
 .date-field input[type="date"] {
   appearance: none;
   -webkit-appearance: none;
-  min-height: 36px;
+  min-height: var(--control-h);
   width: auto;
   padding: 0 34px 0 12px;
   font-variant-numeric: tabular-nums;
@@ -1424,7 +1444,7 @@ tbody tr:hover {
 }
 .range .date-field input[type="date"] {
   background: transparent;
-  min-height: 30px;
+  min-height: 34px;
   border-radius: 5px;
 }
 .range .date-field input[type="date"]:focus {
@@ -1458,7 +1478,7 @@ tbody tr:hover {
 }
 .filter input,
 .filter select {
-  min-height: 36px;
+  min-height: var(--control-h);
   width: auto;
 }
 
@@ -1472,7 +1492,7 @@ tbody tr:hover {
   gap: 2px;
 }
 .seg-btn {
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 12px;
   /* Вложенный радиус = внешний (8) − отступ оправы (3). */
   border-radius: 5px;

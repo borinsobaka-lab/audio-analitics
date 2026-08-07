@@ -121,20 +121,13 @@ export function ScoreBar({ score, scale }: { score: number; scale: number }) {
  *  десятибалльной шкале десять звёзд шум, а десять сегментов читаются
  *  одним взглядом.
  *
- *  `tone` красит саму цифру по зоне. Полоса цвет несёт всегда; цифра — только
- *  там, где на неё смотрят отдельно от полосы. */
-export function Score({
-  score,
-  scale,
-  tone = false,
-}: {
-  score: number;
-  scale: number;
-  tone?: boolean;
-}) {
+ *  Цифра красится по той же зоне, что и полоса, — везде одинаково. Раньше на
+ *  дашборде она была цветной, а в списке смен чернильной: одно и то же число
+ *  выглядело по-разному в зависимости от того, на какой странице смотришь. */
+export function Score({ score, scale }: { score: number; scale: number }) {
   return (
     <span className="score" title={`${score} из ${scale}`}>
-      <span className={`score-val ${tone ? scoreZone(score, scale) : ""}`}>
+      <span className={`score-val ${scoreZone(score, scale)}`}>
         {score}
         <span className="of">/{scale}</span>
       </span>
@@ -205,7 +198,6 @@ export function MetricLine({
   scale,
   meta,
   delta,
-  tone = false,
   compact = false,
   emptyLabel = "не сработала",
 }: {
@@ -214,14 +206,13 @@ export function MetricLine({
   scale: number;
   meta?: ReactNode;
   delta?: DeltaValue;
-  tone?: boolean;
   compact?: boolean;
   emptyLabel?: string;
 }) {
   return (
     <div className={`metric-line ${compact ? "compact" : ""}`}>
       {score != null ? (
-        <Score score={score} scale={scale} tone={tone} />
+        <Score score={score} scale={scale} />
       ) : (
         <span className="score-empty">{emptyLabel}</span>
       )}

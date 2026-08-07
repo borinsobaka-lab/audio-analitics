@@ -282,7 +282,6 @@ export default function DashboardPage() {
                               score={m.avg_score}
                               scale={m.scale_max}
                               delta={scoreDelta(m)}
-                              tone
                               compact
                               emptyLabel="—"
                             />
@@ -311,7 +310,7 @@ export default function DashboardPage() {
                       <td className="num-col">{m.triggered_count}</td>
                       <td className="col-score">
                         {m.avg_score != null ? (
-                          <Score score={m.avg_score} scale={m.scale_max} tone />
+                          <Score score={m.avg_score} scale={m.scale_max} />
                         ) : (
                           <span className="score-empty">не срабатывала</span>
                         )}
