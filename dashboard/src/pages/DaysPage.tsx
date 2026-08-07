@@ -18,7 +18,7 @@ const IN_FLIGHT = ["recording", "uploaded", "processing"];
 
 export default function DaysPage() {
   const me = useSession();
-  const { locationId, locations } = useStudio();
+  const { locationIds, locations } = useStudio();
   const [days, setDays] = useState<DayRecording[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -27,7 +27,7 @@ export default function DaysPage() {
 
   const load = useCallback(() => {
     api
-      .listDays(locationId || undefined)
+      .listDays(locationIds)
       .then((items) => {
         setDays(items);
         setError("");
@@ -36,7 +36,7 @@ export default function DaysPage() {
         setDays([]);
         setError(String(e));
       });
-  }, [locationId]);
+  }, [locationIds]);
 
   useEffect(load, [load]);
 
@@ -69,13 +69,13 @@ export default function DaysPage() {
         title="Смены"
         hint="Каждая строка — один рабочий день у стойки: кто работал, что записалось и как разговоры оценены метриками."
       >
-        {/* Какая студия сейчас показана — видно из шапки, а не только из
+        {/* Какие студии сейчас показаны — видно из шапки, а не только из
             переключателя внизу меню. */}
-        {locationId && (
-          <span className="pill sale">
-            {locations.find((l) => l.id === locationId)?.name ?? "студия"}
+        {locationIds.map((id) => (
+          <span key={id} className="pill sale">
+            {locations.find((l) => l.id === id)?.name ?? "студия"}
           </span>
-        )}
+        ))}
       </PageHead>
 
       {live > 0 && (
@@ -91,8 +91,8 @@ export default function DaysPage() {
 
       {days !== null && days.length === 0 && !error && (
         <Empty title="Смен пока нет">
-          {locationId
-            ? "На выбранной студии записей ещё не было — переключите студию внизу меню или запустите запись на ресепшене."
+          {locationIds.length
+            ? "На выбранных студиях записей ещё не было — поменяйте выбор внизу меню или запустите запись на ресепшене."
             : "Запустите запись в десктоп-приложении на ресепшене — смена появится здесь сразу после начала записи."}
         </Empty>
       )}
@@ -118,7 +118,7 @@ export default function DaysPage() {
                     {d.employee_name ?? <span className="muted">менеджер не указан</span>}
                     {/* Студию подписываем, только когда смотрим все сразу:
                         внутри одной студии это был бы повтор в каждой строке. */}
-                    {!locationId && d.location_name && (
+                    {locationIds.length !== 1 && d.location_name && (
                       <span className="muted"> · {d.location_name}</span>
                     )}
                   </div>

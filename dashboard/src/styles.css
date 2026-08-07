@@ -67,8 +67,12 @@
 
   /* Данные. Единственный цвет линий в графиках — намеренно вне набора
      состояний: зелёная линия читалась бы как «хорошая метрика», розовая —
-     как «на неё можно нажать». Проверен валидатором палитры на белом. */
+     как «на неё можно нажать». Проверен валидатором палитры на белом.
+     Он же работает подложкой рекомендаций: совет — не провал и не удача,
+     а отдельный разговор, и цвет у него отдельный. */
   --data: #2a78d6;
+  --data-ink: #1f66bd;      /* тот же смысл текстом на светлом — 5.7:1 */
+  --data-tint: rgba(42, 120, 214, 0.1);
 
   /* Отрезки на ленте смены: те же смыслы, что у меток, но подняты по
      светлоте под тёмный фон деки. */
@@ -958,6 +962,9 @@ textarea.prompt-editor {
 .panel.good {
   background: var(--green-tint);
 }
+.panel.info {
+  background: var(--data-tint);
+}
 .panel-title {
   display: flex;
   align-items: baseline;
@@ -973,6 +980,9 @@ textarea.prompt-editor {
 }
 .panel.good .panel-title {
   color: var(--green-ink);
+}
+.panel.info .panel-title {
+  color: var(--data-ink);
 }
 .panel-hint {
   font-size: 12.5px;
@@ -1381,15 +1391,6 @@ tbody tr:hover {
     margin-bottom: 0;
     white-space: nowrap;
   }
-  .studio {
-    margin-bottom: 0;
-  }
-  .studio .label {
-    display: none;
-  }
-  .studio select {
-    min-width: 140px;
-  }
   .sidebar-foot .btn-block {
     width: auto;
   }
@@ -1757,7 +1758,8 @@ tbody tr:hover {
   margin-top: 8px;
 }
 
-/* Переключатель студии внизу меню: тёмный фон, как у всего бокового меню. */
+/* Выбор студий внизу меню: галочки, а не выпадающий список — владельцу сети
+   нужен и срез из нескольких точек, а не только «одна или все». */
 .studio {
   display: block;
   margin-bottom: 12px;
@@ -1766,14 +1768,105 @@ tbody tr:hover {
   display: block;
   margin-bottom: 5px;
 }
-.sidebar select {
+.studio-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
   background: var(--nav-fill);
   color: var(--nav-ink);
-  border-color: var(--nav-edge);
+  border: 1px solid var(--nav-edge);
+  border-radius: var(--r-sm);
+  min-height: var(--control-h-sm);
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 400;
+  box-shadow: none;
+  text-align: left;
 }
-.sidebar select:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--accent);
+.studio-toggle:hover {
+  background: var(--nav-fill-2);
+  box-shadow: none;
+}
+.studio-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-caret {
+  color: var(--nav-ink-2);
+  font-size: 10px;
+}
+/* Список просто растёт внутри нижнего блока меню — тот прижат к низу
+   автоматическим отступом, поэтому раскрывается вверх сам. Всплывающее меню
+   здесь обрезалось бы горизонтальной прокруткой узкой полосы на телефоне. */
+.studio-menu {
+  margin-top: 6px;
+  display: grid;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.studio-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-h-sm);
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--nav-ink);
+  cursor: pointer;
+}
+.studio-item:hover {
+  background: var(--nav-2);
+}
+.studio-item input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+/* Длинное название сжимается многоточием, а пометка «закрыта» не уезжает
+   на свою строку: в узкой полосе меню это выглядело как два пункта. */
+.studio-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-off {
+  flex: 0 0 auto;
+  color: var(--nav-ink-2);
+  font-size: 12px;
+}
+
+/* На узком экране меню превращается в горизонтальную полосу с прокруткой
+   вбок. Всплывающий список там обрезался бы этой прокруткой, поэтому он
+   остаётся в потоке и просто делает полосу выше — правила стоят ниже базовых
+   намеренно: медиазапрос не добавляет веса, побеждает порядок в файле. */
+@media (max-width: 900px) {
+  .studio {
+    margin-bottom: 0;
+  }
+  .studio .label {
+    display: none;
+  }
+  .studio-toggle {
+    min-width: 150px;
+  }
+  .studio-menu {
+    background: var(--nav-2);
+    border: 1px solid var(--nav-edge);
+    border-radius: var(--r-sm);
+    padding: 6px;
+    max-height: 50vh;
+  }
+  .sidebar-foot {
+    align-items: flex-start;
+  }
 }
 
 /* Кто вошёл — внизу меню, на месте прежнего поля токена. */

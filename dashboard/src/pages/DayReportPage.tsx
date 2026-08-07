@@ -180,7 +180,7 @@ export default function DayReportPage() {
       {summary && (
         <Section title="Итоги смены">
           {/* Выводы дня разложены по подложкам: провалы, удачи и советы —
-              это три разных разговора с менеджером, а не один список. */}
+              это разные разговоры с менеджером, а не один список. */}
           <SummaryList
             title="Главные отклонения"
             items={summary.top_deviations}
@@ -194,7 +194,7 @@ export default function DayReportPage() {
           <SummaryList
             title="Рекомендации менеджеру"
             items={summary.recommendations}
-            tone="neutral"
+            tone="info"
           />
           <SummaryList
             title="Предложения по скрипту"
@@ -266,12 +266,12 @@ function SummaryList({
 }: {
   title: string;
   items?: string[];
-  tone: "good" | "bad" | "neutral";
+  tone: "good" | "bad" | "info" | "neutral";
 }) {
   if (!items || items.length === 0) return null;
   return (
     <Panel tone={tone} title={title}>
-      <ul className={`notes ${tone === "neutral" ? "" : tone}`}>
+      <ul className={`notes ${tone === "good" || tone === "bad" ? tone : ""}`}>
         {items.map((item, i) => (
           <li key={i}>{item}</li>
         ))}

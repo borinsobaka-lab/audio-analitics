@@ -56,7 +56,7 @@ const PRESETS: Preset[] = [
 
 export default function DashboardPage() {
   const me = useSession();
-  const { locationId } = useStudio();
+  const { locationIds } = useStudio();
   const [preset, setPreset] = useState("30");
   const [range, setRange] = useState<[string, string]>(() => {
     const [a, b] = PRESETS[1].range();
@@ -79,14 +79,14 @@ export default function DashboardPage() {
         date_from: range[0],
         date_to: range[1],
         employee_id: employeeId || undefined,
-        location_id: locationId || undefined,
+        location_ids: locationIds,
       })
       .then((s) => {
         setData(s);
         setError("");
       })
       .catch((e) => setError(String(e)));
-  }, [range, employeeId, locationId]);
+  }, [range, employeeId, locationIds]);
 
   useEffect(load, [load]);
 

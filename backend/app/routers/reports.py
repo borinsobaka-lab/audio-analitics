@@ -2,13 +2,13 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .. import storage
-from ..access import scope_days, visible_day
+from ..access import filter_locations, scope_days, visible_day
 from ..auth import UserContext, require_manage, require_user
 from ..db import get_db
 from ..models import (
@@ -115,7 +115,9 @@ async def evaluations_for_dialogs(
 
 @router.get("/days", response_model=list[DayRecordingOut])
 async def list_days(
-    location_id: uuid.UUID | None = None,
+    # Параметр повторяемый: ?location_id=…&location_id=… — владелец сети
+    # смотрит несколько студий сразу, а не переключается между ними.
+    location_id: list[uuid.UUID] | None = Query(default=None),
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -124,8 +126,7 @@ async def list_days(
         .order_by(DayRecording.date.desc(), DayRecording.created_at.desc())
         .limit(120)
     )
-    if location_id:
-        q = q.where(DayRecording.location_id == location_id)
+    q = filter_locations(q, location_id)
     q = scope_days(q, user)
     records = (await db.scalars(q)).all()
     result = []

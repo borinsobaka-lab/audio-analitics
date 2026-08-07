@@ -9,21 +9,26 @@ import { Location, Me } from "./api";
 
 export const SessionContext = createContext<Me | null>(null);
 
-/** Выбранная студия — сквозной фильтр смен и дашборда.
+/** Выбранные студии — сквозной фильтр смен и дашборда.
  *
- *  Живёт рядом с пользователем, а не внутри страницы: переключаешь студию
- *  один раз внизу меню и ходишь по разделам, не переставляя фильтр заново.
- *  Пустая строка — «все студии».
+ *  Живёт рядом с пользователем, а не внутри страницы: отмечаешь студии один
+ *  раз внизу меню и ходишь по разделам, не переставляя фильтр заново.
+ *
+ *  Выбор множественный: у владельца сети две студии — это не «либо та, либо
+ *  эта», а нормальный срез. Пустой список означает «все» — так итог сети
+ *  получается сам, без отдельного пункта, который надо не забыть выбрать.
  */
 export interface StudioState {
-  locationId: string;
-  setLocationId: (id: string) => void;
+  locationIds: string[];
+  toggleLocation: (id: string) => void;
+  selectAll: () => void;
   locations: Location[];
 }
 
 export const StudioContext = createContext<StudioState>({
-  locationId: "",
-  setLocationId: () => {},
+  locationIds: [],
+  toggleLocation: () => {},
+  selectAll: () => {},
   locations: [],
 });
 

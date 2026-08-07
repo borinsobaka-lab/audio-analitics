@@ -285,10 +285,13 @@ export const api = {
     }),
   me: () => request<Me>("/api/auth/me"),
 
-  listDays: (locationId?: string) =>
-    request<DayRecording[]>(
-      `/api/reports/days${locationId ? `?location_id=${locationId}` : ""}`
-    ),
+  listDays: (locationIds: string[] = []) => {
+    // Параметр повторяется по одному на студию: ?location_id=…&location_id=…
+    const q = new URLSearchParams();
+    locationIds.forEach((id) => q.append("location_id", id));
+    const tail = q.toString();
+    return request<DayRecording[]>(`/api/reports/days${tail ? `?${tail}` : ""}`);
+  },
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
   reprocessDay: (id: string) =>
     request<DayRecording>(`/api/reports/days/${id}/reprocess`, { method: "POST" }),
@@ -315,14 +318,14 @@ export const api = {
     date_from: string;
     date_to: string;
     employee_id?: string;
-    location_id?: string;
+    location_ids?: string[];
   }) => {
     const q = new URLSearchParams({
       date_from: params.date_from,
       date_to: params.date_to,
     });
     if (params.employee_id) q.set("employee_id", params.employee_id);
-    if (params.location_id) q.set("location_id", params.location_id);
+    (params.location_ids ?? []).forEach((id) => q.append("location_id", id));
     return request<Summary>(`/api/analytics/summary?${q}`);
   },
 

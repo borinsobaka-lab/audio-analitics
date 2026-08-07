@@ -15,6 +15,15 @@ from .auth import UserContext
 from .models import DayRecording
 
 
+def filter_locations(query: Select, location_ids: list[uuid.UUID] | None) -> Select:
+    """Отобрать смены выбранных студий. Пустой список — все студии: владелец
+    сети чаще смотрит всё сразу, и это должно быть состоянием по умолчанию,
+    а не отдельным пунктом, который надо не забыть выбрать."""
+    if not location_ids:
+        return query
+    return query.where(DayRecording.location_id.in_(location_ids))
+
+
 def scope_days(query: Select, user: UserContext) -> Select:
     """Сузить выборку смен до тех, что положены пользователю."""
     if user.can_view_all:

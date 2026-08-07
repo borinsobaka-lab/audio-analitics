@@ -100,7 +100,7 @@ async def collect(
     date_from: date,
     date_to: date,
     employee_id: uuid.UUID | None,
-    location_id: uuid.UUID | None = None,
+    location_ids: list[uuid.UUID] | None = None,
 ) -> Slice:
     """Одна выборка периода. Вызывается дважды: текущий период и предыдущий."""
     result = Slice()
@@ -123,8 +123,8 @@ async def collect(
     )
     if employee_id:
         shift_q = shift_q.where(DayRecording.employee_id == employee_id)
-    if location_id:
-        shift_q = shift_q.where(DayRecording.location_id == location_id)
+    if location_ids:
+        shift_q = shift_q.where(DayRecording.location_id.in_(location_ids))
 
     for row in (await db.execute(shift_q)).all():
         result.shifts.append(
@@ -160,8 +160,8 @@ async def collect(
     )
     if employee_id:
         score_q = score_q.where(DayRecording.employee_id == employee_id)
-    if location_id:
-        score_q = score_q.where(DayRecording.location_id == location_id)
+    if location_ids:
+        score_q = score_q.where(DayRecording.location_id.in_(location_ids))
 
     for metric_id, emp_id, day, count, score_sum in (await db.execute(score_q)).all():
         n = int(count or 0)
@@ -180,7 +180,9 @@ async def summary(
     date_from: date = Query(..., description="Начало периода включительно"),
     date_to: date = Query(..., description="Конец периода включительно"),
     employee_id: uuid.UUID | None = Query(default=None),
-    location_id: uuid.UUID | None = Query(default=None, description="Точка продажи"),
+    # Повторяемый параметр: можно выбрать одну студию, несколько или ни одной
+    # (последнее означает «все»).
+    location_id: list[uuid.UUID] | None = Query(default=None, description="Точки продажи"),
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):

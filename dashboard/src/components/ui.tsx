@@ -327,7 +327,7 @@ export function Panel({
   hint,
   children,
 }: {
-  tone: "bad" | "good" | "neutral";
+  tone: "bad" | "good" | "info" | "neutral";
   title: string;
   hint?: ReactNode;
   children: ReactNode;
