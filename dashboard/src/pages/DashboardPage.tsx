@@ -9,6 +9,7 @@ import {
   addDays,
   api,
   Employee,
+  fmtDate,
   fmtDur,
   fmtUsd,
   MetricPeriodStat,
@@ -17,7 +18,15 @@ import {
   toApiDate,
 } from "../api";
 import { TrendChart } from "../components/TrendChart";
-import { Empty, Note, PageHead, ScoreBar, Skeleton, scoreZone } from "../components/ui";
+import {
+  Empty,
+  IconCalendar,
+  Note,
+  PageHead,
+  ScoreBar,
+  Skeleton,
+  scoreZone,
+} from "../components/ui";
 
 type Preset = { key: string; label: string; range: () => [Date, Date] };
 
@@ -133,14 +142,25 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
-        <label className="filter">
-          <span className="label">с</span>
-          <input type="date" value={range[0]} max={range[1]} onChange={(e) => setCustom(0, e.target.value)} />
-        </label>
-        <label className="filter">
-          <span className="label">по</span>
-          <input type="date" value={range[1]} min={range[0]} onChange={(e) => setCustom(1, e.target.value)} />
-        </label>
+        <div className="filter">
+          <span className="label">период</span>
+          {/* Две даты — один период, поэтому они стоят в общей оправе. */}
+          <div className="range">
+            <DateField
+              value={range[0]}
+              max={range[1]}
+              onChange={(v) => setCustom(0, v)}
+              aria-label="Начало периода"
+            />
+            <span className="range-dash">—</span>
+            <DateField
+              value={range[1]}
+              min={range[0]}
+              onChange={(v) => setCustom(1, v)}
+              aria-label="Конец периода"
+            />
+          </div>
+        </div>
         <label className="filter">
           <span className="label">менеджер</span>
           <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
@@ -188,8 +208,9 @@ export default function DashboardPage() {
             />
           </div>
           <p className="muted" style={{ marginTop: 10 }}>
-            Сравнение с периодом {data.prev_date_from} — {data.prev_date_to}. Чистой
-            речи разобрано: {fmtDur(data.totals.speech_seconds)}.
+            Сравнение с периодом {fmtDate(data.prev_date_from).day} —{" "}
+            {fmtDate(data.prev_date_to).day}. Чистой речи разобрано:{" "}
+            {fmtDur(data.totals.speech_seconds)}.
           </p>
 
           {data.totals.shifts === 0 ? (
@@ -316,6 +337,37 @@ export default function DashboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Поле даты: оформление наше, поведение родное. Свой календарь — это
+ *  клавиатурная навигация, ловушка фокуса, ARIA и колесо даты на телефоне;
+ *  всё это уже есть в нативном поле, надо было только снять с него чужой вид. */
+function DateField({
+  value,
+  min,
+  max,
+  onChange,
+  ...rest
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  onChange: (value: string) => void;
+  "aria-label": string;
+}) {
+  return (
+    <span className="date-field">
+      <input
+        type="date"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        {...rest}
+      />
+      <IconCalendar size={14} />
+    </span>
   );
 }
 
