@@ -5,6 +5,7 @@ from .config import get_settings
 from .routers import (
     agreements,
     analytics,
+    app_releases,
     audio,
     auth_router,
     employees,
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router)
+app.include_router(app_releases.router)
 app.include_router(recordings.router)
 app.include_router(reports.router)
 app.include_router(feedback.router)
