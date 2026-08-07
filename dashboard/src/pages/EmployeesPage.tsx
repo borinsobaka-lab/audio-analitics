@@ -94,7 +94,7 @@ export default function EmployeesPage() {
       )}
 
       {employees !== null && employees.length > 0 && (
-        <div className="sheet">
+        <div className="sheet table-wrap">
           <table>
             <thead>
               <tr>

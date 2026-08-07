@@ -39,6 +39,19 @@ class Settings(BaseSettings):
     # the answer together — too low a limit returns an empty response.
     llm_max_tokens: int = 16000
 
+    # --- Тарифы для подсчёта стоимости смены (USD) ---
+    # Расход (минуты и токены) хранится отдельно от суммы, поэтому при смене
+    # тарифов достаточно поправить эти значения — прошлые смены пересчитаются
+    # кнопкой «Пересчитать», а новые сразу пойдут по новой цене.
+    #
+    # ASR: цена часа аудио у вашего провайдера. ВАЖНО — значение по умолчанию
+    # ориентировочное, поставьте фактическое из своего тарифа ElevenLabs,
+    # иначе стоимость в админке будет выглядеть достоверно и врать.
+    price_asr_per_hour_usd: float = 0.40
+    # LLM: цена за миллион токенов. По умолчанию — базовый прайс Sonnet 5.
+    price_llm_input_per_mtok_usd: float = 3.00
+    price_llm_output_per_mtok_usd: float = 15.00
+
     # --- Auth ---
     # Static API keys for desktop clients: "key1:location_id1,key2:location_id2"
     device_api_keys: str = ""

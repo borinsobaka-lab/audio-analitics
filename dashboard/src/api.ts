@@ -53,6 +53,11 @@ export interface DayRecording {
   employee_id: string | null;
   employee_name: string | null;
   metric_stats: MetricStat[];
+  asr_seconds: number | null;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  llm_calls: number;
+  cost_usd: number | null;
 }
 
 export interface MetricStat {
@@ -187,6 +192,15 @@ export const api = {
   deleteMetric: (id: string) =>
     request<void>(`/api/metrics/${id}`, { method: "DELETE" }),
 
+  summary: (params: { date_from: string; date_to: string; employee_id?: string }) => {
+    const q = new URLSearchParams({
+      date_from: params.date_from,
+      date_to: params.date_to,
+    });
+    if (params.employee_id) q.set("employee_id", params.employee_id);
+    return request<Summary>(`/api/analytics/summary?${q}`);
+  },
+
   listEmployees: () => request<Employee[]>("/api/employees"),
   createEmployee: (full_name: string) =>
     request<Employee>("/api/employees", {
@@ -276,4 +290,74 @@ export function fmtClock(iso: string | null): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+// --- Сводная статистика за период (дашборд) ---
+
+export interface PeriodTotals {
+  shifts: number;
+  dialogs: number;
+  sales: number;
+  conversion: number | null;
+  speech_seconds: number;
+  cost_usd: number;
+}
+
+export interface MetricPeriodStat {
+  metric_id: string;
+  name: string;
+  scale_max: number;
+  triggered_count: number;
+  avg_score: number | null;
+  prev_avg_score: number | null;
+}
+
+export interface EmployeePeriodStat {
+  employee_id: string | null;
+  full_name: string;
+  totals: PeriodTotals;
+  metrics: MetricPeriodStat[];
+}
+
+export interface TrendPoint {
+  date: string;
+  dialogs: number;
+  sales: number;
+  conversion: number | null;
+  cost_usd: number;
+  avg_scores: Record<string, number>;
+}
+
+export interface Summary {
+  date_from: string;
+  date_to: string;
+  prev_date_from: string;
+  prev_date_to: string;
+  totals: PeriodTotals;
+  previous: PeriodTotals;
+  metrics: MetricPeriodStat[];
+  employees: EmployeePeriodStat[];
+  trend: TrendPoint[];
+}
+
+/** Дата в формате API (YYYY-MM-DD) в местном времени, а не UTC:
+ *  toISOString() у пользователя восточнее Гринвича сдвигает день назад. */
+export function toApiDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function addDays(d: Date, days: number): Date {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+/** Стоимость: суммы здесь заметно меньше доллара, поэтому центов не хватает. */
+export function fmtUsd(value: number | null | undefined): string {
+  if (value == null) return "—";
+  if (value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(2)}`;
 }

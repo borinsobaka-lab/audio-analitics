@@ -26,6 +26,7 @@ from ..models import (
 )
 from . import audio_prep
 from .asr import AsrResult, get_asr
+from .cost import compute_cost
 from .llm import DEFAULT_PROMPTS, LlmClient
 from .segmentation import Turn, group_conversations, render_transcript, words_to_turns
 from .vad import find_speech_regions
@@ -146,6 +147,8 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         db.commit()
         return "no speech detected"
     rec.speech_duration_s = sum(e - s for s, e in regions)
+    # В ASR уходит только речь, вырезанная VAD, — по ней и считается счёт.
+    rec.asr_seconds = rec.speech_duration_s
     rec.status_detail = "transcribing"
     db.commit()
 
@@ -331,6 +334,22 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     )
     db.commit()
 
+    # Стоимость последней обработки: расход хранится рядом с суммой, чтобы
+    # при смене тарифов прошлые смены можно было пересчитать.
+    rec.llm_input_tokens = llm.usage.input_tokens
+    rec.llm_output_tokens = llm.usage.output_tokens
+    rec.llm_calls = llm.usage.calls
+    cost = compute_cost(
+        rec.asr_seconds,
+        llm.usage.input_tokens,
+        llm.usage.output_tokens,
+        settings.price_asr_per_hour_usd,
+        settings.price_llm_input_per_mtok_usd,
+        settings.price_llm_output_per_mtok_usd,
+    )
+    rec.cost_usd = cost.total_usd
+    db.commit()
+
     # Human-readable summary shown under the "Готово" status in the dashboard,
     # so an empty report explains itself: no metrics? nothing applicable? errors?
     parts = [f"диалогов: {len(dialogs_meta)}"]
@@ -341,6 +360,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
         parts.append(f"сработало оценок: {evals_applicable} из {evals_done}")
     if failed_evals:
         parts.append(f"ошибок оценки: {failed_evals}")
+    parts.append(f"стоимость: ${cost.total_usd:.3f}")
     summary_line = ", ".join(parts)
     rec.status_detail = summary_line
     db.commit()

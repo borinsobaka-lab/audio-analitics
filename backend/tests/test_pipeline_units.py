@@ -10,6 +10,7 @@ from app.pipeline.audio_prep import map_to_original_ts
 from app.pipeline.asr import Word
 from app.pipeline.llm import (
     LlmClient,
+    LlmUsage,
     extract_json,
     normalize_analysis,
     normalize_dialogs,
@@ -243,10 +244,17 @@ class _FakeBlock:
         self.text = text
 
 
+class _FakeUsage:
+    def __init__(self, inp, out):
+        self.input_tokens = inp
+        self.output_tokens = out
+
+
 class _FakeMessage:
-    def __init__(self, text, stop_reason="end_turn"):
+    def __init__(self, text, stop_reason="end_turn", usage=(100, 20)):
         self.content = [_FakeBlock(text)] if text else []
         self.stop_reason = stop_reason
+        self.usage = _FakeUsage(*usage)
 
 
 class _FakeStream:
@@ -277,6 +285,7 @@ def make_llm(text, stop_reason="end_turn"):
     """An LlmClient whose Anthropic client is replaced by a recording fake."""
     client = LlmClient.__new__(LlmClient)
     client.settings = type("S", (), {"llm_max_tokens": 16000})()
+    client.usage = LlmUsage()
     client.client = type("C", (), {})()
     client.client.messages = _FakeMessages(_FakeMessage(text, stop_reason))
     return client
@@ -300,3 +309,84 @@ def test_complete_json_reports_empty_answer_clearly():
     llm = make_llm("", stop_reason="max_tokens")
     with pytest.raises(ValueError, match="LLM_MAX_TOKENS"):
         llm.complete_json("prompt", "claude-sonnet-5")
+
+
+# --- стоимость обработки ---
+
+from app.pipeline.cost import compute_cost  # noqa: E402
+
+
+def test_cost_splits_asr_and_llm():
+    # час распознавания по $0.40 + 1M входных по $3 + 0.5M выходных по $15
+    cost = compute_cost(3600, 1_000_000, 500_000, 0.40, 3.00, 15.00)
+    assert cost.asr_usd == pytest.approx(0.40)
+    assert cost.llm_usd == pytest.approx(3.00 + 7.50)
+    assert cost.total_usd == pytest.approx(10.90)
+
+
+def test_cost_handles_missing_usage():
+    # смена без речи: ASR не вызывался, модель не вызывалась
+    cost = compute_cost(None, 0, 0, 0.40, 3.00, 15.00)
+    assert cost.total_usd == 0.0
+
+
+def test_cost_keeps_sub_cent_precision():
+    # разбор одной смены дешевле цента — округление до копеек обнулило бы всё
+    cost = compute_cost(60, 1000, 500, 0.40, 3.00, 15.00)
+    assert cost.total_usd > 0
+
+
+# --- сводная статистика ---
+
+from app.routers.analytics import ScoreGroup, ShiftRow, totals_of  # noqa: E402
+
+
+def make_shift(dialogs, sales, day="2026-08-05", cost=0.1):
+    from datetime import date as _date
+
+    y, m, d = (int(x) for x in day.split("-"))
+    return ShiftRow(
+        date=_date(y, m, d),
+        employee_id=None,
+        dialogs=dialogs,
+        sales=sales,
+        speech_seconds=600.0,
+        cost_usd=cost,
+    )
+
+
+def test_totals_conversion_is_weighted_not_averaged():
+    # день с одним разговором и продажей (100%) и день с двадцатью и двумя (10%):
+    # среднее дневных дало бы 55%, правильный ответ — 3 из 21
+    shifts = [make_shift(1, 1), make_shift(20, 2)]
+    totals = totals_of(shifts)
+    assert totals.dialogs == 21
+    assert totals.sales == 3
+    assert totals.conversion == pytest.approx(round(3 / 21, 3))
+
+
+def test_totals_without_dialogs_has_no_conversion():
+    assert totals_of([make_shift(0, 0)]).conversion is None
+    assert totals_of([]).shifts == 0
+
+
+def test_score_group_averages_by_weight():
+    # 3 оценки в сумме 24 (среднее 8) и 1 оценка 4 → 28/4 = 7, а не (8+4)/2 = 6
+    group = ScoreGroup()
+    group.add(24.0, 3)
+    group.add(4.0, 1)
+    assert group.avg == pytest.approx(7.0)
+
+
+def test_score_group_empty_has_no_average():
+    assert ScoreGroup().avg is None
+
+
+def test_complete_json_accumulates_usage_across_calls():
+    # стоимость смены складывается из всех вызовов, а не только последнего
+    llm = make_llm('{"ok": true}')
+    llm.complete_json("prompt", "claude-sonnet-5")
+    llm.complete_json("prompt", "claude-sonnet-5")
+    assert llm.usage.calls == 2
+    assert llm.usage.input_tokens == 200
+    assert llm.usage.output_tokens == 40

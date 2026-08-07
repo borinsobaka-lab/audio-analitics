@@ -1256,6 +1256,16 @@ tbody tr:hover {
   h1 {
     font-size: 26px;
   }
+  .table-wrap table {
+    min-width: 680px;
+  }
+  .filters {
+    gap: 10px;
+  }
+  .seg {
+    width: 100%;
+    overflow-x: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1269,4 +1279,195 @@ tbody tr:hover {
   .dot {
     opacity: 1 !important;
   }
+}
+
+/* Таблица не сжимается до нечитаемости, а уезжает вбок: на узком экране
+   лучше прокрутить, чем получить колонку в два символа. */
+.table-wrap {
+  overflow-x: auto;
+}
+
+/* --- Фильтры дашборда --------------------------------------------------- */
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.filter input,
+.filter select {
+  min-height: 36px;
+  width: auto;
+}
+
+/* Пресеты периода — переключатель, а не пять одинаковых кнопок: выбранный
+   вариант должен читаться как состояние, а не как «нажми меня». */
+.seg {
+  display: inline-flex;
+  background: var(--sunk);
+  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 2px;
+}
+.seg-btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+  font-weight: 500;
+}
+.seg-btn:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  box-shadow: none;
+}
+.seg-btn.on {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: var(--sh-1);
+}
+
+/* --- Дельта к прошлому периоду ------------------------------------------ */
+
+.delta {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+  white-space: nowrap;
+}
+.delta.up {
+  color: var(--green);
+}
+.delta.down {
+  color: #d92b21;
+}
+.delta.flat,
+.delta.none {
+  color: var(--ink-4);
+}
+/* На акцентной плашке своя палитра: зелёное на фуксии нечитаемо. */
+.stat.lead .delta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.num-col {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.score-val.low {
+  color: #d92b21;
+}
+.score-val.mid {
+  color: #c96f00;
+}
+.score-val.good {
+  color: var(--green);
+}
+.score-val .of {
+  color: var(--ink-4);
+  font-weight: 400;
+}
+
+.metric-line.compact {
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 10px;
+}
+.metric-line.compact .metric-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.metric-line.compact .delta {
+  margin-top: 0;
+}
+
+/* --- Графики ------------------------------------------------------------ */
+/* Малые кратные: по одному показателю на панель. Метрики бывают пяти- и
+   десятибалльные, а разные шкалы на одной оси дают ложное сравнение. */
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+}
+.chart {
+  margin: 0;
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+  padding: 14px 16px 8px;
+  min-width: 0;
+}
+.chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.chart-plot {
+  position: relative;
+}
+.chart-empty {
+  height: 148px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-4);
+  font-size: 13px;
+}
+/* Сетка и подписи осей — фон: данные единственное, чему позволено быть
+   заметным. */
+.chart-grid {
+  stroke: var(--edge);
+  stroke-width: 1;
+}
+.chart-tick,
+.chart-date {
+  font-size: 10px;
+  fill: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+/* Подпись значения — текстовым цветом, а не цветом линии. */
+.chart-last {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.chart-tip {
+  position: absolute;
+  top: 26px;
+  transform: translateX(-50%);
+  background: var(--deck);
+  color: var(--ink-deck);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--sh-2);
+}
+.chart-tip b {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tip span {
+  color: var(--ink-deck-2);
 }

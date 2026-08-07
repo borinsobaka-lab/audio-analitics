@@ -24,6 +24,12 @@ class DayRecordingOut(BaseModel):
     employee_id: uuid.UUID | None = None
     employee_name: str | None = None
     metric_stats: list["DayMetricStat"] = []
+    # Стоимость последней обработки и расход, из которого она получена.
+    asr_seconds: float | None = None
+    llm_input_tokens: int = 0
+    llm_output_tokens: int = 0
+    llm_calls: int = 0
+    cost_usd: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -203,3 +209,57 @@ class ScriptTemplateUpdate(BaseModel):
 class AudioUrlOut(BaseModel):
     url: str
     expires_in_s: int
+
+
+# --- Сводная статистика за период (дашборд) ---
+
+class PeriodTotals(BaseModel):
+    """Итоги периода. Конверсия считается по сумме, а не как среднее дневных:
+    среднее по дням даёт вес одинаковый и дню с одним разговором, и дню с
+    двадцатью."""
+
+    shifts: int = 0
+    dialogs: int = 0
+    sales: int = 0
+    conversion: float | None = None
+    speech_seconds: float = 0.0
+    cost_usd: float = 0.0
+
+
+class MetricPeriodStat(BaseModel):
+    metric_id: uuid.UUID
+    name: str
+    scale_max: int
+    triggered_count: int = 0
+    avg_score: float | None = None
+    # Среднее за предыдущий период такой же длины — для стрелки динамики.
+    prev_avg_score: float | None = None
+
+
+class EmployeePeriodStat(BaseModel):
+    employee_id: uuid.UUID | None = None
+    full_name: str
+    totals: PeriodTotals
+    metrics: list[MetricPeriodStat] = []
+
+
+class TrendPoint(BaseModel):
+    date: date
+    dialogs: int = 0
+    sales: int = 0
+    conversion: float | None = None
+    cost_usd: float = 0.0
+    # metric_id (строкой) -> средняя оценка за этот день
+    avg_scores: dict[str, float] = {}
+
+
+class SummaryOut(BaseModel):
+    date_from: date
+    date_to: date
+    prev_date_from: date
+    prev_date_to: date
+    totals: PeriodTotals
+    previous: PeriodTotals
+    metrics: list[MetricPeriodStat] = []
+    employees: list[EmployeePeriodStat] = []
+    trend: list[TrendPoint] = []

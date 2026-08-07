@@ -90,6 +90,15 @@ class DayRecording(UUIDMixin, Base):
     speech_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # Расход на обработку. Хранится вместе с итоговой суммой, потому что
+    # тарифы меняются: по минутам и токенам прошлую смену можно пересчитать,
+    # по одной сумме — уже нет.
+    asr_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    llm_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     segments: Mapped[list["AudioSegment"]] = relationship(back_populates="day_recording")
 
 

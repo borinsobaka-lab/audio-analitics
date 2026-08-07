@@ -8,6 +8,7 @@ Placeholders available per prompt key:
 """
 import json
 import re
+from dataclasses import dataclass
 
 import anthropic
 
@@ -332,11 +333,35 @@ def normalize_analysis(analysis: dict) -> dict:
     }
 
 
+@dataclass
+class LlmUsage:
+    """Расход за всю обработку смены: складывается по всем вызовам модели."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    calls: int = 0
+
+    def add(self, message) -> None:
+        usage = getattr(message, "usage", None)
+        if usage is None:
+            return
+        # Кешированные токены считаются отдельными полями и есть не во всех
+        # версиях SDK — берём то, что реально пришло.
+        self.input_tokens += (
+            (getattr(usage, "input_tokens", 0) or 0)
+            + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
+            + (getattr(usage, "cache_read_input_tokens", 0) or 0)
+        )
+        self.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.calls += 1
+
+
 class LlmClient:
     def __init__(self, api_key: str | None = None):
         settings = get_settings()
         self.settings = settings
         self.client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key)
+        self.usage = LlmUsage()
 
     def complete_json(self, prompt: str, model: str, system: str | None = None):
         """One request → parsed JSON.
@@ -357,6 +382,10 @@ class LlmClient:
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             message = stream.get_final_message()
+
+        # Считаем расход даже у неудачного разбора: токены потрачены в любом
+        # случае, и стоимость смены должна это отражать.
+        self.usage.add(message)
 
         text = "".join(block.text for block in message.content if block.type == "text")
         if not text.strip():

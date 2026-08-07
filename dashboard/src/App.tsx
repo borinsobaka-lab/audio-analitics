@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { getToken, setToken } from "./api";
-import { IconDays, IconMetrics, IconPeople, IconWave } from "./components/ui";
+import {
+  IconDashboard,
+  IconDays,
+  IconMetrics,
+  IconPeople,
+  IconWave,
+} from "./components/ui";
+import DashboardPage from "./pages/DashboardPage";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
 import EmployeesPage from "./pages/EmployeesPage";
@@ -58,6 +65,10 @@ export default function App() {
         </div>
 
         <NavLink to="/" end className="nav-link">
+          <IconDashboard />
+          Дашборд
+        </NavLink>
+        <NavLink to="/days" className="nav-link">
           <IconDays />
           Смены
         </NavLink>
@@ -77,7 +88,8 @@ export default function App() {
 
       <main className="content">
         <Routes>
-          <Route path="/" element={<DaysPage />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/days" element={<DaysPage />} />
           <Route path="/days/:id" element={<DayReportPage />} />
           <Route path="/metrics" element={<MetricsPage />} />
           <Route path="/employees" element={<EmployeesPage />} />

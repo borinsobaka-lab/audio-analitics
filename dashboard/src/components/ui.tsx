@@ -23,6 +23,14 @@ export const IconDays = ({ size = 17 }: IconProps) => (
   </svg>
 );
 
+export const IconDashboard = ({ size = 17 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M3 17a9 9 0 0 1 18 0" />
+    <path d="M12 17l4.5-5" />
+    <path d="M3 17h2M19 17h2M12 8V6" />
+  </svg>
+);
+
 export const IconMetrics = ({ size = 17 }: IconProps) => (
   <svg {...base(size)}>
     <path d="M4 19V9M10 19V5M16 19v-6M22 19H2" />

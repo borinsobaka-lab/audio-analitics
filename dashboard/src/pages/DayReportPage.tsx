@@ -8,6 +8,7 @@ import {
   fmtDate,
   fmtDur,
   fmtTs,
+  fmtUsd,
   MetricEvaluation,
 } from "../api";
 import { Deck, DeckHandle } from "../components/Deck";
@@ -97,20 +98,35 @@ export default function DayReportPage() {
 
       <div className="stats">
         <div className="stat lead">
-          <div className="v">{conversion}</div>
+          <div className="v display">{conversion}</div>
           <div className="label">Конверсия</div>
         </div>
         <div className="stat">
-          <div className="v">{report.sales_count}</div>
+          <div className="v display">{report.sales_count}</div>
           <div className="label">Продаж</div>
         </div>
         <div className="stat">
-          <div className="v">{report.dialogs_total}</div>
+          <div className="v display">{report.dialogs_total}</div>
           <div className="label">Разговоров с клиентами</div>
         </div>
         <div className="stat">
           <div className="v">{fmtDur(recording.speech_duration_s)}</div>
           <div className="label">Чистой речи</div>
+        </div>
+        <div
+          className="stat"
+          title={
+            recording.cost_usd != null
+              ? `Распознавание ${fmtDur(recording.asr_seconds)} речи + ` +
+                `${recording.llm_calls} обращений к модели ` +
+                `(${recording.llm_input_tokens.toLocaleString("ru-RU")} вх. / ` +
+                `${recording.llm_output_tokens.toLocaleString("ru-RU")} исх. токенов). ` +
+                "Это стоимость последней обработки: «Пересчитать» тратит заново."
+              : undefined
+          }
+        >
+          <div className="v">{fmtUsd(recording.cost_usd)}</div>
+          <div className="label">Обработка</div>
         </div>
       </div>
 

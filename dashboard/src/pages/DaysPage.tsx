@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, DayRecording, fmtClock, fmtDate, fmtDur } from "../api";
+import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd } from "../api";
 import { Empty, Note, PageHead, Score, Skeleton, StatusLight } from "../components/ui";
 
 // Пока что-то живо, список опрашивается сам: огоньки должны отражать
@@ -105,6 +105,12 @@ export default function DaysPage() {
                       {" · "}
                       {fmtDur(d.total_duration_s)} записи, из них речи{" "}
                       {fmtDur(d.speech_duration_s)}
+                      {d.cost_usd != null && (
+                        <span title="Стоимость последней обработки: распознавание плюс анализ">
+                          {" · обработка "}
+                          {fmtUsd(d.cost_usd)}
+                        </span>
+                      )}
                     </span>
                   )}
                   {d.status_detail && (
