@@ -249,11 +249,15 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 `tauri.conf.json`) — это Intel-маки примерно с 2013 года. Версия проверяется
 в «Об этом Mac».
 
-Адрес сервера и ключ приложения вшиваются в сборку:
+Адрес сервера и ключ приложения вшиваются в сборку — через файл
+`desktop/src-tauri/build.env` (копия `build.env.example`) или переменными
+окружения:
 
 ```bash
 AA_SERVER_URL=https://api.example.com AA_APP_KEY=<APP_KEY> npm run build:mac:universal
 ```
+
+Пошаговая инструкция по сборке для владельца — [docs/BUILD_APP.md](docs/BUILD_APP.md).
 
 После этого в приложении остаётся **одна** настройка — «Точка продажи»:
 сотрудник выбирает свою студию из списка и больше в настройки не заходит.

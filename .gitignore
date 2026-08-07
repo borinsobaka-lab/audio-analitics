@@ -21,6 +21,8 @@ dist/
 # Rust / Tauri
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+# Адрес сервера и ключ приложения для сборки — в репозиторий не кладём
+desktop/src-tauri/build.env
 
 # Audio / data artifacts
 *.opus
