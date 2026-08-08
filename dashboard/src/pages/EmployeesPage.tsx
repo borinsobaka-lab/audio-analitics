@@ -3,15 +3,18 @@
  *  Одна строка — один человек. Разделять «менеджера» и «пользователя» было бы
  *  честнее на бумаге и хуже в жизни: доступ «вижу только свои записи» держится
  *  ровно на том, что вошедший — тот самый менеджер, чьё имя стоит на смене.
+ *
+ *  За студией никто не закреплён: сегодня человек работает на Ваке, завтра
+ *  подменяет на Сабуртало. Приложение на любой точке показывает всех, а смена
+ *  достаётся той студии, на которой стоит компьютер.
  */
 import { useEffect, useState } from "react";
-import { api, Employee, EmployeeCredentials, fmtWhen, Location as LocationRow } from "../api";
+import { api, Employee, EmployeeCredentials, fmtWhen } from "../api";
 import { ConfirmAction, Empty, Note, PageHead, Skeleton, TableCard } from "../components/ui";
-import { useSession, useStudio } from "../session";
+import { useSession } from "../session";
 
 export default function EmployeesPage() {
   const me = useSession();
-  const { locations } = useStudio();
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [error, setError] = useState("");
   const [issued, setIssued] = useState<EmployeeCredentials | null>(null);
@@ -47,7 +50,7 @@ export default function EmployeesPage() {
     <div>
       <PageHead
         title="Сотрудники"
-        hint="Активные сотрудники появляются в выпадающем списке приложения — менеджер выбирает себя перед началом смены. Здесь же выдаётся доступ в админку: логин, пароль и то, чьи смены человек видит."
+        hint="Активные сотрудники появляются в выпадающем списке приложения на всех студиях — менеджер выбирает себя перед началом смены. Смена достаётся той точке, где стоит компьютер, поэтому закреплять человека за студией не нужно. Здесь же выдаётся доступ в админку: логин, пароль и то, чьи смены человек видит."
       />
 
       {error && <Note kind="error">{error}</Note>}
@@ -60,10 +63,7 @@ export default function EmployeesPage() {
 
       {issued && <Credentials data={issued} onClose={() => setIssued(null)} />}
 
-      <AddEmployee
-        locations={locations.filter((l) => l.active)}
-        onSubmit={(body) => run(() => api.createEmployee(body))}
-      />
+      <AddEmployee onSubmit={(body) => run(() => api.createEmployee(body))} />
 
       {employees === null && <Skeleton count={3} height={48} />}
 
@@ -78,7 +78,6 @@ export default function EmployeesPage() {
         <TableCard
           columns={[
             { label: "Имя", className: "col-name" },
-            { label: "Студия" },
             { label: "Доступ в админку" },
             { label: "Видит смены" },
             { label: "Статус" },
@@ -153,19 +152,15 @@ function Credentials({
 }
 
 function AddEmployee({
-  locations,
   onSubmit,
 }: {
-  locations: LocationRow[];
   onSubmit: (body: {
     full_name: string;
-    location_id?: string | null;
     login?: string | null;
     access_scope?: "own" | "all";
   }) => Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const [locationId, setLocationId] = useState("");
   const [login, setLogin] = useState("");
   const [scope, setScope] = useState<"own" | "all">("own");
   const [busy, setBusy] = useState(false);
@@ -175,7 +170,6 @@ function AddEmployee({
     setBusy(true);
     await onSubmit({
       full_name: name.trim(),
-      location_id: locationId || null,
       login: login.trim() || null,
       access_scope: scope,
     });
@@ -199,24 +193,6 @@ function AddEmployee({
             onKeyDown={(e) => e.key === "Enter" && add()}
           />
         </label>
-        {/* Сотрудник закреплён за студией: имя всплывает в приложении именно
-            той точки, на которой он работает. */}
-        {locations.length > 1 && (
-          <label className="field">
-            <span className="label">Студия</span>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-            >
-              <option value="">первая по списку</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <label className="field">
           <span className="label">Логин — необязательно</span>
           <input
@@ -245,7 +221,8 @@ function AddEmployee({
       </div>
       <p className="muted form-hint">
         Без логина сотрудник существует только в приложении записи. С логином
-        сразу выдаётся пароль — он покажется один раз.
+        сразу выдаётся пароль — он покажется один раз. Имя появится в списке
+        на всех студиях сразу.
       </p>
     </div>
   );
@@ -298,10 +275,6 @@ function EmployeeRow({
       <td className="col-name">
         {editing === "name" ? inlineInput : employee.full_name}
         {isMe && <span className="muted"> · это вы</span>}
-      </td>
-
-      <td>
-        {employee.location_name || <span className="muted">не указана</span>}
       </td>
 
       <td className="col-access">

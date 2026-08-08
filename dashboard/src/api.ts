@@ -113,14 +113,14 @@ export interface Location {
   address: string;
   timezone: string;
   active: boolean;
-  employees_count: number;
   shifts_count: number;
 }
 
 export interface Employee {
   id: string;
+  /** Точка, где карточку завели. Ни на что не влияет: сотрудник работает на
+   *  любой студии, а смена достаётся той, где стоит компьютер. */
   location_id: string;
-  location_name: string;
   full_name: string;
   role: string;
   active: boolean;
@@ -349,7 +349,6 @@ export const api = {
   listEmployees: () => request<Employee[]>("/api/employees"),
   createEmployee: (body: {
     full_name: string;
-    location_id?: string | null;
     login?: string | null;
     access_scope?: "own" | "all";
   }) =>

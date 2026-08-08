@@ -38,14 +38,20 @@ async def list_pickable_locations(
 
 
 @router.get("/employees", response_model=list[EmployeePickOut])
-async def list_location_employees(
+async def list_pickable_employees(
     device: DeviceContext = Depends(require_device),
     db: AsyncSession = Depends(get_db),
 ):
-    """Active managers of this device's location, for the app's picker."""
+    """Все активные менеджеры — независимо от выбранной точки продажи.
+
+    Сотрудник не закреплён за студией: сегодня он на Ваке, завтра подменяет
+    на Сабуртало, и заводить его дважды или переназначать перед сменой никто
+    не будет. Смена всё равно достаётся той точке, на которой стоит компьютер:
+    студия берётся из устройства, а не из карточки человека.
+    """
     q = (
         select(Employee)
-        .where(Employee.location_id == device.location_id, Employee.active.is_(True))
+        .where(Employee.active.is_(True))
         .order_by(Employee.full_name)
     )
     return (await db.scalars(q)).all()
@@ -68,9 +74,10 @@ async def start_day(
         raise HTTPException(404, "Location not found")
 
     if body.employee_id:
-        employee = await db.get(Employee, body.employee_id)
-        if not employee or employee.location_id != device.location_id:
-            raise HTTPException(404, "Менеджер не найден на этой точке")
+        # Проверяем только существование: к точке менеджер не привязан и может
+        # выйти на любой студии.
+        if not await db.get(Employee, body.employee_id):
+            raise HTTPException(404, "Менеджер не найден")
 
     in_progress = await db.scalar(
         select(DayRecording)

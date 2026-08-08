@@ -65,7 +65,6 @@ class LocationOut(BaseModel):
     address: str = ""
     timezone: str = "Asia/Tbilisi"
     active: bool = True
-    employees_count: int = 0
     shifts_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -98,8 +97,9 @@ class LocationPickOut(BaseModel):
 
 class EmployeeOut(BaseModel):
     id: uuid.UUID
+    # Точка, на которой карточку завели. Ни на что не влияет: сотрудник может
+    # выйти на любой студии, а смена достаётся той, где стоит компьютер.
     location_id: uuid.UUID
-    location_name: str = ""
     full_name: str
     role: str
     active: bool
@@ -128,7 +128,6 @@ class EmployeePickOut(BaseModel):
 
 class EmployeeCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
-    location_id: uuid.UUID | None = None
     role: str = "manager"
     # Логин необязателен: менеджера можно завести только для приложения.
     login: str | None = Field(default=None, max_length=64)

@@ -7,7 +7,7 @@
  *  их списком: выбрал свою студию — и больше не возвращается к настройкам.
  */
 import { useEffect, useState } from "react";
-import { api, Location, plural } from "../api";
+import { api, Location } from "../api";
 import { ConfirmAction, Empty, Note, PageHead, Skeleton, TableCard } from "../components/ui";
 
 export default function LocationsPage() {
@@ -56,7 +56,7 @@ export default function LocationsPage() {
     <div>
       <PageHead
         title="Точки продажи"
-        hint="Студия и её ресепшен. В приложении записи сотрудник выбирает точку один раз при установке — больше никаких настроек у него нет. Закрытая точка исчезает из этого списка, но её прошлые смены остаются в отчётах."
+        hint="Студия и её ресепшен. В приложении записи точка выбирается один раз при установке — больше никаких настроек у сотрудника нет. Сотрудники к точкам не привязаны: на любой студии в списке видны все. Закрытая точка исчезает из выбора, но её прошлые смены остаются в отчётах."
       />
 
       {error && <Note kind="error">{error}</Note>}
@@ -115,7 +115,6 @@ export default function LocationsPage() {
           columns={[
             { label: "Студия", className: "col-name" },
             { label: "Адрес" },
-            { label: "Сотрудников", num: true },
             { label: "Смен", num: true },
             { label: "Статус" },
             { label: "", className: "col-row-actions" },
@@ -185,12 +184,6 @@ function LocationRow({
           <span className="muted">не указан</span>
         )}
       </td>
-      <td className="num-col">
-        {location.employees_count}{" "}
-        <span className="muted">
-          {plural(location.employees_count, "активный", "активных", "активных")}
-        </span>
-      </td>
       <td className="num-col">{location.shifts_count}</td>
       <td>
         <span className={`pill ${location.active ? "sale" : "irrelevant"}`}>
@@ -231,14 +224,14 @@ function LocationRow({
               >
                 {location.active ? "Закрыть" : "Открыть"}
               </button>
-              {/* Удаление доступно, только пока к точке ничего не привязано —
-                  иначе сервер откажет и предложит закрыть её. */}
-              {location.shifts_count === 0 && location.employees_count === 0 && (
+              {/* Удаление доступно, только пока на точке нет смен — иначе
+                  сервер откажет и предложит закрыть её. */}
+              {location.shifts_count === 0 && (
                 <ConfirmAction
                   small
                   label="Удалить"
                   confirmLabel="Удалить совсем"
-                  title="Удалить точку — возможно, пока на ней нет смен и сотрудников"
+                  title="Удалить точку — возможно, пока на ней нет смен"
                   onConfirm={() => onRun(() => api.deleteLocation(location.id))}
                 />
               )}

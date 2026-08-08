@@ -1,8 +1,9 @@
 """Точки продажи — студии сети.
 
 Одна точка = одна студия = один ресепшен, на котором стоит компьютер с
-приложением записи. Всё остальное к точке привязано: сотрудники, смены,
-отчёты.
+приложением записи. К точке привязаны смены и отчёты — но не сотрудники:
+человек работает на любой студии, а смена достаётся той, где стоит компьютер,
+на котором её начали.
 
 Смысл раздела в том, чтобы у сотрудника на ресепшене не осталось ни одной
 настройки, в которой можно ошибиться. Раньше он вводил адрес сервера и ключ
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import UserContext, require_manage, require_user
 from ..db import get_db
-from ..models import DayRecording, Employee, Location, Organization
+from ..models import DayRecording, Location, Organization
 from ..schemas import LocationCreate, LocationOut, LocationUpdate
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
@@ -26,13 +27,6 @@ router = APIRouter(prefix="/api/locations", tags=["locations"])
 
 async def to_out(db: AsyncSession, location: Location) -> LocationOut:
     out = LocationOut.model_validate(location)
-    out.employees_count = (
-        await db.scalar(
-            select(func.count())
-            .select_from(Employee)
-            .where(Employee.location_id == location.id, Employee.active.is_(True))
-        )
-    ) or 0
     out.shifts_count = (
         await db.scalar(
             select(func.count())
@@ -117,9 +111,9 @@ async def delete_location(
 ):
     """Удалить точку можно, только пока к ней ничего не привязано.
 
-    Если на точке были смены или сотрудники, удаление обнулило бы отчёты за
-    прошлые месяцы, поэтому вместо него предлагается закрыть точку: из выбора
-    в приложении она исчезнет, история останется.
+    Если на точке были смены, удаление обнулило бы отчёты за прошлые месяцы,
+    поэтому вместо него предлагается закрыть точку: из выбора в приложении она
+    исчезнет, история останется.
     """
     location = await db.get(Location, location_id)
     if not location:
@@ -132,13 +126,6 @@ async def delete_location(
             409,
             "На точке есть смены — её можно только закрыть, "
             "иначе прошлые отчёты потеряют студию",
-        )
-    staffed = await db.scalar(
-        select(Employee.id).where(Employee.location_id == location_id).limit(1)
-    )
-    if staffed:
-        raise HTTPException(
-            409, "К точке привязаны сотрудники — сначала переведите их на другую точку"
         )
     await db.delete(location)
     await db.commit()
