@@ -145,6 +145,55 @@
       .toggle input { width: auto; margin: 0; }
       .toggle-hint { font-size: 12px; color: #64748b; margin: 0 0 4px 25px; }
       #btn-save-settings { background: #2563eb; margin-top: 12px; }
+      /* Обновление — событие приятное, а не тревожное: синий блок, не красный. */
+      .update {
+        background: #172554;
+        border: 1px solid #1d4ed8;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .update-head { font-size: 14px; margin-bottom: 4px; }
+      .update-notes {
+        font-size: 12.5px;
+        color: #93c5fd;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        margin-bottom: 10px;
+      }
+      #btn-update { background: #2563eb; margin: 0; }
+      /* После обновления macOS может спросить микрофон заново — об этом
+         предупреждаем зелёной плашкой на первом же запуске. */
+      .updated {
+        background: #052e26;
+        border: 1px solid #047857;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #a7f3d0;
+      }
+      .version {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button.link {
+        width: auto;
+        margin: 0;
+        padding: 0;
+        background: none;
+        color: #60a5fa;
+        font-size: 12px;
+        font-weight: 400;
+        text-decoration: underline;
+      }
+      button.link:disabled { background: none; color: #475569; }
       details details { margin-left: 2px; }
       details details summary { color: #64748b; font-size: 12px; }
     </style>
@@ -173,6 +222,24 @@
         Если это не микрофон стойки, смените его в системных настройках звука
         («Вход») и перезапустите приложение.
       </div>
+    </div>
+
+    <div class="updated" id="updated" style="display: none">
+      <strong>Приложение обновлено до версии <span id="updated-version"></span>.</strong>
+      Скажите что-нибудь: полоса ниже должна шевелиться. macOS считает
+      обновлённое приложение новым и может снова спросить доступ к микрофону —
+      если вопрос появится, нажмите «Разрешить».
+    </div>
+
+    <!-- Баннер появляется, только когда на сервере лежит версия новее.
+         Обновление перезапускает приложение, поэтому во время смены кнопка
+         заблокирована — оборвать запись важнее, чем обновиться сегодня. -->
+    <div class="update" id="update" style="display: none">
+      <div class="update-head">
+        Вышла новая версия <strong id="update-version"></strong>
+      </div>
+      <div class="update-notes" id="update-notes"></div>
+      <button id="btn-update">Обновить и перезапустить</button>
     </div>
 
     <!-- Видна с открытия приложения, а не только во время записи: сотрудник
@@ -228,6 +295,12 @@
       </div>
 
       <button id="btn-save-settings">Сохранить настройки</button>
+
+      <div class="version">
+        Версия <span id="app-version">—</span>
+        <button class="link" id="btn-check-update">Проверить обновления</button>
+        <span id="update-status"></span>
+      </div>
 
       <details id="advanced-block">
         <summary>Для настройщика</summary>

@@ -2170,6 +2170,29 @@ button.vote.on.disagree {
 .no-margin {
   margin: 0;
 }
+/* Поле выбора файла оставлено родным: своя кнопка «Обзор» стоила бы скрытого
+   input, подложного label и потери подписи выбранного файла. Подгоняем только
+   ритм под соседние поля. */
+input[type="file"] {
+  width: 100%;
+  font-size: 13px;
+  color: var(--ink-2);
+  padding: 8px 0;
+}
+input[type="file"]::file-selector-button {
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--card-2);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-sm);
+  padding: 7px 12px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+input[type="file"]::file-selector-button:hover {
+  background: var(--sunk);
+}
 /* Кнопка в ряду полей встаёт вровень с их рамками, а не с подписями. */
 .field-row > button {
   align-self: flex-start;

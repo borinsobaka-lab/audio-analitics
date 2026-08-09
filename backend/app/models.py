@@ -307,6 +307,38 @@ class MetricsDaily(UUIDMixin, Base):
     summary_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
+class AppRelease(UUIDMixin, Base):
+    """Сборка приложения записи, выложенная владельцем.
+
+    Приложение стоит на компьютерах в студиях, куда никто не ходит. Раньше
+    обновление означало собрать, принести флешку и обойти точки; теперь оно
+    само видит новую версию и ставит её по нажатию кнопки.
+
+    Архив лежит в объектном хранилище рядом с записями, а подпись — здесь:
+    приложение проверяет её своим вшитым публичным ключом и не установит
+    ничего, что подписано не нашим приватным ключом. Без этого «автообновление»
+    означало бы «кто угодно, подменивший ответ сервера, ставит нам свой код».
+    """
+
+    __tablename__ = "app_releases"
+    __table_args__ = (
+        UniqueConstraint("platform", "version", name="uq_release_platform_version"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    # darwin | windows — то, что присылает апдейтер в {{target}}.
+    platform: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    archive_uri: Mapped[str] = mapped_column(String(512))
+    signature: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    # Снятая с публикации сборка остаётся в истории, но приложениям не отдаётся.
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by_name: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class DialogFeedback(UUIDMixin, Base):
     """«Согласен / не согласен» с разбором одного разговора.
 

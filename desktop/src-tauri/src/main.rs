@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_updater::UpdaterExt;
 
 use keep_awake::KeepAwake;
 use recorder::{MonitorHandle, RecorderHandle};
@@ -145,6 +146,9 @@ struct AppState {
     monitor_error: Mutex<String>,
     settings: Mutex<Settings>,
     data_dir: Mutex<PathBuf>,
+    /// Версия, на которую только что обновились. Ставится на первом запуске
+    /// после обновления и живёт до перезапуска: см. `take_update_marker`.
+    just_updated: Mutex<String>,
 }
 
 impl AppState {
@@ -195,6 +199,9 @@ struct Status {
     monitor_error: String,
     location_name: String,
     configured: bool,
+    /// Непустое ровно на том запуске, который случился сразу после
+    /// обновления, — интерфейс просит проверить микрофон.
+    just_updated: String,
 }
 
 fn settings_path(data_dir: &PathBuf) -> PathBuf {
@@ -262,6 +269,7 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             monitor_error: String::new(),
             location_name: settings.location_name.clone(),
             configured: settings.ready().is_ok(),
+            just_updated: state.just_updated.lock().unwrap().clone(),
         },
         None => Status {
             recording: false,
@@ -284,6 +292,7 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             monitor_error: state.monitor_error.lock().unwrap().clone(),
             location_name: settings.location_name.clone(),
             configured: settings.ready().is_ok(),
+            just_updated: state.just_updated.lock().unwrap().clone(),
         },
     }
 }
@@ -347,6 +356,132 @@ fn list_employees(state: tauri::State<AppState>) -> Result<Vec<Employee>, String
 #[tauri::command]
 fn input_device() -> String {
     recorder::default_input_name().unwrap_or_default()
+}
+
+/* --- Обновление приложения ------------------------------------------------
+ *
+ * Приложение стоит на компьютерах в студиях, куда владелец не ходит. Раньше
+ * обновление означало собрать сборку, принести флешку и обойти точки; теперь
+ * оно само спрашивает сервер и ставит новую версию по нажатию кнопки.
+ *
+ * Адрес обновлений собирается в рантайме, а не берётся из tauri.conf.json:
+ * сервер там задать нельзя — он вшивается в сборку через build.env и у разных
+ * владельцев разный. А вот публичный ключ подписи живёт именно в конфиге, и
+ * менять его в рантайме нельзя намеренно: он и есть то, что не даёт подсунуть
+ * приложению чужой архив.
+ */
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    available: bool,
+    /// Версия, которая стоит сейчас.
+    current: String,
+    /// Версия на сервере, если она новее.
+    version: String,
+    notes: String,
+}
+
+fn update_marker_path(data_dir: &PathBuf) -> PathBuf {
+    data_dir.join("updated-to.txt")
+}
+
+/// Отметка «сейчас перезапустимся ради обновления».
+///
+/// Нужна из-за того, как macOS выдаёт доступ к микрофону. Разрешение выдано не
+/// «приложению по имени», а конкретной подписи бандла, и у самодельной подписи
+/// она меняется с каждой сборкой. После обновления система вправе счесть
+/// приложение новым и спросить про микрофон заново — а если сотрудник не
+/// заметит вопроса, смена запишется тишиной. Поэтому первый запуск после
+/// обновления прямо просит проверить полоску уровня.
+fn write_update_marker(data_dir: &PathBuf, version: &str) {
+    let _ = std::fs::create_dir_all(data_dir);
+    let _ = std::fs::write(update_marker_path(data_dir), version);
+}
+
+/// Прочитать отметку и сразу стереть: напоминание показывается один раз.
+fn take_update_marker(data_dir: &PathBuf) -> String {
+    let path = update_marker_path(data_dir);
+    let version = std::fs::read_to_string(&path).unwrap_or_default();
+    if !version.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    }
+    version.trim().to_string()
+}
+
+fn updater_for(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    // Настройки читаются в отдельном блоке: держать блокировку через await
+    // нельзя, а сразу после этого начинается сеть.
+    let (base_url, app_key) = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap();
+        (settings.base_url(), settings.app_key())
+    };
+    if base_url.is_empty() {
+        return Err("Не задан адрес сервера".into());
+    }
+    let endpoint = format!(
+        "{base_url}/api/app/update/{{{{target}}}}/{{{{arch}}}}/{{{{current_version}}}}"
+    );
+    app.updater_builder()
+        .endpoints(vec![endpoint.parse().map_err(|e| format!("{e}"))?])
+        .map_err(|e| e.to_string())?
+        .header("X-App-Key", app_key)
+        .map_err(|e| e.to_string())?
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    let current = app.package_info().version.to_string();
+    let update = updater_for(&app)?
+        .check()
+        .await
+        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?;
+    Ok(match update {
+        Some(update) => UpdateInfo {
+            available: true,
+            current,
+            version: update.version.clone(),
+            notes: update.body.clone().unwrap_or_default(),
+        },
+        None => UpdateInfo {
+            available: false,
+            current,
+            version: String::new(),
+            notes: String::new(),
+        },
+    })
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    // Обновление перезапускает приложение: посреди смены это оборвало бы
+    // запись, поэтому кнопка работает только когда запись не идёт.
+    let data_dir = {
+        let state = app.state::<AppState>();
+        if state.session.lock().unwrap().is_some() {
+            return Err("Идёт запись — обновитесь после завершения смены".into());
+        }
+        let dir = state.data_dir.lock().unwrap().clone();
+        dir
+    };
+    let update = updater_for(&app)?
+        .check()
+        .await
+        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?
+        .ok_or("Обновление уже не требуется")?;
+    // Отметка ставится до установки: после неё приложение перезапустится и
+    // сюда уже не вернётся.
+    write_update_marker(&data_dir, &update.version);
+    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+        // Обновление не встало — отметку убираем, иначе в следующий запуск
+        // приложение поздравит с обновлением, которого не было.
+        let _ = std::fs::remove_file(update_marker_path(&data_dir));
+        return Err(format!("Не удалось установить обновление: {e}"));
+    }
+    app.restart();
 }
 
 #[tauri::command]
@@ -560,6 +695,7 @@ fn main() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -568,10 +704,14 @@ fn main() {
             std::fs::create_dir_all(&data_dir).ok();
             let settings = load_settings(&data_dir);
             let configured = settings.autostart_configured;
+            // Первый запуск после обновления: напомним проверить микрофон,
+            // разрешение на него могло слететь вместе со сменой подписи.
+            let updated_to = take_update_marker(&data_dir);
             {
                 let state = app.state::<AppState>();
                 *state.settings.lock().unwrap() = settings;
                 *state.data_dir.lock().unwrap() = data_dir.clone();
+                *state.just_updated.lock().unwrap() = updated_to;
             }
             // При первом запуске автозапуск включается сам: это то поведение,
             // которого от программы на ресепшене и ждут. Дальше решает
@@ -598,6 +738,8 @@ fn main() {
             list_locations,
             list_employees,
             input_device,
+            check_update,
+            install_update,
             get_autostart,
             set_autostart,
             start_day,

@@ -19,6 +19,7 @@ interface Status {
   monitor_error: string;
   location_name: string;
   configured: boolean;
+  just_updated: string;
 }
 
 interface Settings {
@@ -40,6 +41,13 @@ interface LocationPick {
   id: string;
   name: string;
   address: string;
+}
+
+interface UpdateInfo {
+  available: boolean;
+  current: string;
+  version: string;
+  notes: string;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -66,6 +74,15 @@ const meter = $("meter");
 const meterTitle = $("meter-title");
 const meterFill = $("meter-fill");
 const warnSilence = $("warn-silence");
+const updatedBox = $("updated");
+const updatedVersion = $("updated-version");
+const updateBox = $("update");
+const updateVersion = $("update-version");
+const updateNotes = $("update-notes");
+const btnUpdate = $("btn-update") as HTMLButtonElement;
+const btnCheckUpdate = $("btn-check-update") as HTMLButtonElement;
+const updateStatus = $("update-status");
+const appVersion = $("app-version");
 
 let busy = false;
 let finishing = false;
@@ -73,6 +90,8 @@ let finishing = false;
 // The OS denying microphone access looks exactly like this, so warn about it.
 let silentPolls = 0;
 const POLL_INTERVAL_MS = 1000;
+// Раз в час: приложение открыто сутками, а обновления выходят раз в недели.
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
 const SILENT_POLLS_BEFORE_WARNING = 10; // ~10 seconds of complete silence
 
 function setError(message: string) {
@@ -162,6 +181,19 @@ function render(status: Status) {
   // Точку продажи нельзя менять на ходу: смена уже открыта на другой студии.
   locationSelect.disabled = status.recording;
   btnStart.disabled = status.recording || busy || !status.configured;
+  // Обновление перезапускает приложение: посреди смены это оборвало бы запись.
+  btnUpdate.disabled = status.recording || updating;
+  btnUpdate.textContent = status.recording
+    ? "Обновим после завершения смены"
+    : updating
+      ? "Обновляем…"
+      : "Обновить и перезапустить";
+  // Первый запуск после обновления: напоминание проверить микрофон. Оно
+  // приходит из бэкенда один раз и дальше не возвращается.
+  if (status.just_updated) {
+    updatedVersion.textContent = status.just_updated;
+    updatedBox.style.display = "block";
+  }
   btnPause.disabled = !status.recording || busy;
   btnFinish.disabled = !status.recording || busy;
   btnPause.textContent = status.paused
@@ -302,6 +334,49 @@ btnFinish.addEventListener("click", async () => {
   }
 });
 
+let updating = false;
+
+/** Проверка обновлений. Тихая при автоматическом запуске: если сервер
+ *  недоступен, это не повод показывать ошибку поверх рабочего экрана —
+ *  запись от этого не зависит. */
+async function checkUpdate(loud: boolean) {
+  if (loud) updateStatus.textContent = "Проверяем…";
+  try {
+    const info = await invoke<UpdateInfo>("check_update");
+    appVersion.textContent = info.current;
+    updateBox.style.display = info.available ? "block" : "none";
+    if (info.available) {
+      updateVersion.textContent = info.version;
+      updateNotes.textContent = info.notes;
+    }
+    if (loud) {
+      updateStatus.textContent = info.available
+        ? `есть версия ${info.version}`
+        : "установлена последняя версия";
+    }
+  } catch (e) {
+    if (loud) updateStatus.textContent = String(e);
+  }
+}
+
+btnUpdate.addEventListener("click", async () => {
+  if (updating) return;
+  updating = true;
+  setError("");
+  btnUpdate.textContent = "Обновляем…";
+  btnUpdate.disabled = true;
+  try {
+    // Приложение перезапустится само — этот вызов обычно не возвращается.
+    await invoke("install_update");
+  } catch (e) {
+    setError(String(e));
+    updating = false;
+    refresh();
+  }
+});
+
+btnCheckUpdate.addEventListener("click", () => checkUpdate(true));
+
 autostart.addEventListener("change", async () => {
   try {
     await invoke("set_autostart", { enabled: autostart.checked });
@@ -369,6 +444,9 @@ async function init() {
   }
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);
+
+  checkUpdate(false);
+  setInterval(() => checkUpdate(false), UPDATE_CHECK_MS);
 }
 
 init();
