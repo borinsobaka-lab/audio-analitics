@@ -70,9 +70,9 @@ export default function DayReportPage() {
     setReprocessing(true);
     setError("");
     try {
-      await api.reprocessDay(id);
+      await api.processDay(id);
       setNotice(
-        "Поставлено в очередь: разбор пересчитается по текущим метрикам. Обновите страницу через пару минут."
+        "Поставлено в очередь: разбор появится через несколько минут — обновите страницу."
       );
     } catch (e) {
       setError(String(e));
@@ -108,7 +108,11 @@ export default function DayReportPage() {
             disabled={reprocessing}
             title="Прогнать ту же запись через анализ заново — например, после правки метрик"
           >
-            {reprocessing ? "Запуск…" : "Пересчитать"}
+            {reprocessing
+              ? "Запуск…"
+              : recording.status === "done"
+                ? "Пересчитать"
+                : "Обработать"}
           </button>
         )}
       </header>
@@ -424,11 +428,16 @@ function DialogCard({
         {/* Метка на свёрнутой карточке: спорные разборы должны быть видны,
             не открывая каждый. */}
         {disagreed && <span className="pill refusal">есть несогласие</span>}
-        <button className="ghost small push" onClick={toggle}>
-          {open ? "Свернуть" : "Разбор"}
-        </button>
       </div>
       {dialog.brief && <p className="dialog-brief">{dialog.brief}</p>}
+
+      {/* Главное действие карточки стоит внизу по центру: в углу шапки, среди
+          меток и оценок, его не находили. */}
+      <div className="dialog-open">
+        <button className={open ? "secondary" : ""} onClick={toggle}>
+          {open ? "Свернуть разбор" : "Смотреть разбор"}
+        </button>
+      </div>
 
       {open && (
         <div className="dialog-body">

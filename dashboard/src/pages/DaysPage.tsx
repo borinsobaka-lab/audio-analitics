@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd } from "../api";
+import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd, plural } from "../api";
 import { useSession, useStudio } from "../session";
 import {
   ConfirmAction,
@@ -14,7 +14,10 @@ import {
 
 // Пока что-то живо, список опрашивается сам: огоньки должны отражать
 // реальность без ручного обновления страницы.
-const IN_FLIGHT = ["recording", "uploaded", "processing"];
+// Статусы, при которых список стоит обновлять сам: что-то ещё происходит.
+// «uploaded» сюда не входит намеренно — смена лежит и ждёт, пока её запустят
+// руками, обновлять нечего.
+const IN_FLIGHT = ["recording", "queued", "processing"];
 
 export default function DaysPage() {
   const me = useSession();
@@ -61,7 +64,34 @@ export default function DaysPage() {
     }
   };
 
+  /** Удаление отчитывается отдельно: важно не «удалено», а что вместе с
+   *  разбором ушло и аудио — иначе место копилось бы незаметно. */
+  const removeDay = async (id: string) => {
+    setBusyId(id);
+    setError("");
+    setNotice("");
+    try {
+      const result = await api.deleteDay(id);
+      if (result?.warning) setError(result.warning);
+      else
+        setNotice(
+          `Смена удалена, из хранилища стёрто ${result?.files_removed ?? 0} ${plural(
+            result?.files_removed ?? 0,
+            "файл",
+            "файла",
+            "файлов"
+          )}`
+        );
+      load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const live = days?.filter((d) => d.status === "recording").length ?? 0;
+  const waiting = days?.filter((d) => d.status === "uploaded").length ?? 0;
 
   return (
     <div>
@@ -80,8 +110,17 @@ export default function DaysPage() {
 
       {live > 0 && (
         <Note kind="info">
-          Прямо сейчас пишется {live === 1 ? "одна смена" : `${live} смены`}. Отчёт
-          появится после того, как менеджер нажмёт «Завершить день» в приложении.
+          Прямо сейчас пишется {live === 1 ? "одна смена" : `${live} смены`}. После
+          «Завершить день» в приложении она попадёт сюда со статусом «Ждёт
+          разбора».
+        </Note>
+      )}
+      {waiting > 0 && me.can_manage && (
+        <Note kind="info">
+          {waiting}{" "}
+          {plural(waiting, "смена ждёт", "смены ждут", "смен ждут")} разбора.
+          Разбор не запускается сам — нажмите «Обработать» на тех сменах,
+          которые хотите разобрать, за остальные платить не придётся.
         </Note>
       )}
       {error && <Note kind="error">{error}</Note>}
@@ -180,27 +219,38 @@ export default function DaysPage() {
                       Завершить принудительно
                     </button>
                   )}
+                  {/* Разбор запускается вручную: платить за пустые дни,
+                      неудачные дубли и проверки оборудования незачем. */}
+                  {me.can_manage && d.status === "uploaded" && (
+                    <button
+                      disabled={busyId === d.id}
+                      title="Распознать речь и разобрать разговоры этой смены"
+                      onClick={() =>
+                        run(d.id, () => api.processDay(d.id), "Смена поставлена в очередь на разбор")
+                      }
+                    >
+                      Обработать
+                    </button>
+                  )}
                   {me.can_manage && (d.status === "done" || d.status === "error") && (
                     <button
                       className="secondary"
                       disabled={busyId === d.id}
                       title="Прогнать ту же запись через анализ заново — например, после правки метрик"
                       onClick={() =>
-                        run(d.id, () => api.reprocessDay(d.id), "Поставлено в очередь")
+                        run(d.id, () => api.processDay(d.id), "Поставлено в очередь")
                       }
                     >
                       Пересчитать
                     </button>
                   )}
-                  {me.can_manage && d.status !== "processing" && (
+                  {me.can_manage && !IN_FLIGHT.includes(d.status) && (
                     <ConfirmAction
                       label="Удалить"
                       confirmLabel="Удалить навсегда"
-                      title="Удалить смену вместе с аудио и разбором"
+                      title="Стереть смену целиком: аудио, расшифровку и разбор"
                       disabled={busyId === d.id}
-                      onConfirm={() =>
-                        run(d.id, () => api.deleteDay(d.id), "Смена удалена")
-                      }
+                      onConfirm={() => removeDay(d.id)}
                     />
                   )}
                 </div>
@@ -212,10 +262,11 @@ export default function DaysPage() {
 
       {days !== null && days.length > 0 && me.can_manage && (
         <p className="muted page-note">
-          «Пересчитать» прогоняет ту же запись по текущим метрикам — аудио
-          заново не загружается. «Завершить принудительно» закрывает смену,
-          которую приложение не закрыло само. «Удалить» безвозвратно стирает
-          аудио и разбор.
+          «Обработать» запускает распознавание и разбор — до нажатия смена
+          просто лежит и ничего не стоит. «Пересчитать» прогоняет ту же запись
+          по текущим метрикам, аудио заново не загружается. «Завершить
+          принудительно» закрывает смену, которую приложение не закрыло само.
+          «Удалить» безвозвратно стирает и аудио, и разбор.
         </p>
       )}
     </div>

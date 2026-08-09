@@ -152,7 +152,12 @@ async def finish_day(
     device: DeviceContext = Depends(require_device),
     db: AsyncSession = Depends(get_db),
 ):
-    """Client calls this after all segments are uploaded; queues processing."""
+    """Смена закрыта в приложении: сегменты на месте, разбор не запускается.
+
+    Запуск теперь отдельным нажатием в админке. Автоматический разбор всего
+    подряд обходился в деньги на пустых днях, неудачных дублях и проверках
+    оборудования; владелец сам решает, какую смену стоит разобрать.
+    """
     rec = await db.get(DayRecording, recording_id)
     if not rec or rec.location_id != device.location_id:
         raise HTTPException(404, "Recording not found")
@@ -170,11 +175,7 @@ async def finish_day(
         )
 
     rec.status = "uploaded"
+    rec.status_detail = "запись завершена, ждёт запуска разбора"
     await db.commit()
     await db.refresh(rec)
-
-    # Import here to keep FastAPI importable without Celery configured.
-    from ..pipeline.tasks import process_day_recording
-
-    process_day_recording.delay(str(recording_id))
     return rec

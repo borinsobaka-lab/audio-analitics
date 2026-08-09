@@ -504,14 +504,21 @@ select {
   margin-bottom: 6px;
 }
 
+/* Промпт — не подпись к карточке, а отдельный документ внутри неё, и его
+   границы должны быть видны: на белом поле «где кончается промпт» читалось
+   только по отступам. Подложка серая и в просмотре, и в правке — в том числе
+   под фокусом, где обычные поля белеют. */
 textarea.prompt-editor {
   font-size: 13px;
   line-height: 1.65;
   min-height: 380px;
   resize: vertical;
-  background: var(--card);
+  background: var(--sunk);
   border-color: var(--edge);
   padding: 14px 16px;
+}
+textarea.prompt-editor:focus {
+  background: var(--sunk);
 }
 
 /* --- Карточки ----------------------------------------------------------- */
@@ -876,9 +883,23 @@ textarea.prompt-editor {
   padding: 14px 16px;
 }
 .dialog-brief {
-  padding: 0 16px 15px;
+  padding: 0 16px 14px;
   color: var(--ink-2);
   max-width: 78ch;
+}
+/* Главное действие карточки — открыть разбор. Раньше это была тихая серая
+   кнопка в правом углу шапки, среди меток и оценок: её просто не находили.
+   Теперь она внизу по центру и акцентная — карточка сама показывает, куда
+   нажимать. */
+.dialog-open {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
+}
+.dialog-open button {
+  min-width: 240px;
+  min-height: 42px;
+  font-size: 14.5px;
 }
 .dialog-body {
   border-top: 1px solid var(--edge-soft);
@@ -1340,10 +1361,14 @@ tbody tr:hover {
   color: var(--ink-2);
   white-space: pre-wrap;
   margin: 0;
-  max-height: 132px;
+  background: var(--sunk);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  max-height: 148px;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 66%, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, #000 66%, transparent);
+  /* Обрезка градиентом, а не резким краем: видно, что текст продолжается. */
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
 }
 .prompt-preview.open {
   max-height: none;

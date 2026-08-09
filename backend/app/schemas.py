@@ -35,6 +35,14 @@ class DayRecordingOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DayDeletedOut(BaseModel):
+    """Итог удаления смены: сколько файлов ушло из хранилища и что пошло не
+    так, если пошло. Молчаливое «204 OK» скрывало бы неосвобождённое место."""
+
+    files_removed: int = 0
+    warning: str = ""
+
+
 # --- Вход в админку ---
 
 class LoginRequest(BaseModel):

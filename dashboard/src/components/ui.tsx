@@ -82,13 +82,16 @@ export const IconPause = ({ size = 14 }: IconProps) => (
 
 const STATUS_LABELS: Record<string, string> = {
   recording: "Идёт запись",
-  uploaded: "В очереди",
+  // Запись закончена, разбор не запускался: его включают вручную, чтобы не
+  // платить за пустые дни, неудачные дубли и проверки оборудования.
+  uploaded: "Ждёт разбора",
+  queued: "В очереди",
   processing: "Обрабатывается",
   done: "Готово",
   error: "Ошибка",
 };
 
-const KNOWN = ["recording", "uploaded", "processing", "done", "error"];
+const KNOWN = ["recording", "uploaded", "queued", "processing", "done", "error"];
 
 export function StatusLight({ status }: { status: string }) {
   const cls = KNOWN.includes(status) ? status : "";

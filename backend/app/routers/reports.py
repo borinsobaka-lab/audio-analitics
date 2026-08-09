@@ -26,6 +26,7 @@ from ..models import (
     Transcript,
 )
 from ..schemas import (
+    DayDeletedOut,
     DayMetricStat,
     DayRecordingOut,
     DayReportOut,
@@ -187,8 +188,9 @@ async def force_finish_day(
     user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
-    """Close a session the app never finished (crash, closed laptop, dead app)
-    and process whatever segments did reach the server."""
+    """Закрыть смену, которую приложение не закрыло само — вылет, закрытая
+    крышка, выключенный компьютер. Разбор при этом не запускается: смена
+    просто становится готовой к нему, как и любая другая."""
     rec = await db.get(DayRecording, recording_id)
     if not rec:
         raise HTTPException(404, "Recording not found")
@@ -206,30 +208,31 @@ async def force_finish_day(
         )
 
     rec.status = "uploaded"
-    rec.status_detail = "завершено вручную из админки"
+    rec.status_detail = "завершено вручную из админки, ждёт запуска разбора"
     await db.commit()
     await db.refresh(rec)
-
-    from ..pipeline.tasks import process_day_recording
-
-    process_day_recording.delay(str(recording_id))
     return await to_day_out(db, rec)
 
 
-@router.delete("/days/{recording_id}", status_code=204)
+@router.delete("/days/{recording_id}", response_model=DayDeletedOut)
 async def delete_day(
     recording_id: uuid.UUID,
     user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a recording with its analysis and its audio in object storage.
+    """Стереть смену целиком: разбор, расшифровку, отзывы и всё аудио.
 
-    Irreversible — the dashboard asks for confirmation before calling this.
+    Необратимо — админка спрашивает подтверждение вторым нажатием.
+
+    «Целиком» здесь буквально: вместе со строками в базе удаляется папка
+    смены в хранилище — сегменты, склеенная дорожка и сырой ответ
+    распознавания. Двенадцать часов записи это примерно 170 МБ, и место
+    должно освобождаться, а не копиться невидимым мусором.
     """
     rec = await db.get(DayRecording, recording_id)
     if not rec:
         raise HTTPException(404, "Recording not found")
-    if rec.status == "processing":
+    if rec.status in ("processing", "queued"):
         raise HTTPException(409, "День сейчас обрабатывается, дождитесь окончания")
 
     dialog_ids = (
@@ -264,35 +267,52 @@ async def delete_day(
     await db.delete(rec)
     await db.commit()
 
-    # Audio last: losing the DB rows but keeping objects would leave orphans
-    # that nothing points at, while the reverse is recoverable.
+    # Аудио последним: потерять строки в базе, оставив файлы, — это мусор,
+    # на который никто не ссылается; обратный порядок хуже, там отчёт остался
+    # бы с битой ссылкой на звук.
+    #
+    # Об ошибке хранилища сообщаем наружу, а не прячем в лог: «удалил, а место
+    # не освободилось» — это ровно то, чего быть не должно, и узнать об этом
+    # надо сразу, а не через месяц по счёту.
     try:
-        storage.delete_prefix(storage.recording_prefix(str(recording_id)))
-    except Exception as e:  # noqa: BLE001 - storage must not block deletion
+        removed = storage.delete_prefix(storage.recording_prefix(str(recording_id)))
+        warning = ""
+    except Exception as e:  # noqa: BLE001 — хранилище не должно блокировать удаление
         logger.warning("failed to delete audio of %s: %s", recording_id, e)
-    return None
+        removed = 0
+        warning = (
+            "Разбор удалён, но аудио в хранилище стереть не удалось: "
+            f"{e}. Место не освободилось — попробуйте удалить смену ещё раз."
+        )
+    return DayDeletedOut(files_removed=removed, warning=warning)
 
 
-@router.post("/days/{recording_id}/reprocess", response_model=DayRecordingOut)
-async def reprocess_day(
+@router.post("/days/{recording_id}/process", response_model=DayRecordingOut)
+async def process_day(
     recording_id: uuid.UUID,
     user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-run the pipeline for a day: after a failure, or after editing prompts.
+    """Запустить разбор смены — вручную, по нажатию в админке.
 
-    Previous dialogs and transcripts are replaced by the new run.
+    Раньше разбор стартовал сам, как только приложение закрывало смену, и
+    деньги уходили на пустые дни, неудачные дубли и проверки оборудования.
+    Теперь владелец решает, какую смену разбирать: пришёл интересный день —
+    нажал, обычный — оставил лежать.
+
+    Этой же кнопкой смена пересчитывается после правки метрик или промптов:
+    прошлые диалоги и расшифровки заменяются новым прогоном.
     """
     rec = await db.get(DayRecording, recording_id)
     if not rec:
         raise HTTPException(404, "Recording not found")
-    if rec.status == "processing":
-        raise HTTPException(409, "День уже обрабатывается")
+    if rec.status in ("processing", "queued"):
+        raise HTTPException(409, "День уже поставлен в очередь")
     if rec.status == "recording":
         raise HTTPException(409, "Запись ещё не завершена в приложении")
 
-    rec.status = "uploaded"
-    rec.status_detail = "поставлен в очередь на повторную обработку"
+    rec.status = "queued"
+    rec.status_detail = "поставлен в очередь на разбор"
     await db.commit()
     await db.refresh(rec)
 

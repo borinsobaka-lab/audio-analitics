@@ -544,7 +544,10 @@ fn finish_day(state: tauri::State<AppState>) -> Result<String, String> {
     // Смена закрыта — микрофон снова слушает монитор.
     state.start_monitor();
 
-    Ok(format!("День завершён, {total_segments} сегментов отправлено на обработку"))
+    Ok(format!(
+        "День завершён, {total_segments} сегментов загружено. \
+         Разбор запускается из админки кнопкой «Обработать»."
+    ))
 }
 
 fn main() {

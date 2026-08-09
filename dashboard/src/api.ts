@@ -293,12 +293,15 @@ export const api = {
     return request<DayRecording[]>(`/api/reports/days${tail ? `?${tail}` : ""}`);
   },
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
-  reprocessDay: (id: string) =>
-    request<DayRecording>(`/api/reports/days/${id}/reprocess`, { method: "POST" }),
+  processDay: (id: string) =>
+    request<DayRecording>(`/api/reports/days/${id}/process`, { method: "POST" }),
   forceFinishDay: (id: string) =>
     request<DayRecording>(`/api/reports/days/${id}/force-finish`, { method: "POST" }),
   deleteDay: (id: string) =>
-    request<void>(`/api/reports/days/${id}`, { method: "DELETE" }),
+    request<{ files_removed: number; warning: string }>(
+      `/api/reports/days/${id}`,
+      { method: "DELETE" }
+    ),
 
   listMetrics: () => request<AnalysisMetric[]>("/api/metrics"),
   createMetric: (body: { name: string; prompt: string; scale_max: number }) =>
