@@ -15,6 +15,8 @@ interface Status {
   upload_error: string;
   input_level: number;
   device_name: string;
+  listening: boolean;
+  monitor_error: string;
   location_name: string;
   configured: boolean;
 }
@@ -77,15 +79,23 @@ function setError(message: string) {
   errorEl.textContent = message;
 }
 
+/** Полоса уровня. Видна и до начала смены: приложение слушает микрофон, ничего
+ *  не записывая, поэтому «слышно или нет» проверяется до нажатия «Начать», а не
+ *  через десять секунд после. Раньше это выяснялось уже на записанной смене. */
 function renderMeter(status: Status) {
-  if (!status.recording) {
+  const live = status.recording || status.listening;
+  if (!live) {
+    // Микрофон не открылся вовсе — полосе нечего показывать, зато ровно тот
+    // случай, про который написано в предупреждении.
     meter.style.display = "none";
-    warnSilence.classList.remove("show");
+    warnSilence.classList.add("show");
     silentPolls = 0;
     return;
   }
   meter.style.display = "block";
-  meterTitle.textContent = `Уровень сигнала — ${status.device_name || "микрофон"}`;
+  meterTitle.textContent = status.recording
+    ? `Уровень сигнала — ${status.device_name || "микрофон"}`
+    : `Проверка микрофона — ${status.device_name || "микрофон"}`;
   // Amplitude is perceptually compressed: sqrt makes quiet speech visible.
   const width = Math.min(100, Math.sqrt(status.input_level) * 100);
   meterFill.style.width = `${width}%`;

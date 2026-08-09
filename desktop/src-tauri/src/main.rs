@@ -15,7 +15,7 @@ use tauri::Manager;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use keep_awake::KeepAwake;
-use recorder::RecorderHandle;
+use recorder::{MonitorHandle, RecorderHandle};
 use uploader::{ServerConfig, Uploader};
 
 /// Адрес сервера и ключ приложения вшиваются в сборку:
@@ -136,8 +136,41 @@ struct ActiveSession {
 #[derive(Default)]
 struct AppState {
     session: Mutex<Option<ActiveSession>>,
+    /// Прослушивание микрофона без записи — чтобы уровень был виден до начала
+    /// смены. Во время записи монитор выключен: устройство занято рекордером,
+    /// и уровень берётся уже у него.
+    monitor: Mutex<Option<MonitorHandle>>,
+    /// Почему монитор не поднялся, если не поднялся: текст показывается на
+    /// главном экране вместо полоски уровня.
+    monitor_error: Mutex<String>,
     settings: Mutex<Settings>,
     data_dir: Mutex<PathBuf>,
+}
+
+impl AppState {
+    /// Поднять монитор, если он ещё не запущен.
+    fn start_monitor(&self) {
+        let mut slot = self.monitor.lock().unwrap();
+        if slot.is_some() {
+            return;
+        }
+        match recorder::start_monitor() {
+            Ok(handle) => {
+                *slot = Some(handle);
+                self.monitor_error.lock().unwrap().clear();
+            }
+            Err(e) => {
+                *self.monitor_error.lock().unwrap() = e.to_string();
+                log::warn!("монитор микрофона не запустился: {e}");
+            }
+        }
+    }
+
+    /// Отпустить микрофон перед записью — и на всякий случай после неё, если
+    /// монитор понадобится поднять заново.
+    fn stop_monitor(&self) {
+        self.monitor.lock().unwrap().take();
+    }
 }
 
 #[derive(Serialize)]
@@ -154,8 +187,12 @@ struct Status {
     /// 0.0..1.0 peak input level; stays at 0 if the mic is muted or blocked.
     input_level: f32,
     /// Микрофон: во время записи — тот, с которого реально идёт звук, до
-    /// записи — тот, который система отдаст при старте.
+    /// записи — тот, который слушает монитор.
     device_name: String,
+    /// Слышно ли микрофон прямо сейчас. До начала смены это ответ монитора,
+    /// во время записи — рекордера.
+    listening: bool,
+    monitor_error: String,
     location_name: String,
     configured: bool,
 }
@@ -206,6 +243,7 @@ fn save_settings(state: tauri::State<AppState>, settings: Settings) -> Result<()
 #[tauri::command]
 fn get_status(state: tauri::State<AppState>) -> Status {
     let settings = state.settings.lock().unwrap().clone();
+    let monitor = state.monitor.lock().unwrap();
     let session = state.session.lock().unwrap();
     match session.as_ref() {
         Some(s) => Status {
@@ -220,6 +258,8 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             upload_error: s.uploader.last_error.lock().unwrap().clone(),
             input_level: s.recorder.input_level(),
             device_name: s.recorder.device_name.clone(),
+            listening: true,
+            monitor_error: String::new(),
             location_name: settings.location_name.clone(),
             configured: settings.ready().is_ok(),
         },
@@ -233,10 +273,15 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             chunks_uploaded: 0,
             chunks_pending: 0,
             upload_error: String::new(),
-            input_level: 0.0,
-            // До начала записи микрофон уже виден: сотрудник должен заметить
-            // «наушники» вместо микрофона стойки ДО того, как запишет смену.
-            device_name: recorder::default_input_name().unwrap_or_default(),
+            // До начала смены уровень берётся у монитора: сотрудник видит,
+            // слышно ли микрофон, ещё не нажав «Начать рабочий день».
+            input_level: monitor.as_ref().map_or(0.0, |m| m.input_level()),
+            device_name: monitor.as_ref().map_or_else(
+                || recorder::default_input_name().unwrap_or_default(),
+                |m| m.device_name.clone(),
+            ),
+            listening: monitor.is_some(),
+            monitor_error: state.monitor_error.lock().unwrap().clone(),
             location_name: settings.location_name.clone(),
             configured: settings.ready().is_ok(),
         },
@@ -366,7 +411,17 @@ fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Resul
     // Resume-safe: continue numbering after any chunk already on disk.
     let next_idx = next_chunk_idx(&chunks_dir);
 
-    let recorder = recorder::start(&chunks_dir, next_idx)?;
+    // Монитор держит тот же микрофон: отпускаем, чтобы рекордер открыл его
+    // без спора за устройство.
+    state.stop_monitor();
+    let recorder = match recorder::start(&chunks_dir, next_idx) {
+        Ok(recorder) => recorder,
+        Err(e) => {
+            // Запись не началась — вернуть полоску уровня на экран.
+            state.start_monitor();
+            return Err(e);
+        }
+    };
     let uploader = Uploader::start(
         chunks_dir.clone(),
         day.id.clone(),
@@ -486,6 +541,9 @@ fn finish_day(state: tauri::State<AppState>) -> Result<String, String> {
     // 4. Local cleanup: uploaded copies are no longer needed.
     let _ = std::fs::remove_dir_all(chunks_dir.join("uploaded"));
 
+    // Смена закрыта — микрофон снова слушает монитор.
+    state.start_monitor();
+
     Ok(format!("День завершён, {total_segments} сегментов отправлено на обработку"))
 }
 
@@ -524,6 +582,9 @@ fn main() {
                 settings.autostart_configured = true;
                 let _ = write_settings(&data_dir, &settings);
             }
+            // Микрофон слушается сразу при открытии окна: уровень должен быть
+            // виден до начала смены, а не через десять секунд после неё.
+            app.state::<AppState>().start_monitor();
             Ok(())
         })
         .manage(AppState::default())

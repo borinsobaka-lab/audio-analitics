@@ -84,6 +84,74 @@ pub fn default_input_name() -> Option<String> {
         .and_then(|d| d.name().ok())
 }
 
+/// Слушать микрофон, ничего не записывая, — только чтобы был виден уровень.
+///
+/// Без этого «слышно ли микрофон» выяснялось только после нажатия «Начать
+/// рабочий день»: сотрудник открывал приложение, начинал смену и лишь через
+/// десять секунд узнавал, что звука нет. Монитор поднимается вместе с окном,
+/// поэтому полоска шевелится сразу и проверить микрофон можно до записи.
+///
+/// Он же вызывает у macOS окно с запросом доступа к микрофону — при запуске
+/// приложения, а не в момент старта смены.
+pub struct MonitorHandle {
+    stop_flag: Arc<AtomicBool>,
+    level: Arc<AtomicU32>,
+    pub device_name: String,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl MonitorHandle {
+    pub fn input_level(&self) -> f32 {
+        self.level.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+}
+
+impl Drop for MonitorHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+pub fn start_monitor() -> Result<MonitorHandle> {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let level = Arc::new(AtomicU32::new(0));
+    // Пауза монитору не нужна, но open_stream её ждёт: заводим выключенную.
+    let pause_flag = Arc::new(AtomicBool::new(false));
+
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<DeviceInfo, String>>();
+    let stop_audio = stop_flag.clone();
+    let level_audio = level.clone();
+
+    let thread = std::thread::Builder::new()
+        .name("audio-monitor".into())
+        .spawn(move || {
+            let stream = match open_stream(None, pause_flag, level_audio, &ready_tx) {
+                Some(stream) => stream,
+                None => return,
+            };
+            while !stop_audio.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            drop(stream);
+        })?;
+
+    let info = match ready_rx.recv() {
+        Ok(Ok(info)) => info,
+        Ok(Err(message)) => return Err(anyhow!(message)),
+        Err(_) => return Err(anyhow!("Поток захвата аудио завершился неожиданно")),
+    };
+
+    Ok(MonitorHandle {
+        stop_flag,
+        level,
+        device_name: info.name,
+        thread: Some(thread),
+    })
+}
+
 /// Start capturing into `chunks_dir`, producing seg_{idx:05}.opus files.
 /// `first_chunk_idx` allows resuming a day after an app restart.
 pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> {
@@ -104,7 +172,7 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
     let audio_thread = std::thread::Builder::new()
         .name("audio-capture".into())
         .spawn(move || {
-            let stream = match open_stream(tx, pause_audio, level_audio, &ready_tx) {
+            let stream = match open_stream(Some(tx), pause_audio, level_audio, &ready_tx) {
                 Some(stream) => stream,
                 None => return, // error already reported through ready_tx
             };
@@ -150,7 +218,7 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
 /// Open the default input device. Runs on the audio thread; the resulting
 /// stream is `!Send` and deliberately never leaves it.
 fn open_stream(
-    tx: mpsc::SyncSender<Vec<f32>>,
+    tx: Option<mpsc::SyncSender<Vec<f32>>>,
     pause_flag: Arc<AtomicBool>,
     level: Arc<AtomicU32>,
     ready_tx: &mpsc::Sender<Result<DeviceInfo, String>>,
@@ -180,7 +248,9 @@ fn open_stream(
                 move |data: &[f32], _| {
                     if !pause_cb.load(Ordering::SeqCst) {
                         store_level(&level_cb, data.iter().copied());
-                        let _ = tx.try_send(data.to_vec());
+                        if let Some(tx) = &tx {
+                            let _ = tx.try_send(data.to_vec());
+                        }
                     }
                 },
                 err_fn,
@@ -193,7 +263,9 @@ fn open_stream(
                         let floats: Vec<f32> =
                             data.iter().map(|s| *s as f32 / 32768.0).collect();
                         store_level(&level_cb, floats.iter().copied());
-                        let _ = tx.try_send(floats);
+                        if let Some(tx) = &tx {
+                            let _ = tx.try_send(floats);
+                        }
                     }
                 },
                 err_fn,
