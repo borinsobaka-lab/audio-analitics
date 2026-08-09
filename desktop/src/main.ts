@@ -2,6 +2,7 @@
 // запись должна выглядеть одинаково всегда.
 import "@fontsource-variable/roboto";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 interface Status {
   recording: boolean;
@@ -86,6 +87,9 @@ const appVersion = $("app-version");
 
 let busy = false;
 let finishing = false;
+// Последнее известное состояние записи: по нему пишется второй вопрос при
+// закрытии, а спрашивать сервер в этот момент поздно.
+let lastStatus: Status | null = null;
 // Number of consecutive polls with a completely silent input while recording.
 // The OS denying microphone access looks exactly like this, so warn about it.
 let silentPolls = 0;
@@ -149,6 +153,7 @@ function renderSetup(status: Status) {
 }
 
 function render(status: Status) {
+  lastStatus = status;
   dot.className = "dot" + (status.recording ? (status.paused ? " paused" : " on") : "");
   renderMeter(status);
   renderSetup(status);
@@ -414,6 +419,80 @@ $("btn-save-settings").addEventListener("click", async () => {
     setError(String(e));
   }
 });
+
+/* --- Закрытие приложения ---------------------------------------------------
+ *
+ * Компьютер стоит на ресепшене, за ним весь день ходят люди, и ⌘Q нажимается
+ * случайно легче, чем кажется. Пока приложение закрыто, разговоры у стойки не
+ * записываются, и узнают об этом вечером — по пустой смене. Поэтому вопроса
+ * два, и во втором прямо написано, что именно прервётся.
+ */
+
+const quit1 = $("quit-1");
+const quit2 = $("quit-2");
+const quit1Text = $("quit-1-text");
+const quit2Title = $("quit-2-title");
+const quit2Text = $("quit-2-text");
+
+function closeQuitDialogs() {
+  quit1.style.display = "none";
+  quit2.style.display = "none";
+}
+
+function askToQuit() {
+  // Повторное ⌘Q не должно перескакивать сразу ко второму вопросу.
+  if (quit2.style.display === "flex") return;
+  const recording = lastStatus?.recording ?? false;
+  quit1Text.textContent = recording
+    ? "Сейчас идёт запись смены. Пока приложение закрыто, разговоры у стойки не записываются."
+    : "Пока приложение закрыто, разговоры у стойки не записываются: смену будет некому начать.";
+  quit1.style.display = "flex";
+  quit2.style.display = "none";
+}
+
+function askToQuitAgain() {
+  const status = lastStatus;
+  const recording = status?.recording ?? false;
+  quit2Title.textContent = recording ? "Идёт запись смены" : "Точно закрыть?";
+  if (recording) {
+    const pending = status?.chunks_pending ?? 0;
+    // Про недогруженные куски говорим отдельно: они уйдут на сервер, но
+    // только когда смену снова начнут в этом приложении.
+    const pendingNote =
+      pending > 0
+        ? ` Не отправлено на сервер кусков: ${pending} — они сохранены на компьютере и уйдут, когда смену начнут заново.`
+        : "";
+    quit2Text.innerHTML =
+      "<b>Запись остановится.</b> Последние минуты разговора, которые ещё не " +
+      "успели сохраниться, пропадут, и до перезапуска приложения запись не " +
+      "ведётся." +
+      pendingNote +
+      " Правильный порядок — сначала «Завершить день и отправить», и только потом закрывать.";
+  } else {
+    quit2Text.innerHTML =
+      "Приложение закроется полностью и само не откроется до перезагрузки " +
+      "компьютера. Если просто мешает окно — сверните его, а не закрывайте.";
+  }
+  quit1.style.display = "none";
+  quit2.style.display = "flex";
+}
+
+$("quit-1-stay").addEventListener("click", closeQuitDialogs);
+$("quit-2-stay").addEventListener("click", closeQuitDialogs);
+$("quit-1-next").addEventListener("click", askToQuitAgain);
+$("quit-2-quit").addEventListener("click", () => {
+  invoke("confirm_quit").catch((e) => {
+    closeQuitDialogs();
+    setError(String(e));
+  });
+});
+
+// Escape закрывает вопрос, но никогда не закрывает приложение.
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeQuitDialogs();
+});
+
+listen("close-requested", askToQuit);
 
 async function init() {
   let settings: Settings | null = null;

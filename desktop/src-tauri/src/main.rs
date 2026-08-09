@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -149,6 +149,9 @@ struct AppState {
     /// Версия, на которую только что обновились. Ставится на первом запуске
     /// после обновления и живёт до перезапуска: см. `take_update_marker`.
     just_updated: Mutex<String>,
+    /// Выход подтверждён обоими вопросами. Пока флаг снят, приложение не
+    /// закрывается ни красным крестиком, ни ⌘Q.
+    quitting: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -484,6 +487,25 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     app.restart();
 }
 
+/* --- Закрытие приложения ---------------------------------------------------
+ *
+ * Компьютер стоит на ресепшене, за ним весь день ходят люди, и ⌘Q нажимается
+ * случайно легче, чем кажется. Пока приложение закрыто, разговоры у стойки не
+ * записываются, и узнают об этом вечером — по пустой смене.
+ *
+ * Поэтому оба пути выхода (крестик и ⌘Q) перехватываются в Rust и передаются
+ * окну: оно задаёт два вопроса подряд, второй — с прямым текстом о том, что
+ * прервётся. Само приложение закрывается только после команды снизу.
+ */
+
+#[tauri::command]
+fn confirm_quit(app: tauri::AppHandle) {
+    app.state::<AppState>()
+        .quitting
+        .store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
 #[tauri::command]
 fn get_autostart(app: tauri::AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
@@ -731,6 +753,17 @@ fn main() {
             Ok(())
         })
         .manage(AppState::default())
+        // Красный крестик: окно не закрываем, а просим окно спросить.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                if app.state::<AppState>().quitting.load(Ordering::SeqCst) {
+                    return;
+                }
+                api.prevent_close();
+                let _ = window.emit("close-requested", ());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
@@ -740,12 +773,26 @@ fn main() {
             input_device,
             check_update,
             install_update,
+            confirm_quit,
             get_autostart,
             set_autostart,
             start_day,
             toggle_pause,
             finish_day
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // ⌘Q и «Завершить» из Dock приходят сюда, минуя событие окна.
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if app.state::<AppState>().quitting.load(Ordering::SeqCst) {
+                    return;
+                }
+                api.prevent_exit();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_focus();
+                    let _ = window.emit("close-requested", ());
+                }
+            }
+        });
 }

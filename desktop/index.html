@@ -103,6 +103,43 @@
         margin-bottom: 10px;
         color: #fff;
       }
+      /* Вопросы при закрытии. Модальное окно поверх всего: закрытие
+         приложения на ресепшене — не то действие, которое должно случаться
+         одним промахом мимо кнопки. */
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 50;
+      }
+      .modal-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 16px;
+        padding: 22px;
+        max-width: 380px;
+        width: 100%;
+      }
+      .modal-card.danger { border-color: #b91c1c; }
+      .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+      .modal-text {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: #cbd5e1;
+        margin-bottom: 18px;
+      }
+      .modal-text b { color: #fecaca; }
+      .modal button { margin-bottom: 8px; }
+      .modal button:last-child { margin-bottom: 0; }
+      /* Кнопка «остаться» стоит первой и выглядит главной: при спешке
+         нажимают верхнюю, и пусть верхняя будет безопасной. */
+      .modal .stay { background: #16a34a; }
+      .modal .leave { background: #334155; color: #e2e8f0; }
+      .modal .leave-final { background: #dc2626; color: #fff; }
       #btn-start { background: #16a34a; }
       #btn-pause { background: #d97706; }
       #btn-finish { background: #dc2626; }
@@ -312,6 +349,29 @@
         <input id="device-key" type="password" placeholder="не используется" />
       </details>
     </details>
+
+    <!-- Первый вопрос: просто «точно ли». Ловит случайное ⌘Q. -->
+    <div class="modal" id="quit-1" style="display: none">
+      <div class="modal-card">
+        <div class="modal-title">Закрыть приложение?</div>
+        <div class="modal-text" id="quit-1-text">
+          Пока приложение закрыто, разговоры у стойки не записываются.
+        </div>
+        <button class="stay" id="quit-1-stay">Не закрывать</button>
+        <button class="leave" id="quit-1-next">Всё равно закрыть</button>
+      </div>
+    </div>
+
+    <!-- Второй вопрос: что именно потеряется. Текст подставляется из
+         состояния — во время смены он другой. -->
+    <div class="modal" id="quit-2" style="display: none">
+      <div class="modal-card danger">
+        <div class="modal-title" id="quit-2-title">Точно закрыть?</div>
+        <div class="modal-text" id="quit-2-text"></div>
+        <button class="stay" id="quit-2-stay">Нет, вернуться к работе</button>
+        <button class="leave-final" id="quit-2-quit">Да, закрыть приложение</button>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
