@@ -54,7 +54,26 @@ else
 fi
 
 echo "▶ Сборка ($TARGET). В первый раз это 10–25 минут."
-npx tauri build --target "$TARGET"
+if ! npx tauri build --target "$TARGET"; then
+  echo
+  # Единственная неочевидная причина падения — пароль ключа обновлений.
+  # Tauri пишет про неё по-английски и не подсказывает, что делать.
+  if [ "$SIGNING" = "1" ] && [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+    echo "Если в конце написано «incorrect updater private key password» —"
+    echo "у ключа обновлений задан пароль. Соберите так:"
+    echo
+    echo "   TAURI_SIGNING_PRIVATE_KEY_PASSWORD='ваш_пароль' npm run build:mac:universal"
+    echo
+    echo "Пароль не помните? Пока сборка не стоит ни в одной студии, ключ можно"
+    echo "пересоздать без пароля (на вопрос про пароль — просто Enter):"
+    echo
+    echo "   rm src-tauri/updater.key src-tauri/updater.key.pub && npm run keygen"
+    echo
+    echo "Когда приложения уже стоят в студиях, так делать нельзя: они принимают"
+    echo "обновления только со старой подписью."
+  fi
+  exit 1
+fi
 
 # --- Разрешение на микрофон -------------------------------------------------
 bash scripts/patch-macos-plist.sh "$TARGET"
