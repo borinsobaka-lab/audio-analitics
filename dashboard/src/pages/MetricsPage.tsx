@@ -10,7 +10,7 @@ import {
   MetricFeedbackStat,
   plural,
 } from "../api";
-import { ConfirmAction, Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
+import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
 
 const EXAMPLE_PROMPT = `Оцени, насколько качественно менеджер провёл продажу.
 
@@ -49,7 +49,6 @@ export default function MetricsPage() {
   useEffect(load, []);
 
   const activeCount = metrics?.filter((m) => m.active).length ?? 0;
-  const overall = votes.find((v) => v.metric_id === null);
   const totalDisagreements = votes.reduce((sum, v) => sum + v.disagree_count, 0);
 
   return (
@@ -97,17 +96,6 @@ export default function MetricsPage() {
           onChanged={load}
         />
       ))}
-
-      {overall && overall.disagreements.length > 0 && (
-        <Section
-          title="Несогласия с разбором в целом"
-          hint="не привязаны к конкретной метрике"
-        >
-          <div className="sheet sheet-pad">
-            <Disagreements items={overall.disagreements} />
-          </div>
-        </Section>
-      )}
 
       {totalDisagreements > 0 && (
         <p className="muted metrics-foot">

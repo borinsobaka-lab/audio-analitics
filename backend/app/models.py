@@ -17,7 +17,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -316,33 +315,18 @@ class DialogFeedback(UUIDMixin, Base):
     несогласия на разных сменах у разных людей, дело не в людях, а в
     формулировке промпта, и её надо править.
 
-    metric_id пустой — несогласие с разбором в целом; заполненный — с оценкой
-    конкретной метрики. Именно по нему несогласия и собираются в разделе
-    метрик. Имена автора и менеджера сохраняются строкой рядом со ссылками:
-    сотрудника могут переименовать, а запись о том, кто возразил, должна
-    остаться читаемой.
+    Возражают всегда конкретной оценке: metric_id обязателен. Голоса «за
+    разбор целиком» больше нет — несогласие «вообще» нечем починить, а править
+    можно только промпт метрики, к которой оно относится. Имена автора и
+    менеджера сохраняются строкой рядом со ссылками: сотрудника могут
+    переименовать, а запись о том, кто возразил, должна остаться читаемой.
     """
 
     __tablename__ = "dialog_feedback"
     __table_args__ = (
         # Один голос от одного человека на одну оценку — повторное нажатие
-        # меняет мнение, а не добавляет второй голос. Два индекса, потому что
-        # в Postgres NULL-и в уникальном индексе считаются разными.
-        Index(
-            "uq_feedback_dialog_overall",
-            "dialog_id",
-            "author_key",
-            unique=True,
-            postgresql_where=text("metric_id IS NULL"),
-        ),
-        Index(
-            "uq_feedback_dialog_metric",
-            "dialog_id",
-            "metric_id",
-            "author_key",
-            unique=True,
-            postgresql_where=text("metric_id IS NOT NULL"),
-        ),
+        # меняет мнение, а не добавляет второй голос.
+        Index("uq_feedback_dialog_metric", "dialog_id", "metric_id", "author_key", unique=True),
     )
 
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
@@ -350,8 +334,8 @@ class DialogFeedback(UUIDMixin, Base):
         ForeignKey("day_recordings.id"), index=True
     )
     dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
-    metric_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("analysis_metrics.id"), nullable=True, index=True
+    metric_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_metrics.id"), index=True
     )
     # «emp:<uuid>» для сотрудника, «owner» для входа по ADMIN_API_TOKEN.
     author_key: Mapped[str] = mapped_column(String(64), index=True)

@@ -1,9 +1,12 @@
-/** «Согласен / не согласен» с разбором.
+/** «Согласен / не согласен» с оценкой разговора.
  *
  *  Зачем это в продукте. Разбор делает модель, а работает по нему человек, и
  *  если оценка кажется несправедливой, у человека должен быть способ это
  *  сказать — иначе разбор превращается в приговор, который слушают молча.
  *  Кнопка стоит там же, где оценка, и не требует ничего писать: одно нажатие.
+ *
+ *  Голос всегда относится к конкретной оценке — общего «согласен с разбором
+ *  разговора» нет: возражение «вообще» нечем починить.
  *
  *  Одновременно это единственный честный источник данных о качестве самих
  *  промптов. Несогласия копятся в разделе «Метрики и анализ» в разрезе
@@ -15,23 +18,22 @@ import { api, DialogFeedback, plural } from "../api";
 
 interface Props {
   dialogId: string;
-  /** null — отзыв о разборе разговора целиком. */
-  metricId?: string | null;
+  metricId: string;
   items: DialogFeedback[];
   onChanged: (items: DialogFeedback[]) => void;
   label?: string;
 }
 
-function sameTarget(f: DialogFeedback, dialogId: string, metricId: string | null) {
-  return f.dialog_id === dialogId && (f.metric_id ?? null) === metricId;
+function sameTarget(f: DialogFeedback, dialogId: string, metricId: string) {
+  return f.dialog_id === dialogId && f.metric_id === metricId;
 }
 
 export function FeedbackControl({
   dialogId,
-  metricId = null,
+  metricId,
   items,
   onChanged,
-  label = "Согласны с разбором?",
+  label = "Оценка справедлива?",
 }: Props) {
   const target = items.filter((f) => sameTarget(f, dialogId, metricId));
   const mine = target.find((f) => f.is_mine) ?? null;

@@ -1,4 +1,4 @@
-"""«Согласен / не согласен» с разбором.
+"""«Согласен / не согласен» с оценкой разговора.
 
 Зачем это в продукте. Разбор делает модель, а работает по нему человек, и
 если человек считает оценку несправедливой, у него должен быть способ это
@@ -7,8 +7,12 @@
 промптов: одна метрика, собравшая несогласия на разных сменах у разных
 людей, почти наверняка плохо сформулирована.
 
-Поэтому голоса и копятся в разрезе метрики (см. /by-metric) со ссылкой на
-день и разговор: из списка несогласий можно уйти прямо в карточку смены и
+Голос всегда относится к конкретной оценке. Отдельного «согласен с разбором
+разговора целиком» нет: возражение «вообще» нечем починить, править можно
+только промпт метрики, к которой оно относится.
+
+Голоса копятся в разрезе метрики (см. /by-metric) со ссылкой на день и
+разговор: из списка несогласий можно уйти прямо в карточку смены и
 послушать спорное место.
 """
 import uuid
@@ -50,7 +54,12 @@ async def feedback_for_day(
 ) -> list[DialogFeedbackOut]:
     rows = await db.scalars(
         select(DialogFeedback)
-        .where(DialogFeedback.day_recording_id == recording_id)
+        .where(
+            DialogFeedback.day_recording_id == recording_id,
+            # Голоса «за разбор целиком» из прежней версии не показываем: их
+            # больше некуда поставить, а миграция подчистит их совсем.
+            DialogFeedback.metric_id.isnot(None),
+        )
         .order_by(DialogFeedback.created_at)
     )
     return [to_out(row, user) for row in rows]
@@ -67,7 +76,7 @@ async def leave_feedback(
         raise HTTPException(404, "Разговор не найден")
     rec = await visible_day(db, dialog.day_recording_id, user)
 
-    if body.metric_id and not await db.get(AnalysisMetric, body.metric_id):
+    if not await db.get(AnalysisMetric, body.metric_id):
         raise HTTPException(404, "Метрика не найдена")
 
     subject_name = ""
@@ -79,9 +88,7 @@ async def leave_feedback(
         select(DialogFeedback).where(
             DialogFeedback.dialog_id == body.dialog_id,
             DialogFeedback.author_key == user.author_key,
-            DialogFeedback.metric_id.is_(body.metric_id)
-            if body.metric_id is None
-            else DialogFeedback.metric_id == body.metric_id,
+            DialogFeedback.metric_id == body.metric_id,
         )
     )
     if existing:
@@ -139,23 +146,18 @@ async def feedback_by_metric(
             select(DialogFeedback, DayRecording.date, Dialog.start_s, AnalysisMetric.name)
             .join(DayRecording, DayRecording.id == DialogFeedback.day_recording_id)
             .join(Dialog, Dialog.id == DialogFeedback.dialog_id)
-            .join(
-                AnalysisMetric,
-                AnalysisMetric.id == DialogFeedback.metric_id,
-                isouter=True,
-            )
+            # Внутреннее соединение отсекает и голоса «за разбор целиком» из
+            # прежней версии, и отзывы по удалённым метрикам.
+            .join(AnalysisMetric, AnalysisMetric.id == DialogFeedback.metric_id)
             .order_by(DayRecording.date.desc(), DialogFeedback.created_at.desc())
         )
     ).all()
 
-    stats: dict[uuid.UUID | None, MetricFeedbackStat] = {}
+    stats: dict[uuid.UUID, MetricFeedbackStat] = {}
     for row, day_date, start_s, metric_name in rows:
         stat = stats.get(row.metric_id)
         if stat is None:
-            stat = MetricFeedbackStat(
-                metric_id=row.metric_id,
-                metric_name=metric_name or "Разбор целиком",
-            )
+            stat = MetricFeedbackStat(metric_id=row.metric_id, metric_name=metric_name)
             stats[row.metric_id] = stat
         if row.agree:
             stat.agree_count += 1

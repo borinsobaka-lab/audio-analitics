@@ -248,8 +248,8 @@ class DialogDetailOut(DialogOut):
 
 class FeedbackIn(BaseModel):
     dialog_id: uuid.UUID
-    # Пусто — отзыв о разборе целиком; иначе о конкретной метрике.
-    metric_id: uuid.UUID | None = None
+    # Возражают всегда конкретной оценке: голоса «за разбор целиком» нет.
+    metric_id: uuid.UUID
     agree: bool
     comment: str = Field(default="", max_length=2000)
 
@@ -257,7 +257,7 @@ class FeedbackIn(BaseModel):
 class DialogFeedbackOut(BaseModel):
     id: uuid.UUID
     dialog_id: uuid.UUID
-    metric_id: uuid.UUID | None = None
+    metric_id: uuid.UUID
     agree: bool
     comment: str = ""
     author_name: str = ""
@@ -282,8 +282,8 @@ class MetricFeedbackItem(BaseModel):
 
 
 class MetricFeedbackStat(BaseModel):
-    metric_id: uuid.UUID | None = None
-    metric_name: str = "Разбор целиком"
+    metric_id: uuid.UUID
+    metric_name: str = ""
     agree_count: int = 0
     disagree_count: int = 0
     disagreements: list[MetricFeedbackItem] = []

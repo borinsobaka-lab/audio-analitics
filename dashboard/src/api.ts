@@ -152,7 +152,7 @@ export interface Me {
 export interface DialogFeedback {
   id: string;
   dialog_id: string;
-  metric_id: string | null;
+  metric_id: string;
   agree: boolean;
   comment: string;
   author_name: string;
@@ -174,7 +174,7 @@ export interface MetricFeedbackItem {
 }
 
 export interface MetricFeedbackStat {
-  metric_id: string | null;
+  metric_id: string;
   metric_name: string;
   agree_count: number;
   disagree_count: number;
@@ -381,7 +381,7 @@ export const api = {
 
   leaveFeedback: (body: {
     dialog_id: string;
-    metric_id?: string | null;
+    metric_id: string;
     agree: boolean;
     comment?: string;
   }) =>

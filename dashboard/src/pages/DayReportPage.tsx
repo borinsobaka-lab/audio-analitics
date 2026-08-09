@@ -458,13 +458,6 @@ function DialogCard({
             </p>
           )}
 
-          <FeedbackControl
-            dialogId={dialog.id}
-            items={feedback}
-            onChanged={onFeedback}
-            label="Согласны с разбором разговора?"
-          />
-
           {detail && detail.turns.length > 0 && (
             <div className="turns">
               {detail.turns.map((t, i) => (
