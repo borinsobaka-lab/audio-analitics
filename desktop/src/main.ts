@@ -21,6 +21,12 @@ interface Status {
   location_name: string;
   configured: boolean;
   just_updated: string;
+  finishing: boolean;
+  finish_error: string;
+  mic_connected: boolean;
+  reconnects: number;
+  leftover_pending: number;
+  leftover_days: number;
 }
 
 interface Settings {
@@ -72,6 +78,9 @@ const employeeHint = $("employee-hint");
 const setupLocation = $("setup-location");
 const setupMic = $("setup-mic");
 const meter = $("meter");
+const warnMic = $("warn-mic");
+const leftoverBox = $("leftover");
+const leftoverText = $("leftover-text");
 const meterTitle = $("meter-title");
 const meterFill = $("meter-fill");
 const warnSilence = $("warn-silence");
@@ -106,6 +115,10 @@ function setError(message: string) {
  *  не записывая, поэтому «слышно или нет» проверяется до нажатия «Начать», а не
  *  через десять секунд после. Раньше это выяснялось уже на записанной смене. */
 function renderMeter(status: Status) {
+  // Микрофон пропал посреди записи: отдельное предупреждение, потому что
+  // причина другая (кабель, питание колонки), и приложение уже само
+  // пытается переподключиться.
+  warnMic.classList.toggle("show", status.recording && !status.mic_connected);
   const live = status.recording || status.listening;
   if (!live) {
     // Микрофон не открылся вовсе — полосе нечего показывать, зато ровно тот
@@ -123,7 +136,9 @@ function renderMeter(status: Status) {
   const width = Math.min(100, Math.sqrt(status.input_level) * 100);
   meterFill.style.width = `${width}%`;
 
-  if (status.paused) {
+  if (status.paused || (status.recording && !status.mic_connected)) {
+    // На паузе тишина ожидаема; при отвалившемся микрофоне о ней уже сказано
+    // отдельным предупреждением выше.
     silentPolls = 0;
   } else if (status.input_level <= 0) {
     silentPolls += 1;
@@ -164,13 +179,28 @@ function render(status: Status) {
       `Записано сегментов: ${status.chunks_recorded}<br>` +
       `Загружено на сервер: ${status.chunks_uploaded}` +
       (status.chunks_pending > 0 ? ` (в очереди: ${status.chunks_pending})` : "");
+  } else if (status.finishing) {
+    // Запись остановлена, но сервер ещё не подтвердил закрытие смены:
+    // сегменты догружаются в фоне, «Завершить» повторяет попытку.
+    statusText.textContent = "Смена остановлена, отправляем на сервер";
+    statusSub.textContent =
+      status.chunks_pending > 0
+        ? `Осталось отправить сегментов: ${status.chunks_pending}. Не выключайте компьютер.`
+        : "Все сегменты на сервере — нажмите «Завершить» ещё раз";
+    statsEl.innerHTML =
+      `Записано сегментов: ${status.chunks_recorded}<br>` +
+      `Загружено на сервер: ${status.chunks_uploaded}`;
+    if (status.finish_error && !busy) setError(status.finish_error);
   } else if (status.recording) {
     statusText.textContent = status.paused ? "ПАУЗА" : "● ИДЁТ ЗАПИСЬ";
     statusSub.textContent = `${status.date}, с ${status.started_at}`;
     statsEl.innerHTML =
       `Записано сегментов: ${status.chunks_recorded}<br>` +
       `Загружено на сервер: ${status.chunks_uploaded}` +
-      (status.chunks_pending > 0 ? ` (в очереди: ${status.chunks_pending})` : "");
+      (status.chunks_pending > 0 ? ` (в очереди: ${status.chunks_pending})` : "") +
+      (status.reconnects > 0
+        ? `<br>Микрофон переподключался: ${status.reconnects} раз`
+        : "");
     if (status.upload_error) {
       setError(`Проблема загрузки (повторяем): ${status.upload_error.slice(0, 200)}`);
     }
@@ -180,12 +210,24 @@ function render(status: Status) {
     statsEl.textContent = "";
   }
   if (!status.recording && confirmingFinish) resetFinishButton();
+  // Прошлые смены, которые ещё не все на сервере, досылаются сами — но
+  // человек должен знать, что компьютер сейчас выключать нельзя.
+  if (status.leftover_days > 0) {
+    leftoverText.textContent =
+      ` Не отправлено сегментов: ${status.leftover_pending}` +
+      ` (смен: ${status.leftover_days}). Отправляются сами, пока приложение` +
+      " открыто и есть связь с сервером.";
+    leftoverBox.classList.add("show");
+  } else {
+    leftoverBox.classList.remove("show");
+  }
+  const active = status.recording || status.finishing;
   // Kept visible but locked while recording, so it always shows who is on shift.
-  employeeSelect.disabled = status.recording || busy;
-  employeePicker.style.opacity = status.recording ? "0.6" : "1";
+  employeeSelect.disabled = active || busy;
+  employeePicker.style.opacity = active ? "0.6" : "1";
   // Точку продажи нельзя менять на ходу: смена уже открыта на другой студии.
-  locationSelect.disabled = status.recording;
-  btnStart.disabled = status.recording || busy || !status.configured;
+  locationSelect.disabled = active;
+  btnStart.disabled = active || busy || !status.configured;
   // Обновление перезапускает приложение: посреди смены это оборвало бы запись.
   btnUpdate.disabled = status.recording || updating;
   btnUpdate.textContent = status.recording
@@ -200,7 +242,10 @@ function render(status: Status) {
     updatedBox.style.display = "block";
   }
   btnPause.disabled = !status.recording || busy;
-  btnFinish.disabled = !status.recording || busy;
+  btnFinish.disabled = !(status.recording || status.finishing) || busy;
+  if (!confirmingFinish) {
+    btnFinish.textContent = status.finishing ? RETRY_FINISH_LABEL : FINISH_LABEL;
+  }
   btnPause.textContent = status.paused
     ? "⏵ Продолжить запись"
     : "⏸ Пауза (личный разговор)";
@@ -300,6 +345,9 @@ btnPause.addEventListener("click", async () => {
 // never displays native JS dialogs and silently reports "cancelled", which
 // made this button look dead.
 const FINISH_LABEL = "■ Завершить день и отправить";
+// После неудачного завершения запись уже остановлена: повтор ничего не
+// прерывает, поэтому второго нажатия для подтверждения не требуется.
+const RETRY_FINISH_LABEL = "↻ Отправить и завершить ещё раз";
 let confirmingFinish = false;
 let confirmTimer: number | undefined;
 
@@ -311,7 +359,8 @@ function resetFinishButton() {
 }
 
 btnFinish.addEventListener("click", async () => {
-  if (!confirmingFinish) {
+  const retrying = lastStatus?.finishing ?? false;
+  if (!confirmingFinish && !retrying) {
     confirmingFinish = true;
     btnFinish.textContent = "Нажмите ещё раз, чтобы завершить день";
     confirmTimer = window.setTimeout(resetFinishButton, 8000);
@@ -443,9 +492,12 @@ function askToQuit() {
   // Повторное ⌘Q не должно перескакивать сразу ко второму вопросу.
   if (quit2.style.display === "flex") return;
   const recording = lastStatus?.recording ?? false;
+  const sending = (lastStatus?.finishing ?? false) || (lastStatus?.leftover_days ?? 0) > 0;
   quit1Text.textContent = recording
     ? "Сейчас идёт запись смены. Пока приложение закрыто, разговоры у стойки не записываются."
-    : "Пока приложение закрыто, разговоры у стойки не записываются: смену будет некому начать.";
+    : sending
+      ? "Приложение ещё отправляет записанные сегменты на сервер. Если закрыть его сейчас, отправка остановится до следующего запуска."
+      : "Пока приложение закрыто, разговоры у стойки не записываются: смену будет некому начать.";
   quit1.style.display = "flex";
   quit2.style.display = "none";
 }

@@ -3,18 +3,24 @@
 //! Threads:
 //!   * audio thread — owns the cpal stream for its whole lifetime. CoreAudio
 //!     misbehaves when a stream is created on one thread and dropped on
-//!     another, so the stream never leaves this thread.
+//!     another, so the stream never leaves this thread. The same thread is a
+//!     watchdog: a stream that reported an error or stopped delivering samples
+//!     (the USB speaker was unplugged, Bluetooth dropped) is closed and the
+//!     default input device is reopened until it works again.
 //!   * encoder thread — resamples to 48 kHz mono, encodes 20 ms Opus frames
-//!     and rotates chunk files.
+//!     and rotates chunk files. It keeps the recording on wall-clock time:
+//!     a pause, a dead microphone or a crash-and-restart leave silence in the
+//!     file instead of cutting time out, so «14:32 in the report» is 14:32
+//!     on the studio clock and dialogs are found where they happened.
 //! The capture callback only pushes samples into a channel, so a slow disk
 //! never stalls the audio device. A crash loses at most the open chunk.
 
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::ogg_opus::OggOpusWriter;
 
@@ -23,6 +29,19 @@ pub const FRAME_SAMPLES: usize = 960; // 20 ms @ 48 kHz
 pub const CHUNK_SECONDS: u64 = 300; // 5-minute chunks
 const OPUS_BITRATE: i32 = 32_000;
 
+/// Микрофон молчит дольше этого — считаем поток мёртвым и переоткрываем.
+/// Колбэки CoreAudio приходят каждые 10–100 мс; после отключения USB или
+/// Bluetooth они просто перестают приходить, часто без единой ошибки.
+const STALL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Пауза между попытками снова открыть микрофон.
+const REOPEN_DELAY: Duration = Duration::from_secs(2);
+/// Отставание записи от часов, начиная с которого дописывается тишина.
+/// Порог выше задержки буферов (доли секунды) с большим запасом.
+const PAD_THRESHOLD_S: f64 = 5.0;
+/// Разрыв длиннее этого тишиной не заполняется: скорее всего приложение
+/// подняли на следующий день, и выравнивать по часам уже нечего.
+const MAX_PAD_S: f64 = 12.0 * 3600.0;
+
 /// Device properties discovered on the audio thread.
 struct DeviceInfo {
     name: String,
@@ -30,35 +49,79 @@ struct DeviceInfo {
     channels: usize,
 }
 
-pub struct RecorderHandle {
-    stop_flag: Arc<AtomicBool>,
-    pause_flag: Arc<AtomicBool>,
-    pub chunk_counter: Arc<AtomicU32>,
+/// A batch of interleaved samples from the capture callback. The format
+/// travels with the data: after a reconnect the device may be a different one
+/// with a different rate or channel count.
+struct AudioBlock {
+    rate: u32,
+    channels: usize,
+    samples: Vec<f32>,
+}
+
+/// Shared between the capture thread and the handle that the UI polls.
+struct Shared {
+    stop: AtomicBool,
+    pause: AtomicBool,
     /// Peak input amplitude, scaled to 0..1000. Stays at 0 when the OS denies
     /// microphone access — the UI surfaces that instead of recording silence.
-    pub level: Arc<AtomicU32>,
-    pub device_name: String,
+    level: AtomicU32,
+    /// Is a capture stream open right now? False while reconnecting.
+    connected: AtomicBool,
+    /// How many times the stream had to be reopened during this session.
+    reconnects: AtomicU32,
+    device_name: Mutex<String>,
+}
+
+impl Shared {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            stop: AtomicBool::new(false),
+            pause: AtomicBool::new(false),
+            level: AtomicU32::new(0),
+            connected: AtomicBool::new(false),
+            reconnects: AtomicU32::new(0),
+            device_name: Mutex::new(String::new()),
+        })
+    }
+}
+
+pub struct RecorderHandle {
+    shared: Arc<Shared>,
+    pub chunk_counter: Arc<AtomicU32>,
     audio_thread: Option<std::thread::JoinHandle<()>>,
     encoder_thread: Option<std::thread::JoinHandle<Result<()>>>,
 }
 
 impl RecorderHandle {
     pub fn pause(&self, paused: bool) {
-        self.pause_flag.store(paused, Ordering::SeqCst);
+        self.shared.pause.store(paused, Ordering::SeqCst);
     }
 
     pub fn is_paused(&self) -> bool {
-        self.pause_flag.load(Ordering::SeqCst)
+        self.shared.pause.load(Ordering::SeqCst)
     }
 
     /// Current input level, 0.0..1.0.
     pub fn input_level(&self) -> f32 {
-        self.level.load(Ordering::Relaxed) as f32 / 1000.0
+        self.shared.level.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+
+    pub fn device_name(&self) -> String {
+        self.shared.device_name.lock().unwrap().clone()
+    }
+
+    /// Открыт ли поток с микрофона прямо сейчас.
+    pub fn is_connected(&self) -> bool {
+        self.shared.connected.load(Ordering::SeqCst)
+    }
+
+    pub fn reconnects(&self) -> u32 {
+        self.shared.reconnects.load(Ordering::SeqCst)
     }
 
     /// Stop capture and flush the open chunk. Returns once both threads exit.
     pub fn stop(mut self) -> Result<()> {
-        self.stop_flag.store(true, Ordering::SeqCst);
+        self.shared.stop.store(true, Ordering::SeqCst);
         // Audio thread first: dropping the stream closes the sample channel,
         // which is what tells the encoder to finish up.
         if let Some(handle) = self.audio_thread.take() {
@@ -94,21 +157,27 @@ pub fn default_input_name() -> Option<String> {
 /// Он же вызывает у macOS окно с запросом доступа к микрофону — при запуске
 /// приложения, а не в момент старта смены.
 pub struct MonitorHandle {
-    stop_flag: Arc<AtomicBool>,
-    level: Arc<AtomicU32>,
-    pub device_name: String,
+    shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl MonitorHandle {
     pub fn input_level(&self) -> f32 {
-        self.level.load(Ordering::Relaxed) as f32 / 1000.0
+        self.shared.level.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+
+    pub fn device_name(&self) -> String {
+        self.shared.device_name.lock().unwrap().clone()
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.shared.connected.load(Ordering::SeqCst)
     }
 }
 
 impl Drop for MonitorHandle {
     fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::SeqCst);
+        self.shared.stop.store(true, Ordering::SeqCst);
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
@@ -116,73 +185,49 @@ impl Drop for MonitorHandle {
 }
 
 pub fn start_monitor() -> Result<MonitorHandle> {
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let level = Arc::new(AtomicU32::new(0));
-    // Пауза монитору не нужна, но open_stream её ждёт: заводим выключенную.
-    let pause_flag = Arc::new(AtomicBool::new(false));
-
+    let shared = Shared::new();
     let (ready_tx, ready_rx) = mpsc::channel::<Result<DeviceInfo, String>>();
-    let stop_audio = stop_flag.clone();
-    let level_audio = level.clone();
+    let shared_audio = shared.clone();
 
     let thread = std::thread::Builder::new()
         .name("audio-monitor".into())
-        .spawn(move || {
-            let stream = match open_stream(None, pause_flag, level_audio, &ready_tx) {
-                Some(stream) => stream,
-                None => return,
-            };
-            while !stop_audio.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            drop(stream);
-        })?;
+        .spawn(move || capture_loop(None, shared_audio, ready_tx))?;
 
-    let info = match ready_rx.recv() {
-        Ok(Ok(info)) => info,
+    match ready_rx.recv() {
+        Ok(Ok(_)) => {}
         Ok(Err(message)) => return Err(anyhow!(message)),
         Err(_) => return Err(anyhow!("Поток захвата аудио завершился неожиданно")),
-    };
+    }
 
     Ok(MonitorHandle {
-        stop_flag,
-        level,
-        device_name: info.name,
+        shared,
         thread: Some(thread),
     })
 }
 
 /// Start capturing into `chunks_dir`, producing seg_{idx:05}.opus files.
-/// `first_chunk_idx` allows resuming a day after an app restart.
-pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> {
+///
+/// `first_chunk_idx` allows resuming a day after an app restart; `origin` is
+/// the wall-clock moment the day was first started (see the encoder: the gap
+/// since the crash is written as silence so timestamps stay on the clock).
+pub fn start(
+    chunks_dir: &Path,
+    first_chunk_idx: u32,
+    origin: SystemTime,
+) -> Result<RecorderHandle> {
     std::fs::create_dir_all(chunks_dir)?;
 
-    let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(256);
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let pause_flag = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::sync_channel::<AudioBlock>(256);
+    let shared = Shared::new();
     let chunk_counter = Arc::new(AtomicU32::new(first_chunk_idx));
-    let level = Arc::new(AtomicU32::new(0));
 
     // The audio thread reports whether the device opened before we continue.
     let (ready_tx, ready_rx) = mpsc::channel::<Result<DeviceInfo, String>>();
-    let stop_audio = stop_flag.clone();
-    let pause_audio = pause_flag.clone();
-    let level_audio = level.clone();
+    let shared_audio = shared.clone();
 
     let audio_thread = std::thread::Builder::new()
         .name("audio-capture".into())
-        .spawn(move || {
-            let stream = match open_stream(Some(tx), pause_audio, level_audio, &ready_tx) {
-                Some(stream) => stream,
-                None => return, // error already reported through ready_tx
-            };
-            // Own the stream here until stop is requested, then drop it on
-            // this same thread.
-            while !stop_audio.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            drop(stream);
-        })?;
+        .spawn(move || capture_loop(Some(tx), shared_audio, ready_tx))?;
 
     let info = match ready_rx.recv() {
         Ok(Ok(info)) => info,
@@ -197,96 +242,179 @@ pub fn start(chunks_dir: &Path, first_chunk_idx: u32) -> Result<RecorderHandle> 
     );
 
     let dir = chunks_dir.to_path_buf();
-    let stop_enc = stop_flag.clone();
+    let stop_enc = shared.clone();
     let counter_enc = chunk_counter.clone();
-    let (src_rate, src_channels) = (info.sample_rate, info.channels);
+    // Сколько времени уже лежит в готовых чанках предыдущего запуска: каждый
+    // закрытый чанк — ровно CHUNK_SECONDS по часам записи.
+    let already_encoded = first_chunk_idx as u64 * CHUNK_SECONDS * OPUS_RATE as u64;
     let encoder_thread = std::thread::Builder::new()
         .name("opus-encoder".into())
-        .spawn(move || encode_loop(rx, stop_enc, dir, counter_enc, src_rate, src_channels))?;
+        .spawn(move || {
+            encode_loop(rx, stop_enc, dir, counter_enc, origin, already_encoded)
+        })?;
 
     Ok(RecorderHandle {
-        stop_flag,
-        pause_flag,
+        shared,
         chunk_counter,
-        level,
-        device_name: info.name,
         audio_thread: Some(audio_thread),
         encoder_thread: Some(encoder_thread),
     })
 }
 
+/// Owns the capture stream for the whole session and reopens it when it dies.
+///
+/// The first open is reported through `ready_tx`, so the caller can show
+/// «микрофон не найден» right away. Later failures are handled here: the
+/// stream is dropped, the default input is reopened every couple of seconds,
+/// and `Shared::connected` tells the UI what is going on in the meantime.
+fn capture_loop(
+    tx: Option<mpsc::SyncSender<AudioBlock>>,
+    shared: Arc<Shared>,
+    ready_tx: mpsc::Sender<Result<DeviceInfo, String>>,
+) {
+    let mut first = true;
+    while !shared.stop.load(Ordering::SeqCst) {
+        let failed = Arc::new(AtomicBool::new(false));
+        let last_callback = Arc::new(AtomicU64::new(0));
+        let opened = open_stream(tx.clone(), shared.clone(), failed.clone(), last_callback.clone());
+        match opened {
+            Ok((stream, info)) => {
+                *shared.device_name.lock().unwrap() = info.name.clone();
+                shared.connected.store(true, Ordering::SeqCst);
+                if first {
+                    let _ = ready_tx.send(Ok(info));
+                    first = false;
+                } else {
+                    shared.reconnects.fetch_add(1, Ordering::SeqCst);
+                    log::info!("микрофон снова открыт: {}", info.name);
+                }
+                let opened_at = Instant::now();
+                // Own the stream here until stop is requested or it dies, then
+                // drop it on this same thread.
+                while !shared.stop.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(100));
+                    if failed.load(Ordering::SeqCst) {
+                        log::warn!("поток микрофона сообщил об ошибке — переоткрываем");
+                        break;
+                    }
+                    let last_ms = last_callback.load(Ordering::Relaxed);
+                    let silent_for = if last_ms == 0 {
+                        opened_at.elapsed()
+                    } else {
+                        Duration::from_millis(now_ms().saturating_sub(last_ms))
+                    };
+                    if silent_for > STALL_TIMEOUT {
+                        log::warn!(
+                            "микрофон не отдаёт данные {} с — переоткрываем",
+                            silent_for.as_secs()
+                        );
+                        break;
+                    }
+                }
+                drop(stream);
+                shared.connected.store(false, Ordering::SeqCst);
+                shared.level.store(0, Ordering::Relaxed);
+            }
+            Err(e) => {
+                if first {
+                    let _ = ready_tx.send(Err(e.to_string()));
+                    return;
+                }
+                log::warn!("не удалось открыть микрофон: {e}; повтор через {REOPEN_DELAY:?}");
+            }
+        }
+        if shared.stop.load(Ordering::SeqCst) {
+            break;
+        }
+        std::thread::sleep(REOPEN_DELAY);
+    }
+    shared.connected.store(false, Ordering::SeqCst);
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Open the default input device. Runs on the audio thread; the resulting
 /// stream is `!Send` and deliberately never leaves it.
 fn open_stream(
-    tx: Option<mpsc::SyncSender<Vec<f32>>>,
-    pause_flag: Arc<AtomicBool>,
-    level: Arc<AtomicU32>,
-    ready_tx: &mpsc::Sender<Result<DeviceInfo, String>>,
-) -> Option<cpal::Stream> {
-    let result = (|| -> Result<(cpal::Stream, DeviceInfo)> {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .context("Микрофон не найден. Подключите микрофон и проверьте разрешения.")?;
-        let name = device.name().unwrap_or_else(|_| "неизвестное".into());
-        let config = device
-            .default_input_config()
-            .context("Не удалось получить конфигурацию микрофона")?;
-        let info = DeviceInfo {
-            name,
-            sample_rate: config.sample_rate().0,
-            channels: config.channels() as usize,
-        };
+    tx: Option<mpsc::SyncSender<AudioBlock>>,
+    shared: Arc<Shared>,
+    failed: Arc<AtomicBool>,
+    last_callback: Arc<AtomicU64>,
+) -> Result<(cpal::Stream, DeviceInfo)> {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .context("Микрофон не найден. Подключите микрофон и проверьте разрешения.")?;
+    let name = device.name().unwrap_or_else(|_| "неизвестное".into());
+    let config = device
+        .default_input_config()
+        .context("Не удалось получить конфигурацию микрофона")?;
+    let info = DeviceInfo {
+        name,
+        sample_rate: config.sample_rate().0,
+        channels: config.channels() as usize,
+    };
+    let (rate, channels) = (info.sample_rate, info.channels);
 
-        let pause_cb = pause_flag.clone();
-        let level_cb = level.clone();
-        let err_fn = |e| log::error!("audio stream error: {e}");
+    let err_failed = failed.clone();
+    let err_fn = move |e| {
+        log::error!("audio stream error: {e}");
+        err_failed.store(true, Ordering::SeqCst);
+    };
 
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &config.into(),
-                move |data: &[f32], _| {
-                    if !pause_cb.load(Ordering::SeqCst) {
-                        store_level(&level_cb, data.iter().copied());
-                        if let Some(tx) = &tx {
-                            let _ = tx.try_send(data.to_vec());
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::I16 => device.build_input_stream(
-                &config.into(),
-                move |data: &[i16], _| {
-                    if !pause_cb.load(Ordering::SeqCst) {
-                        let floats: Vec<f32> =
-                            data.iter().map(|s| *s as f32 / 32768.0).collect();
-                        store_level(&level_cb, floats.iter().copied());
-                        if let Some(tx) = &tx {
-                            let _ = tx.try_send(floats);
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            )?,
-            other => return Err(anyhow!("Неподдерживаемый формат сэмплов: {other:?}")),
-        };
-        stream.play()?;
-        Ok((stream, info))
-    })();
-
-    match result {
-        Ok((stream, info)) => {
-            let _ = ready_tx.send(Ok(info));
-            Some(stream)
+    // The callback records that it is alive BEFORE looking at the pause flag:
+    // a paused microphone is still a working microphone.
+    let on_samples = move |floats: Vec<f32>| {
+        last_callback.store(now_ms(), Ordering::Relaxed);
+        if shared.pause.load(Ordering::SeqCst) {
+            return;
         }
-        Err(e) => {
-            let _ = ready_tx.send(Err(e.to_string()));
-            None
+        store_level(&shared.level, floats.iter().copied());
+        if let Some(tx) = &tx {
+            let _ = tx.try_send(AudioBlock {
+                rate,
+                channels,
+                samples: floats,
+            });
         }
-    }
+    };
+
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => device.build_input_stream(
+            &config.into(),
+            move |data: &[f32], _| on_samples(data.to_vec()),
+            err_fn,
+            None,
+        )?,
+        cpal::SampleFormat::I16 => device.build_input_stream(
+            &config.into(),
+            move |data: &[i16], _| {
+                on_samples(data.iter().map(|s| *s as f32 / 32768.0).collect())
+            },
+            err_fn,
+            None,
+        )?,
+        cpal::SampleFormat::U16 => device.build_input_stream(
+            &config.into(),
+            move |data: &[u16], _| {
+                on_samples(
+                    data.iter()
+                        .map(|s| (*s as f32 - 32768.0) / 32768.0)
+                        .collect(),
+                )
+            },
+            err_fn,
+            None,
+        )?,
+        other => return Err(anyhow!("Неподдерживаемый формат сэмплов: {other:?}")),
+    };
+    stream.play()?;
+    Ok((stream, info))
 }
 
 /// Peak level with slow decay, so a value polled once per second still
@@ -299,17 +427,18 @@ fn store_level(slot: &AtomicU32, samples: impl Iterator<Item = f32>) {
 }
 
 fn encode_loop(
-    rx: mpsc::Receiver<Vec<f32>>,
-    stop: Arc<AtomicBool>,
+    rx: mpsc::Receiver<AudioBlock>,
+    shared: Arc<Shared>,
     dir: PathBuf,
     chunk_counter: Arc<AtomicU32>,
-    src_rate: u32,
-    src_channels: usize,
+    origin: SystemTime,
+    already_encoded: u64,
 ) -> Result<()> {
     let mut encoder = opus::Encoder::new(OPUS_RATE, opus::Channels::Mono, opus::Application::Voip)?;
     encoder.set_bitrate(opus::Bitrate::Bits(OPUS_BITRATE))?;
 
-    let mut resampler = LinearResampler::new(src_rate, OPUS_RATE);
+    let mut resampler: Option<LinearResampler> = None;
+    let mut src_format: Option<(u32, usize)> = None;
     let mut pending: Vec<f32> = Vec::with_capacity(FRAME_SAMPLES * 4);
     let mut packet_buf = vec![0u8; 4000];
 
@@ -318,22 +447,59 @@ fn encode_loop(
     let chunk_limit = CHUNK_SECONDS * OPUS_RATE as u64;
     let mut serial: u32 = 0x5eed;
     let mut disconnected = false;
+    // Всего сэмплов на шкале записи: и уже лежащих в готовых чанках, и
+    // закодированных сейчас. Сравнивается с часами, чтобы дописать тишину.
+    let mut encoded_total: u64 = already_encoded;
+    let mut padded_total_s: f64 = 0.0;
 
     loop {
-        match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(buf) => {
-                // Downmix to mono, then resample to 48 kHz.
-                let mono: Vec<f32> = if src_channels > 1 {
-                    buf.chunks(src_channels)
-                        .map(|frame| frame.iter().sum::<f32>() / src_channels as f32)
-                        .collect()
-                } else {
-                    buf
-                };
-                pending.extend(resampler.process(&mono));
+        // Отставание от часов проверяется ДО того, как в очередь попадёт
+        // свежий блок: пропуск случился раньше него.
+        let elapsed = SystemTime::now()
+            .duration_since(origin)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let on_timeline = (encoded_total + pending.len() as u64) as f64 / OPUS_RATE as f64;
+        let deficit = elapsed - on_timeline;
+        if deficit > PAD_THRESHOLD_S && deficit < MAX_PAD_S {
+            // Добиваем не до нуля, а с запасом на задержку буферов: иначе
+            // следующий же блок ляжет «раньше времени».
+            let pad_s = (deficit - 1.0).min(30.0);
+            let pad_samples = (pad_s * OPUS_RATE as f64) as usize;
+            pending.extend(std::iter::repeat(0.0f32).take(pad_samples));
+            padded_total_s += pad_s;
+            if padded_total_s < 40.0 || (padded_total_s as u64) % 600 == 0 {
+                log::info!("дописано {pad_s:.1} с тишины (всего {padded_total_s:.0} с)");
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => disconnected = true,
+        } else {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(block) => {
+                    if src_format != Some((block.rate, block.channels)) {
+                        // Другое устройство после переподключения — другой
+                        // ресемплер. Хвост старого не важен: там был обрыв.
+                        resampler = Some(LinearResampler::new(block.rate, OPUS_RATE));
+                        src_format = Some((block.rate, block.channels));
+                        log::info!(
+                            "формат входа: {} Hz, {} ch",
+                            block.rate,
+                            block.channels
+                        );
+                    }
+                    // Downmix to mono, then resample to 48 kHz.
+                    let mono: Vec<f32> = if block.channels > 1 {
+                        block
+                            .samples
+                            .chunks(block.channels)
+                            .map(|frame| frame.iter().sum::<f32>() / block.channels as f32)
+                            .collect()
+                    } else {
+                        block.samples
+                    };
+                    pending.extend(resampler.as_mut().unwrap().process(&mono));
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => disconnected = true,
+            }
         }
 
         while pending.len() >= FRAME_SAMPLES {
@@ -356,6 +522,7 @@ fn encode_loop(
                 .unwrap()
                 .write_packet(&packet_buf[..n], FRAME_SAMPLES as u64)?;
             chunk_samples += FRAME_SAMPLES as u64;
+            encoded_total += FRAME_SAMPLES as u64;
 
             if chunk_samples >= chunk_limit {
                 finish_chunk(&dir, &chunk_counter, writer.take().unwrap())?;
@@ -363,7 +530,7 @@ fn encode_loop(
         }
 
         // Exit only after the leftover samples above have been encoded.
-        if disconnected || (stop.load(Ordering::SeqCst) && rx.try_recv().is_err()) {
+        if disconnected || (shared.stop.load(Ordering::SeqCst) && rx.try_recv().is_err()) {
             break;
         }
     }

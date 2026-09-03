@@ -1,6 +1,10 @@
 //! Background upload queue: watches the chunks dir for finished .opus files,
 //! uploads them with retries and exponential backoff, moves uploaded files
 //! into uploaded/ (kept until the day is finished successfully).
+//!
+//! The same primitives serve the leftover sweeper in main.rs: a day whose
+//! upload or «finish» failed (server down at closing time) is completed later
+//! from the files still on disk, without anyone remembering to do it.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -19,7 +23,7 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    fn auth(
+    pub fn auth(
         &self,
         req: reqwest::blocking::RequestBuilder,
     ) -> reqwest::blocking::RequestBuilder {
@@ -32,10 +36,32 @@ impl ServerConfig {
     }
 }
 
+/// Сервер отказался принимать сегменты или закрывать смену, потому что она
+/// уже закрыта и разобрана из админки. Файлы на диске больше никому не нужны.
+#[derive(Debug)]
+pub struct RecordingClosed(pub String);
+
+impl std::fmt::Display for RecordingClosed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "смена уже закрыта на сервере: {}", self.0)
+    }
+}
+
+impl std::error::Error for RecordingClosed {}
+
+pub fn http_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("reqwest client")
+}
+
 pub struct Uploader {
     stop_flag: Arc<AtomicBool>,
     pub uploaded_count: Arc<AtomicU32>,
-    pub pending_count: Arc<AtomicU32>,
+    /// Сервер ответил 409: смена закрыта и разобрана без нас. Повторять
+    /// загрузку бессмысленно — очередь останавливается сама.
+    closed: Arc<AtomicBool>,
     pub last_error: Arc<std::sync::Mutex<String>>,
     chunks_dir: PathBuf,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -46,36 +72,38 @@ impl Uploader {
         let watched_dir = chunks_dir.clone();
         let stop_flag = Arc::new(AtomicBool::new(false));
         let uploaded_count = Arc::new(AtomicU32::new(0));
-        let pending_count = Arc::new(AtomicU32::new(0));
+        let closed = Arc::new(AtomicBool::new(false));
         let last_error = Arc::new(std::sync::Mutex::new(String::new()));
 
         let stop = stop_flag.clone();
         let uploaded = uploaded_count.clone();
-        let pending = pending_count.clone();
+        let closed_flag = closed.clone();
         let err_slot = last_error.clone();
 
         let thread = std::thread::Builder::new()
             .name("uploader".into())
             .spawn(move || {
-                let client = reqwest::blocking::Client::builder()
-                    .timeout(Duration::from_secs(120))
-                    .build()
-                    .expect("reqwest client");
+                let client = http_client();
                 let mut backoff_s = 2u64;
 
                 while !stop.load(Ordering::SeqCst) {
-                    match upload_pending(&client, &watched_dir, &recording_id, &config, &uploaded)
+                    match upload_pending(&client, &watched_dir, &recording_id, &config, Some(&uploaded))
                     {
-                        Ok(remaining) => {
-                            pending.store(remaining, Ordering::SeqCst);
+                        Ok(_) => {
                             backoff_s = 2;
                             err_slot.lock().unwrap().clear();
-                            std::thread::sleep(Duration::from_secs(3));
+                            sleep_unless_stopped(&stop, Duration::from_secs(3));
+                        }
+                        Err(e) if e.downcast_ref::<RecordingClosed>().is_some() => {
+                            *err_slot.lock().unwrap() = e.to_string();
+                            closed_flag.store(true, Ordering::SeqCst);
+                            log::warn!("{e}; загрузка остановлена");
+                            break;
                         }
                         Err(e) => {
                             *err_slot.lock().unwrap() = e.to_string();
                             log::warn!("upload failed, retry in {backoff_s}s: {e}");
-                            std::thread::sleep(Duration::from_secs(backoff_s));
+                            sleep_unless_stopped(&stop, Duration::from_secs(backoff_s));
                             backoff_s = (backoff_s * 2).min(60);
                         }
                     }
@@ -86,37 +114,49 @@ impl Uploader {
         Uploader {
             stop_flag,
             uploaded_count,
-            pending_count,
+            closed,
             last_error,
             chunks_dir,
             thread: Some(thread),
         }
     }
 
-    /// Wait until every finished chunk is uploaded (3 min cap), then stop.
-    /// Chunks stay on disk if this fails, so the day can be retried.
-    pub fn drain_and_stop(mut self) -> Result<()> {
-        let deadline = std::time::Instant::now() + Duration::from_secs(180);
+    /// Wait until every finished chunk is uploaded, or `timeout` passes.
+    /// The queue keeps running either way, so a failed «finish» can simply be
+    /// retried later: nothing is lost, the files stay on disk.
+    pub fn wait_drained(&self, timeout: Duration) -> Result<()> {
+        let deadline = std::time::Instant::now() + timeout;
         loop {
+            if self.closed.load(Ordering::SeqCst) {
+                return Err(RecordingClosed(self.last_error.lock().unwrap().clone()).into());
+            }
             let remaining = count_pending(&self.chunks_dir);
             if remaining == 0 {
-                break;
+                return Ok(());
             }
             if std::time::Instant::now() > deadline {
+                let reason = self.last_error.lock().unwrap().clone();
+                let reason = if reason.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Последняя ошибка: {}.", reason.chars().take(160).collect::<String>())
+                };
                 anyhow::bail!(
-                    "{remaining} сегментов не загрузилось за 3 минуты — проверьте сеть \
-                     и адрес сервера, затем завершите день ещё раз"
+                    "{remaining} сегментов ещё не загрузилось.{reason} Файлы сохранены на \
+                     компьютере, загрузка продолжается в фоне — нажмите «Завершить» ещё раз, \
+                     когда связь появится"
                 );
             }
             std::thread::sleep(Duration::from_secs(2));
         }
+    }
+
+    pub fn stop(mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
-        Ok(())
     }
-
 }
 
 impl Drop for Uploader {
@@ -125,6 +165,15 @@ impl Drop for Uploader {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+    }
+}
+
+fn sleep_unless_stopped(stop: &AtomicBool, total: Duration) {
+    let step = Duration::from_millis(250);
+    let mut slept = Duration::ZERO;
+    while slept < total && !stop.load(Ordering::SeqCst) {
+        std::thread::sleep(step);
+        slept += step;
     }
 }
 
@@ -146,12 +195,38 @@ pub fn count_pending(dir: &Path) -> u32 {
     list_ready_chunks(dir).len() as u32
 }
 
-fn upload_pending(
+/// Highest existing chunk index + 1 (looks in both pending and uploaded dirs).
+pub fn next_chunk_idx(chunks_dir: &Path) -> u32 {
+    let mut max_idx: Option<u32> = None;
+    for dir in [chunks_dir.to_path_buf(), chunks_dir.join("uploaded")] {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if let Some(idx_str) = name
+                    .strip_prefix("seg_")
+                    .and_then(|s| s.strip_suffix(".opus"))
+                {
+                    if let Ok(idx) = idx_str.parse::<u32>() {
+                        max_idx = Some(max_idx.map_or(idx, |m: u32| m.max(idx)));
+                    }
+                }
+            }
+        }
+    }
+    max_idx.map_or(0, |m| m + 1)
+}
+
+/// Upload every ready chunk of `chunks_dir`; returns how many are still pending.
+///
+/// A 409 from the server means the recording is already closed and processed
+/// (force-finished from the dashboard): it comes back as `RecordingClosed` so
+/// the caller can stop retrying a file nobody will ever accept.
+pub fn upload_pending(
     client: &reqwest::blocking::Client,
     chunks_dir: &Path,
     recording_id: &str,
     config: &ServerConfig,
-    uploaded: &AtomicU32,
+    uploaded: Option<&AtomicU32>,
 ) -> Result<u32> {
     let files = list_ready_chunks(chunks_dir);
     let uploaded_dir = chunks_dir.join("uploaded");
@@ -178,13 +253,47 @@ fn upload_pending(
             idx
         );
         let resp = config.auth(client.put(&url)).multipart(form).send()?;
-        if !resp.status().is_success() {
-            anyhow::bail!("PUT {url} → {}: {}", resp.status(), resp.text().unwrap_or_default());
+        let status = resp.status();
+        if status == reqwest::StatusCode::CONFLICT {
+            return Err(RecordingClosed(resp.text().unwrap_or_default()).into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("PUT {url} → {}: {}", status, resp.text().unwrap_or_default());
         }
 
         std::fs::rename(path, uploaded_dir.join(path.file_name().unwrap()))?;
-        uploaded.fetch_add(1, Ordering::SeqCst);
+        if let Some(counter) = uploaded {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
         log::info!("uploaded chunk {idx}");
     }
     Ok(count_pending(chunks_dir))
+}
+
+/// Tell the server the recording is complete. Idempotent on the server side;
+/// a 409 means it was closed from the dashboard already (`RecordingClosed`).
+pub fn finish_recording(
+    client: &reqwest::blocking::Client,
+    recording_id: &str,
+    total_segments: u32,
+    config: &ServerConfig,
+) -> Result<()> {
+    let url = format!(
+        "{}/api/recordings/{}/finish",
+        config.base_url.trim_end_matches('/'),
+        recording_id
+    );
+    let resp = config
+        .auth(client.post(&url))
+        .json(&serde_json::json!({ "total_segments": total_segments }))
+        .send()
+        .map_err(|e| anyhow::anyhow!("Сервер недоступен: {e}"))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::CONFLICT {
+        return Err(RecordingClosed(resp.text().unwrap_or_default()).into());
+    }
+    if !status.is_success() {
+        anyhow::bail!("Сервер ответил {}: {}", status, resp.text().unwrap_or_default());
+    }
+    Ok(())
 }

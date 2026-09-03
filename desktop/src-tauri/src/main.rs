@@ -8,16 +8,21 @@ mod uploader;
 use anyhow::{Context, Result};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_updater::UpdaterExt;
 
 use keep_awake::KeepAwake;
 use recorder::{MonitorHandle, RecorderHandle};
-use uploader::{ServerConfig, Uploader};
+use uploader::{RecordingClosed, ServerConfig, Uploader};
+
+/// Сколько ждать дозагрузки сегментов при «Завершить день», прежде чем
+/// сообщить об этом. Загрузка после этого не останавливается.
+const FINISH_UPLOAD_WAIT: Duration = Duration::from_secs(180);
 
 /// Адрес сервера и ключ приложения вшиваются в сборку:
 ///
@@ -129,9 +134,43 @@ struct ActiveSession {
     date: String,
     chunks_dir: PathBuf,
     started_at: String,
-    recorder: RecorderHandle,
+    /// None после «Завершить»: микрофон остановлен, но сегменты ещё
+    /// догружаются или сервер не подтвердил закрытие. Смена остаётся в
+    /// состоянии, чтобы «Завершить» можно было нажать ещё раз, а не начинать
+    /// новую запись ради дозагрузки.
+    recorder: Option<RecorderHandle>,
     uploader: Uploader,
+    /// Почему последнее «Завершить» не удалось — показывается на экране.
+    finish_error: String,
     _keep_awake: KeepAwake,
+}
+
+/// Что известно о смене помимо самих чанков. Лежит в meta.json рядом с ними:
+/// по дате уборщик отличает вчерашнюю незакрытую смену от сегодняшней, а по
+/// моменту старта запись после перезапуска остаётся на шкале часов.
+#[derive(Clone, Serialize, Deserialize, Default)]
+struct RecordingMeta {
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    started_at_unix_ms: u64,
+    #[serde(default)]
+    location_id: String,
+}
+
+fn meta_path(chunks_dir: &Path) -> PathBuf {
+    chunks_dir.join("meta.json")
+}
+
+fn read_meta(chunks_dir: &Path) -> Option<RecordingMeta> {
+    std::fs::read_to_string(meta_path(chunks_dir))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+}
+
+fn write_meta(chunks_dir: &Path, meta: &RecordingMeta) -> Result<()> {
+    std::fs::write(meta_path(chunks_dir), serde_json::to_string_pretty(meta)?)?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -152,6 +191,11 @@ struct AppState {
     /// Выход подтверждён обоими вопросами. Пока флаг снят, приложение не
     /// закрывается ни красным крестиком, ни ⌘Q.
     quitting: std::sync::atomic::AtomicBool,
+    /// Незагруженные сегменты прошлых смен, которые уборщик ещё не отправил,
+    /// и число таких смен. Показываются на экране: сотрудник должен знать,
+    /// что вчерашняя запись ещё не вся на сервере.
+    leftover_pending: AtomicU32,
+    leftover_days: AtomicU32,
 }
 
 impl AppState {
@@ -205,6 +249,18 @@ struct Status {
     /// Непустое ровно на том запуске, который случился сразу после
     /// обновления, — интерфейс просит проверить микрофон.
     just_updated: String,
+    /// Смена остановлена, но ещё не закрыта на сервере: догружаем сегменты
+    /// или ждём связи. Кнопка «Завершить» в этом состоянии повторяет попытку.
+    finishing: bool,
+    finish_error: String,
+    /// Открыт ли поток с микрофона. Ложь во время переподключения: колонку
+    /// выдернули, Bluetooth отвалился — приложение само пробует снова.
+    mic_connected: bool,
+    /// Сколько раз за смену микрофон пришлось переоткрывать.
+    reconnects: u32,
+    /// Сегменты прошлых смен, ещё не отправленные на сервер.
+    leftover_pending: u32,
+    leftover_days: u32,
 }
 
 fn settings_path(data_dir: &PathBuf) -> PathBuf {
@@ -255,25 +311,50 @@ fn get_status(state: tauri::State<AppState>) -> Status {
     let settings = state.settings.lock().unwrap().clone();
     let monitor = state.monitor.lock().unwrap();
     let session = state.session.lock().unwrap();
+    let just_updated = state.just_updated.lock().unwrap().clone();
+    let leftover_pending = state.leftover_pending.load(Ordering::SeqCst);
+    let leftover_days = state.leftover_days.load(Ordering::SeqCst);
     match session.as_ref() {
-        Some(s) => Status {
-            recording: true,
-            paused: s.recorder.is_paused(),
-            recording_id: Some(s.recording_id.clone()),
-            date: Some(s.date.clone()),
-            started_at: Some(s.started_at.clone()),
-            chunks_recorded: s.recorder.chunk_counter.load(Ordering::SeqCst),
-            chunks_uploaded: s.uploader.uploaded_count.load(Ordering::SeqCst),
-            chunks_pending: s.uploader.pending_count.load(Ordering::SeqCst),
-            upload_error: s.uploader.last_error.lock().unwrap().clone(),
-            input_level: s.recorder.input_level(),
-            device_name: s.recorder.device_name.clone(),
-            listening: true,
-            monitor_error: String::new(),
-            location_name: settings.location_name.clone(),
-            configured: settings.ready().is_ok(),
-            just_updated: state.just_updated.lock().unwrap().clone(),
-        },
+        Some(s) => {
+            let recorder = s.recorder.as_ref();
+            Status {
+                recording: recorder.is_some(),
+                paused: recorder.map_or(false, |r| r.is_paused()),
+                recording_id: Some(s.recording_id.clone()),
+                date: Some(s.date.clone()),
+                started_at: Some(s.started_at.clone()),
+                chunks_recorded: recorder.map_or_else(
+                    || uploader::next_chunk_idx(&s.chunks_dir),
+                    |r| r.chunk_counter.load(Ordering::SeqCst),
+                ),
+                chunks_uploaded: s.uploader.uploaded_count.load(Ordering::SeqCst),
+                chunks_pending: uploader::count_pending(&s.chunks_dir),
+                upload_error: s.uploader.last_error.lock().unwrap().clone(),
+                // После остановки записи уровень показывает монитор.
+                input_level: recorder.map_or_else(
+                    || monitor.as_ref().map_or(0.0, |m| m.input_level()),
+                    |r| r.input_level(),
+                ),
+                device_name: recorder.map_or_else(
+                    || monitor.as_ref().map_or_else(String::new, |m| m.device_name()),
+                    |r| r.device_name(),
+                ),
+                listening: recorder.map_or(monitor.is_some(), |r| r.is_connected()),
+                monitor_error: String::new(),
+                location_name: settings.location_name.clone(),
+                configured: settings.ready().is_ok(),
+                just_updated,
+                finishing: recorder.is_none(),
+                finish_error: s.finish_error.clone(),
+                mic_connected: recorder.map_or(
+                    monitor.as_ref().map_or(false, |m| m.is_connected()),
+                    |r| r.is_connected(),
+                ),
+                reconnects: recorder.map_or(0, |r| r.reconnects()),
+                leftover_pending,
+                leftover_days,
+            }
+        }
         None => Status {
             recording: false,
             paused: false,
@@ -289,13 +370,19 @@ fn get_status(state: tauri::State<AppState>) -> Status {
             input_level: monitor.as_ref().map_or(0.0, |m| m.input_level()),
             device_name: monitor.as_ref().map_or_else(
                 || recorder::default_input_name().unwrap_or_default(),
-                |m| m.device_name.clone(),
+                |m| m.device_name(),
             ),
-            listening: monitor.is_some(),
+            listening: monitor.as_ref().map_or(false, |m| m.is_connected()),
             monitor_error: state.monitor_error.lock().unwrap().clone(),
             location_name: settings.location_name.clone(),
             configured: settings.ready().is_ok(),
-            just_updated: state.just_updated.lock().unwrap().clone(),
+            just_updated,
+            finishing: false,
+            finish_error: String::new(),
+            mic_connected: monitor.as_ref().map_or(false, |m| m.is_connected()),
+            reconnects: 0,
+            leftover_pending,
+            leftover_days,
         },
     }
 }
@@ -562,16 +649,36 @@ fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Resul
     // Chunks live under the recording id: a second session on the same date
     // (app crashed and was restarted) gets its own directory and its own
     // segment numbering instead of colliding with the first one.
-    let chunks_dir = data_dir.join("recordings").join(&day.id);
+    let chunks_dir = recordings_root(&data_dir).join(&day.id);
     std::fs::create_dir_all(&chunks_dir)?;
 
     // Resume-safe: continue numbering after any chunk already on disk.
-    let next_idx = next_chunk_idx(&chunks_dir);
+    let next_idx = uploader::next_chunk_idx(&chunks_dir);
+
+    // Момент первого старта этой смены. При возобновлении после вылета
+    // берётся из meta.json: пропущенное время запишется тишиной, и таймкоды
+    // отчёта останутся часами на стене, а не «минутами с перезапуска».
+    let meta = match read_meta(&chunks_dir) {
+        Some(meta) if meta.started_at_unix_ms > 0 => meta,
+        _ => {
+            let meta = RecordingMeta {
+                date: date.clone(),
+                started_at_unix_ms: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+                location_id: settings.location_id.clone(),
+            };
+            write_meta(&chunks_dir, &meta)?;
+            meta
+        }
+    };
+    let origin = UNIX_EPOCH + Duration::from_millis(meta.started_at_unix_ms);
 
     // Монитор держит тот же микрофон: отпускаем, чтобы рекордер открыл его
     // без спора за устройство.
     state.stop_monitor();
-    let recorder = match recorder::start(&chunks_dir, next_idx) {
+    let recorder = match recorder::start(&chunks_dir, next_idx, origin) {
         Ok(recorder) => recorder,
         Err(e) => {
             // Запись не началась — вернуть полоску уровня на экран.
@@ -595,38 +702,161 @@ fn start_day_inner(state: &tauri::State<AppState>, employee_id: String) -> Resul
         date,
         chunks_dir,
         started_at: Local::now().format("%H:%M").to_string(),
-        recorder,
+        recorder: Some(recorder),
         uploader,
+        finish_error: String::new(),
         _keep_awake: KeepAwake::acquire(),
     });
     Ok(())
 }
 
-/// Highest existing chunk index + 1 (looks in both pending and uploaded dirs).
-fn next_chunk_idx(chunks_dir: &PathBuf) -> u32 {
-    let mut max_idx: Option<u32> = None;
-    for dir in [chunks_dir.clone(), chunks_dir.join("uploaded")] {
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if let Some(idx_str) = name
-                    .strip_prefix("seg_")
-                    .and_then(|s| s.strip_suffix(".opus"))
-                {
-                    if let Ok(idx) = idx_str.parse::<u32>() {
-                        max_idx = Some(max_idx.map_or(idx, |m: u32| m.max(idx)));
-                    }
+fn recordings_root(data_dir: &Path) -> PathBuf {
+    data_dir.join("recordings")
+}
+
+/// Сюда переезжают папки смен, которые сервер уже закрыл и разобрал без
+/// этих сегментов: слать их некуда, но и стирать чужими руками не стоит.
+fn orphaned_root(data_dir: &Path) -> PathBuf {
+    data_dir.join("recordings-orphaned")
+}
+
+fn server_config(settings: &Settings) -> ServerConfig {
+    ServerConfig {
+        base_url: settings.base_url(),
+        app_key: settings.app_key(),
+        location_id: settings.location_id.clone(),
+        device_key: settings.device_key.clone(),
+    }
+}
+
+/* --- Уборка незакрытых смен ---------------------------------------------------
+ *
+ * Сервер бывает недоступен ровно в тот момент, когда сотрудник нажимает
+ * «Завершить день», а потом выключает компьютер и уходит. Раньше сегменты
+ * оставались на диске навсегда: назавтра начиналась новая смена, а к старой
+ * никто не возвращался. Теперь приложение само доделывает вчерашнее: раз в
+ * минуту, пока идёт запись не идёт, оно находит папки прошлых дат, дозагружает
+ * их сегменты и закрывает смену на сервере.
+ *
+ * Сегодняшние папки уборщик не трогает: незакрытую сегодняшнюю смену сервер
+ * возобновит по «Начать», и досылать её будет обычный загрузчик.
+ */
+
+/// Сколько сегментов прошлых дней ещё лежит на диске, и в скольких сменах.
+fn count_leftovers(data_dir: &Path, today: &str) -> (u32, u32) {
+    let mut pending = 0;
+    let mut days = 0;
+    if let Ok(entries) = std::fs::read_dir(recordings_root(data_dir)) {
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let meta = read_meta(&dir).unwrap_or_default();
+            if meta.date == today {
+                continue;
+            }
+            days += 1;
+            pending += uploader::count_pending(&dir);
+        }
+    }
+    (pending, days)
+}
+
+/// Один проход уборки. Возвращает текст последней ошибки, если была.
+fn sweep_leftovers(data_dir: &Path, settings: &Settings, today: &str) -> Option<String> {
+    let entries = match std::fs::read_dir(recordings_root(data_dir)) {
+        Ok(entries) => entries,
+        Err(_) => return None,
+    };
+    if settings.ready().is_err() {
+        return None;
+    }
+    let config = server_config(settings);
+    let client = uploader::http_client();
+    let mut last_error = None;
+
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let recording_id = entry.file_name().to_string_lossy().to_string();
+        let meta = read_meta(&dir).unwrap_or_default();
+        if meta.date == today {
+            continue;
+        }
+        if uploader::next_chunk_idx(&dir) == 0 {
+            // Ни одного сегмента: запись не началась. Мусор.
+            let _ = std::fs::remove_dir_all(&dir);
+            continue;
+        }
+        let outcome = uploader::upload_pending(&client, &dir, &recording_id, &config, None)
+            .and_then(|remaining| {
+                if remaining > 0 {
+                    anyhow::bail!("{remaining} сегментов не загрузилось");
                 }
+                uploader::finish_recording(
+                    &client,
+                    &recording_id,
+                    uploader::next_chunk_idx(&dir),
+                    &config,
+                )
+            });
+        match outcome {
+            Ok(()) => {
+                log::info!("смена {recording_id} от {} закрыта уборщиком", meta.date);
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+            Err(e) if e.downcast_ref::<RecordingClosed>().is_some() => {
+                log::warn!("смена {recording_id}: {e}; сегменты убраны в архив");
+                let orphaned = orphaned_root(data_dir);
+                let _ = std::fs::create_dir_all(&orphaned);
+                let _ = std::fs::rename(&dir, orphaned.join(&recording_id));
+            }
+            Err(e) => {
+                log::warn!("уборка смены {recording_id}: {e}");
+                last_error = Some(e.to_string());
             }
         }
     }
-    max_idx.map_or(0, |m| m + 1)
+    last_error
+}
+
+fn spawn_sweeper(app: tauri::AppHandle) {
+    std::thread::Builder::new()
+        .name("leftover-sweeper".into())
+        .spawn(move || {
+            // Первый проход через несколько секунд после запуска: окно уже
+            // открыто, и счётчик на экране появляется почти сразу.
+            std::thread::sleep(Duration::from_secs(5));
+            loop {
+                let state = app.state::<AppState>();
+                let data_dir = state.data_dir.lock().unwrap().clone();
+                let settings = state.settings.lock().unwrap().clone();
+                let today = Local::now().format("%Y-%m-%d").to_string();
+                // Во время записи сеть нужна загрузчику смены — не мешаем.
+                let busy = state.session.lock().unwrap().is_some();
+                if !busy {
+                    sweep_leftovers(&data_dir, &settings, &today);
+                }
+                let (pending, days) = count_leftovers(&data_dir, &today);
+                state.leftover_pending.store(pending, Ordering::SeqCst);
+                state.leftover_days.store(days, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        })
+        .expect("sweeper thread");
 }
 
 #[tauri::command]
 fn start_day(state: tauri::State<AppState>, employee_id: String) -> Result<(), String> {
-    if state.session.lock().unwrap().is_some() {
-        return Err("Запись уже идёт".into());
+    if let Some(session) = state.session.lock().unwrap().as_ref() {
+        return Err(if session.recorder.is_some() {
+            "Запись уже идёт".into()
+        } else {
+            "Предыдущая смена ещё отправляется — дождитесь или нажмите «Завершить» ещё раз".into()
+        });
     }
     start_day_inner(&state, employee_id.clone()).map_err(|e| e.to_string())?;
 
@@ -643,63 +873,83 @@ fn start_day(state: tauri::State<AppState>, employee_id: String) -> Result<(), S
 #[tauri::command]
 fn toggle_pause(state: tauri::State<AppState>) -> Result<bool, String> {
     let session = state.session.lock().unwrap();
-    let s = session.as_ref().ok_or("Запись не идёт")?;
-    let paused = !s.recorder.is_paused();
-    s.recorder.pause(paused);
+    let recorder = session
+        .as_ref()
+        .and_then(|s| s.recorder.as_ref())
+        .ok_or("Запись не идёт")?;
+    let paused = !recorder.is_paused();
+    recorder.pause(paused);
     Ok(paused)
 }
 
 #[tauri::command]
 fn finish_day(state: tauri::State<AppState>) -> Result<String, String> {
-    let session = state
+    // Смена вынимается из состояния на время ожидания, чтобы не держать
+    // блокировку минутами (опрос статуса встал бы вместе с ней), и кладётся
+    // обратно, если закрыть день не удалось.
+    let mut session = state
         .session
         .lock()
         .unwrap()
         .take()
         .ok_or("Запись не идёт")?;
-
     let settings = state.settings.lock().unwrap().clone();
-    let ActiveSession {
-        recording_id,
-        chunks_dir,
-        recorder,
-        uploader,
-        ..
-    } = session;
 
-    // 1. Stop capture — flushes and closes the last chunk.
-    recorder.stop().map_err(|e| e.to_string())?;
-    let total_segments = next_chunk_idx(&chunks_dir);
+    // 1. Stop capture — flushes and closes the last chunk. Микрофон свободен,
+    //    монитор снова показывает уровень, пока идёт дозагрузка.
+    if let Some(recorder) = session.recorder.take() {
+        let stopped = recorder.stop();
+        state.start_monitor();
+        if let Err(e) = stopped {
+            // Поток кодировщика упал: что успело записаться, лежит в чанках,
+            // и их всё равно надо отправить.
+            log::error!("остановка записи: {e}");
+        }
+    }
+    let total_segments = uploader::next_chunk_idx(&session.chunks_dir);
 
     // 2. Wait for every chunk to reach the server.
-    uploader.drain_and_stop().map_err(|e| e.to_string())?;
+    let config = server_config(&settings);
+    let result = session
+        .uploader
+        .wait_drained(FINISH_UPLOAD_WAIT)
+        .and_then(|()| {
+            // 3. Tell the server the day is complete.
+            uploader::finish_recording(
+                &uploader::http_client(),
+                &session.recording_id,
+                total_segments,
+                &config,
+            )
+        });
 
-    // 3. Tell the server the day is complete → processing starts.
-    let client = reqwest::blocking::Client::new();
-    let resp = with_auth(
-        client.post(format!(
-            "{}/api/recordings/{}/finish",
-            settings.base_url(),
-            recording_id
-        )),
-        &settings,
-    )
-    .json(&serde_json::json!({ "total_segments": total_segments }))
-    .send()
-    .map_err(|e| format!("Сервер недоступен: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Сервер ответил {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        ));
+    match result {
+        Ok(()) => {}
+        Err(e) if e.downcast_ref::<RecordingClosed>().is_some() => {
+            // Закрыли из админки раньше нас: считаем день завершённым, но
+            // сегменты не выбрасываем — вдруг их захотят достать.
+            log::warn!("{e}");
+            let orphaned = orphaned_root(&state.data_dir.lock().unwrap());
+            let _ = std::fs::create_dir_all(&orphaned);
+            let _ = std::fs::rename(
+                &session.chunks_dir,
+                orphaned.join(&session.recording_id),
+            );
+            return Ok(
+                "Смена уже была закрыта из админки. Запись остановлена.".into(),
+            );
+        }
+        Err(e) => {
+            let message = e.to_string();
+            session.finish_error = message.clone();
+            *state.session.lock().unwrap() = Some(session);
+            return Err(message);
+        }
     }
 
     // 4. Local cleanup: uploaded copies are no longer needed.
-    let _ = std::fs::remove_dir_all(chunks_dir.join("uploaded"));
-
-    // Смена закрыта — микрофон снова слушает монитор.
-    state.start_monitor();
+    session.uploader.stop();
+    let _ = std::fs::remove_dir_all(&session.chunks_dir);
 
     Ok(format!(
         "День завершён, {total_segments} сегментов загружено. \
@@ -750,6 +1000,8 @@ fn main() {
             // Микрофон слушается сразу при открытии окна: уровень должен быть
             // виден до начала смены, а не через десять секунд после неё.
             app.state::<AppState>().start_monitor();
+            // Незакрытые смены прошлых дней досылаются сами.
+            spawn_sweeper(app.handle().clone());
             Ok(())
         })
         .manage(AppState::default())
