@@ -9,5 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Модель VAD скачивается при сборке образа, а не при первом разборе на сервере:
+# иначе первый рабочий день зависел бы от доступности GitHub в тот момент.
+RUN python -c "from app.pipeline.vad import download_model; download_model()"
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

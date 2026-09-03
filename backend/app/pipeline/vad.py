@@ -17,6 +17,10 @@ MODEL_CACHE = Path.home() / ".cache" / "audio-analytics" / "silero_vad.onnx"
 
 SAMPLE_RATE = 16000
 WINDOW = 512  # samples per frame at 16 kHz (32 ms)
+# Audio is streamed from disk in blocks of this many frames: a twelve-hour
+# day is ~2.8 GB as float32, and loading it whole took the worker down on a
+# small server. Blocks keep memory flat regardless of the day's length.
+BLOCK_FRAMES = 2000
 
 
 def download_model(path: Path = MODEL_CACHE) -> Path:
@@ -62,32 +66,41 @@ class SileroVAD:
         return float(out[0][0])
 
 
-def find_speech_regions(
-    wav_path: str,
-    threshold: float = 0.5,
-    min_speech_ms: int = 250,
-    min_silence_ms: int = 500,
-    pad_ms: int = 200,
+def iter_frames(wav_path: str):
+    """Yield consecutive 512-sample mono frames without loading the file."""
+    with sf.SoundFile(wav_path) as src:
+        if src.samplerate != SAMPLE_RATE:
+            raise ValueError(f"Expected {SAMPLE_RATE} Hz wav, got {src.samplerate}")
+        leftover = np.zeros(0, dtype=np.float32)
+        for block in src.blocks(
+            blocksize=WINDOW * BLOCK_FRAMES, dtype="float32", always_2d=True
+        ):
+            mono = block.mean(axis=1) if block.shape[1] > 1 else block[:, 0]
+            if leftover.size:
+                mono = np.concatenate([leftover, mono])
+            n_full = len(mono) // WINDOW
+            for i in range(n_full):
+                yield mono[i * WINDOW : (i + 1) * WINDOW]
+            leftover = mono[n_full * WINDOW :]
+
+
+def regions_from_probs(
+    probs,
+    threshold: float,
+    min_speech_ms: int,
+    min_silence_ms: int,
+    pad_ms: int,
 ) -> list[tuple[float, float]]:
-    """Return merged [(start_s, end_s)] speech regions."""
-    audio, sr = sf.read(wav_path, dtype="float32")
-    if sr != SAMPLE_RATE:
-        raise ValueError(f"Expected {SAMPLE_RATE} Hz wav, got {sr}")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-
-    vad = SileroVAD()
+    """Turn a stream of per-frame speech probabilities into merged regions."""
     frame_s = WINDOW / SAMPLE_RATE
-
     regions: list[tuple[float, float]] = []
     speech_start: float | None = None
     silence_frames = 0
-    min_silence_frames = int(min_silence_ms / 1000 / frame_s)
+    min_silence_frames = max(1, int(min_silence_ms / 1000 / frame_s))
+    n_frames = 0
 
-    n_frames = len(audio) // WINDOW
-    for i in range(n_frames):
-        frame = audio[i * WINDOW : (i + 1) * WINDOW]
-        prob = vad.frame_prob(frame)
+    for i, prob in enumerate(probs):
+        n_frames = i + 1
         t = i * frame_s
         if prob >= threshold:
             if speech_start is None:
@@ -116,3 +129,16 @@ def find_speech_regions(
         else:
             merged.append((s, e))
     return merged
+
+
+def find_speech_regions(
+    wav_path: str,
+    threshold: float = 0.5,
+    min_speech_ms: int = 250,
+    min_silence_ms: int = 500,
+    pad_ms: int = 200,
+) -> list[tuple[float, float]]:
+    """Return merged [(start_s, end_s)] speech regions."""
+    vad = SileroVAD()
+    probs = (vad.frame_prob(frame) for frame in iter_frames(wav_path))
+    return regions_from_probs(probs, threshold, min_speech_ms, min_silence_ms, pad_ms)

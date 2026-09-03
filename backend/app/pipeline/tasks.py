@@ -25,10 +25,14 @@ from ..models import (
     Transcript,
 )
 from . import audio_prep
-from .asr import AsrResult, get_asr
+from .asr import AsrResult, Word, get_asr
 from .cost import compute_cost
 from .llm import DEFAULT_PROMPTS, LlmClient
-from .segmentation import Turn, group_conversations, render_transcript, words_to_turns
+from .segmentation import (
+    render_transcript,
+    split_into_blocks,
+    words_to_turns,
+)
 from .vad import find_speech_regions
 
 ANALYZABLE_TYPES = ("sale", "consultation", "refusal")
@@ -36,6 +40,12 @@ ANALYZABLE_TYPES = ("sale", "consultation", "refusal")
 # new client is easily labeled "service"), and each metric decides
 # applicability for itself anyway. Only irrelevant (personal) talk is skipped.
 METRIC_TYPES = ("sale", "consultation", "refusal", "service")
+
+# Формат сохранённой расшифровки. Раньше в хранилище лежал сырой ответ
+# провайдера с таймкодами по вырезанной речи; теперь — слова с таймкодами уже
+# по исходной записи, чтобы пересчёт по новым метрикам не платил за
+# распознавание второй раз. Сырой ответ лежит рядом, для отладки.
+TRANSCRIPT_FORMAT = 2
 
 
 def load_active_prompt(db, org_id, key: str) -> tuple[str, str | None]:
@@ -55,35 +65,35 @@ def load_active_prompt(db, org_id, key: str) -> tuple[str, str | None]:
 
 
 @celery.task(name="pipeline.process_day_recording", bind=True, max_retries=2)
-def process_day_recording(self, recording_id: str) -> str:
+def process_day_recording(self, recording_id: str, full: bool = False) -> str:
+    """Разобрать смену. `full=True` — распознать речь заново даже если
+    расшифровка с прошлого раза сохранилась."""
     db = get_sync_db()
     try:
         rec = db.get(DayRecording, recording_id)
         if not rec:
             return f"recording {recording_id} not found"
-        rec.status = "processing"
-        rec.status_detail = "preparing audio"
+        rec.set_status("processing", "подготовка аудио")
         db.commit()
 
         with tempfile.TemporaryDirectory(prefix="day_") as tmp:
-            result = _run_pipeline(db, rec, Path(tmp))
+            result = _run_pipeline(db, rec, Path(tmp), full=full)
 
-        rec.status = "done"  # status_detail already carries the run summary
+        rec.set_status("done")  # status_detail already carries the run summary
         db.commit()
         return result
     except Exception as e:
         db.rollback()
         rec = db.get(DayRecording, recording_id)
         if rec:
-            rec.status = "error"
-            rec.status_detail = f"{e}\n{traceback.format_exc()[-1500:]}"
+            rec.set_status("error", f"{e}\n{traceback.format_exc()[-1500:]}")
             db.commit()
         raise
     finally:
         db.close()
 
 
-def _cleanup_previous_results(db, rec: DayRecording) -> None:
+def _cleanup_previous_results(db, rec: DayRecording, drop_transcript: bool) -> None:
     """Make reprocessing idempotent: drop results of earlier runs."""
     old_dialogs = list(db.scalars(select(Dialog).where(Dialog.day_recording_id == rec.id)))
     for ev in db.scalars(
@@ -94,14 +104,61 @@ def _cleanup_previous_results(db, rec: DayRecording) -> None:
         for turn in db.scalars(select(DialogTurn).where(DialogTurn.dialog_id == dialog.id)):
             db.delete(turn)
         db.delete(dialog)
-    for tr in db.scalars(select(Transcript).where(Transcript.day_recording_id == rec.id)):
-        db.delete(tr)
+    if drop_transcript:
+        for tr in db.scalars(select(Transcript).where(Transcript.day_recording_id == rec.id)):
+            db.delete(tr)
     db.commit()
 
 
-def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
+def _progress(db, rec: DayRecording, detail: str) -> None:
+    """Пояснение статуса видно в админке и заодно подтверждает, что разбор
+    жив: по времени последнего изменения отличают зависший разбор."""
+    rec.set_status(detail=detail)
+    db.commit()
+
+
+def _load_saved_words(rec: DayRecording, db) -> AsrResult | None:
+    """Расшифровка прошлого прогона, если она сохранена в новом формате."""
+    transcript = db.scalar(
+        select(Transcript)
+        .where(Transcript.day_recording_id == rec.id)
+        .order_by(Transcript.created_at.desc())
+    )
+    if not transcript or not transcript.raw_json_uri or not rec.raw_audio_uri:
+        return None
+    try:
+        payload = json.loads(storage.get_bytes(transcript.raw_json_uri))
+    except Exception as e:  # noqa: BLE001 — нет расшифровки, распознаём заново
+        logger.warning("saved transcript of %s unreadable: %s", rec.id, e)
+        return None
+    if not isinstance(payload, dict) or payload.get("format") != TRANSCRIPT_FORMAT:
+        return None
+    words = [
+        Word(
+            text=str(w.get("text", "")),
+            start=float(w.get("start", 0.0)),
+            end=float(w.get("end", 0.0)),
+            speaker=str(w.get("speaker", "speaker_0")),
+        )
+        for w in payload.get("words", [])
+    ]
+    return AsrResult(
+        provider=str(payload.get("provider", transcript.asr_provider)),
+        language=str(payload.get("language", transcript.language_hint)),
+        text=str(payload.get("text", "")),
+        words=words,
+        raw=payload.get("raw"),
+    )
+
+
+def _transcribe(db, rec: DayRecording, tmp: Path) -> AsrResult | None:
+    """Скачать сегменты, склеить, найти речь и распознать её.
+
+    Возвращает None, если речи в записи нет. Таймкоды слов — по исходной
+    записи; расшифровка сохраняется в хранилище, чтобы пересчёт по другим
+    метрикам не распознавал день заново.
+    """
     settings = get_settings()
-    _cleanup_previous_results(db, rec)
 
     # 1. Download and merge segments.
     segments = list(
@@ -126,8 +183,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     storage.upload_file(merged_uri, str(merged), content_type="audio/ogg")
     rec.raw_audio_uri = merged_uri
     rec.total_duration_s = audio_prep.probe_duration_s(str(merged))
-    rec.status_detail = "running VAD"
-    db.commit()
+    _progress(db, rec, "поиск речи (VAD)")
 
     # 2. VAD → speech-only audio.
     wav = tmp / "day.wav"
@@ -140,56 +196,108 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     )
     if not regions:
         rec.speech_duration_s = 0.0
-        rec.status_detail = (
-            "речь в записи не найдена — проверьте микрофон и уровень сигнала "
-            "в приложении, затем нажмите «Обработать заново»"
-        )
-        db.commit()
-        return "no speech detected"
-    rec.speech_duration_s = sum(e - s for s, e in regions)
-    # В ASR уходит только речь, вырезанная VAD, — по ней и считается счёт.
-    rec.asr_seconds = rec.speech_duration_s
-    rec.status_detail = "transcribing"
-    db.commit()
-
+        rec.asr_seconds = 0.0
+        return None
     speech_wav = tmp / "speech.wav"
     timeline = audio_prep.cut_speech_only(str(wav), regions, str(speech_wav))
+    rec.speech_duration_s = sum(entry["duration"] for entry in timeline)
+    # В ASR уходит только речь, вырезанная VAD, — по ней и считается счёт.
+    rec.asr_seconds = rec.speech_duration_s
+    _progress(
+        db, rec, f"распознавание речи ({rec.speech_duration_s / 60:.0f} мин)"
+    )
+    # Склеенный день и WAV дальше не нужны; на 12-часовой смене это 1.5 ГБ.
+    wav.unlink(missing_ok=True)
+    for p in local_paths:
+        Path(p).unlink(missing_ok=True)
 
     # 3. ASR with timestamps mapped back to the original timeline.
     asr_result: AsrResult = get_asr().transcribe(str(speech_wav))
+    mapper = audio_prep.TimelineMapper(timeline)
     for w in asr_result.words:
-        w.start = audio_prep.map_to_original_ts(w.start, timeline)
-        w.end = audio_prep.map_to_original_ts(w.end, timeline)
+        w.start = mapper.to_original(w.start)
+        w.end = max(w.start, mapper.to_original(w.end))
 
     transcript_uri = storage.transcript_key(str(rec.id))
     storage.upload_bytes(
         transcript_uri,
-        json.dumps(asr_result.raw or {}, ensure_ascii=False).encode(),
+        json.dumps(
+            {
+                "format": TRANSCRIPT_FORMAT,
+                "provider": asr_result.provider,
+                "language": asr_result.language,
+                "text": asr_result.text,
+                "words": [
+                    {"text": w.text, "start": w.start, "end": w.end, "speaker": w.speaker}
+                    for w in asr_result.words
+                ],
+                "raw": asr_result.raw or {},
+            },
+            ensure_ascii=False,
+        ).encode(),
         content_type="application/json",
     )
-    turns = words_to_turns(asr_result.words)
-    day_text = render_transcript(turns)
     db.add(
         Transcript(
             day_recording_id=rec.id,
             asr_provider=asr_result.provider,
             language_hint=asr_result.language,
             raw_json_uri=transcript_uri,
-            text=day_text,
+            text=render_transcript(words_to_turns(asr_result.words)),
         )
     )
-    rec.status_detail = "analyzing dialogs"
     db.commit()
+    return asr_result
 
-    # 4. LLM stage 1: segment the day into dialogs (editable prompt).
+
+def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
+    settings = get_settings()
+
+    saved = None if full else _load_saved_words(rec, db)
+    _cleanup_previous_results(db, rec, drop_transcript=saved is None)
+
+    if saved is not None:
+        asr_result = saved
+        # Распознавание не вызывалось — в стоимость этого прогона оно не входит.
+        rec.asr_seconds = 0.0
+        reused_note = "расшифровка взята с прошлого разбора"
+    else:
+        asr_result = _transcribe(db, rec, tmp)
+        reused_note = ""
+        if asr_result is None:
+            rec.set_status(
+                detail=(
+                    "речь в записи не найдена — проверьте микрофон и уровень сигнала "
+                    "в приложении, затем нажмите «Обработать заново»"
+                )
+            )
+            db.commit()
+            return "no speech detected"
+
+    turns = words_to_turns(asr_result.words)
+    if not turns:
+        rec.set_status(detail="распознавание не вернуло ни одного слова")
+        db.commit()
+        return "empty transcript"
+
+    # 4. LLM stage 1: segment the day into dialogs, block by block.
     llm = LlmClient()
     seg_content, seg_model = load_active_prompt(db, rec.org_id, "dialog_segmentation")
-    dialogs_meta = llm.segment_dialogs(
-        day_text,
-        seg_content,
-        seg_model or settings.llm_model_stage1,
-        day_duration_s=rec.total_duration_s,
+    blocks = split_into_blocks(
+        turns, settings.conversation_gap_s, settings.llm_stage1_block_chars
     )
+    dialogs_meta: list[dict] = []
+    for i, block in enumerate(blocks, start=1):
+        _progress(db, rec, f"разбиение на диалоги: блок {i} из {len(blocks)}")
+        dialogs_meta.extend(
+            llm.segment_dialogs(
+                render_transcript(block),
+                seg_content,
+                seg_model or settings.llm_model_stage1,
+                day_duration_s=rec.total_duration_s,
+            )
+        )
+    dialogs_meta.sort(key=lambda d: d["start_s"])
 
     # 5. LLM stage 2: evaluate every client dialog against every active metric.
     metrics = list(
@@ -205,13 +313,22 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     failed_evals = 0
     evals_done = 0
     evals_applicable = 0
+    to_evaluate = sum(1 for m in dialogs_meta if m["type"] in METRIC_TYPES)
+    evaluated = 0
 
     for meta in dialogs_meta:
         # Timestamps and type are already validated by normalize_dialogs().
         d_start = meta["start_s"]
         d_end = meta["end_s"]
         d_type = meta["type"]
-        d_turns = [t for t in turns if t.start >= d_start - 1 and t.end <= d_end + 1]
+        # Реплика относится к диалогу, если пересекается с его окном. Модель
+        # видит в транскрипте только время НАЧАЛА реплик, поэтому её end_s —
+        # это начало последней реплики; требование «реплика закончилась до
+        # end_s» выбрасывало последнюю фразу каждого разговора.
+        d_turns = [t for t in turns if t.start < d_end + 1 and t.end > d_start - 1]
+        if d_turns:
+            d_start = min(d_start, d_turns[0].start)
+            d_end = max(d_end, max(t.end for t in d_turns))
 
         dialog = Dialog(
             org_id=rec.org_id,
@@ -243,6 +360,8 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
                 )
 
         if d_type in METRIC_TYPES and d_turns and metrics:
+            evaluated += 1
+            _progress(db, rec, f"оценка разговоров по метрикам: {evaluated} из {to_evaluate}")
             dialog_text = render_transcript(d_turns)
             dialog_evals: dict = {}
             for metric in metrics:
@@ -300,6 +419,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     }
     summary = None
     if analyses:
+        _progress(db, rec, "итоги смены")
         sum_content, sum_model = load_active_prompt(db, rec.org_id, "daily_summary")
         # The per-dialog analyses are the valuable part; a failed summary must
         # not discard them.
@@ -354,14 +474,16 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path) -> str:
     # so an empty report explains itself: no metrics? nothing applicable? errors?
     parts = [f"диалогов: {len(dialogs_meta)}"]
     if not metrics:
-        parts.append("активных метрик не было — добавьте их и нажмите «Обработать заново»")
+        parts.append("активных метрик не было — добавьте их и нажмите «Пересчитать»")
     else:
         parts.append(f"метрик: {len(metrics)}")
         parts.append(f"сработало оценок: {evals_applicable} из {evals_done}")
     if failed_evals:
         parts.append(f"ошибок оценки: {failed_evals}")
+    if reused_note:
+        parts.append(reused_note)
     parts.append(f"стоимость: ${cost.total_usd:.3f}")
     summary_line = ", ".join(parts)
-    rec.status_detail = summary_line
+    rec.set_status(detail=summary_line)
     db.commit()
     return summary_line

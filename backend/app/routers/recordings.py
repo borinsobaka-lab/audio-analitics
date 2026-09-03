@@ -161,6 +161,14 @@ async def finish_day(
     rec = await db.get(DayRecording, recording_id)
     if not rec or rec.location_id != device.location_id:
         raise HTTPException(404, "Recording not found")
+    if rec.status == "uploaded":
+        # Повторное «завершить» (приложение не дождалось ответа) — уже сделано.
+        return rec
+    if rec.status != "recording":
+        # Смену уже закрыли из админки и разобрали: опоздавший запрос не должен
+        # откатывать «готово» обратно в «ждёт разбора». Приложение по 409
+        # понимает, что дозагружать больше нечего.
+        raise HTTPException(409, f"Смена уже закрыта, статус «{rec.status}»")
 
     count = len(
         (
@@ -174,8 +182,7 @@ async def finish_day(
             409, f"Only {count}/{body.total_segments} segments uploaded; retry missing ones"
         )
 
-    rec.status = "uploaded"
-    rec.status_detail = "запись завершена, ждёт запуска разбора"
+    rec.set_status("uploaded", "запись завершена, ждёт запуска разбора")
     await db.commit()
     await db.refresh(rec)
     return rec

@@ -7,12 +7,15 @@ Placeholders available per prompt key:
   daily_summary:       {{analyses}}, {{stats}}
 """
 import json
+import logging
 import re
 from dataclasses import dataclass
 
 import anthropic
 
 from ..config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # --- Default prompt contents (seeded into DB; editable in the dashboard) ---
 
@@ -374,28 +377,50 @@ class LlmClient:
         Streaming is used because these models think before answering: a long
         day transcript can keep the connection open past the non-streaming
         request limit.
+
+        A reply that is not JSON is asked for once more: models occasionally
+        wrap the answer in prose, and one bad reply must not cost a whole day.
+        A truncated reply (stop_reason=max_tokens) is not retried — the same
+        request would be cut at the same place; the error names the fix.
         """
-        with self.client.messages.stream(
-            model=model,
-            max_tokens=self.settings.llm_max_tokens,
-            system=system or anthropic.NOT_GIVEN,
-            messages=[{"role": "user", "content": prompt}],
-        ) as stream:
-            message = stream.get_final_message()
+        last_error: Exception | None = None
+        for attempt in range(2):
+            with self.client.messages.stream(
+                model=model,
+                max_tokens=self.settings.llm_max_tokens,
+                system=system or anthropic.NOT_GIVEN,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                message = stream.get_final_message()
 
-        # Считаем расход даже у неудачного разбора: токены потрачены в любом
-        # случае, и стоимость смены должна это отражать.
-        self.usage.add(message)
+            # Считаем расход даже у неудачного разбора: токены потрачены в любом
+            # случае, и стоимость смены должна это отражать.
+            self.usage.add(message)
 
-        text = "".join(block.text for block in message.content if block.type == "text")
-        if not text.strip():
-            # With thinking enabled by default, max_tokens caps thinking and
-            # the answer together — an exhausted budget yields no text at all.
-            raise ValueError(
-                f"модель {model} не вернула текст (stop_reason={message.stop_reason}); "
-                "увеличьте LLM_MAX_TOKENS"
+            text = "".join(
+                block.text for block in message.content if block.type == "text"
             )
-        return extract_json(text)
+            if message.stop_reason == "max_tokens":
+                # With thinking enabled by default, max_tokens caps thinking and
+                # the answer together — an exhausted budget truncates the JSON
+                # or yields no text at all.
+                raise ValueError(
+                    f"модель {model} не уместила ответ в лимит "
+                    f"(stop_reason=max_tokens); увеличьте LLM_MAX_TOKENS или "
+                    "уменьшите LLM_STAGE1_BLOCK_CHARS"
+                )
+            if not text.strip():
+                raise ValueError(
+                    f"модель {model} не вернула текст (stop_reason={message.stop_reason}); "
+                    "увеличьте LLM_MAX_TOKENS"
+                )
+            try:
+                return extract_json(text)
+            except ValueError as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning("LLM reply was not JSON, asking again: %s", e)
+        raise last_error  # type: ignore[misc]
 
     def segment_dialogs(
         self,

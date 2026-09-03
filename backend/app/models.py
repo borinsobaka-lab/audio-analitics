@@ -113,9 +113,15 @@ class DayRecording(UUIDMixin, Base):
         ForeignKey("employees.id"), nullable=True
     )
     date: Mapped[date] = mapped_column(Date, index=True)
-    # recording -> uploaded -> processing -> done -> error
+    # recording -> uploaded -> queued -> processing -> done -> error
     status: Mapped[str] = mapped_column(String(32), default="recording")
     status_detail: Mapped[str] = mapped_column(Text, default="")
+    # Когда статус (или пояснение к нему) менялся в последний раз. По этому
+    # времени админка отличает разбор, который идёт, от разбора, который умер
+    # вместе с воркером и завис в «обрабатывается» навсегда.
+    status_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=utcnow
+    )
     raw_audio_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
     total_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     speech_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -131,6 +137,14 @@ class DayRecording(UUIDMixin, Base):
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     segments: Mapped[list["AudioSegment"]] = relationship(back_populates="day_recording")
+
+    def set_status(self, status: str | None = None, detail: str | None = None) -> None:
+        """Сменить статус и/или пояснение, отметив момент изменения."""
+        if status is not None:
+            self.status = status
+        if detail is not None:
+            self.status_detail = detail
+        self.status_changed_at = utcnow()
 
 
 class AudioSegment(UUIDMixin, Base):

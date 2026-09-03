@@ -19,6 +19,11 @@ class DayRecordingOut(BaseModel):
     date: date
     status: str
     status_detail: str = ""
+    status_changed_at: datetime | None = None
+    # Смена «в очереди» или «обрабатывается», но статус не двигался дольше
+    # положенного — воркер её потерял. Админке это нужно, чтобы снова показать
+    # «Пересчитать» и «Удалить».
+    stale: bool = False
     total_duration_s: float | None = None
     speech_duration_s: float | None = None
     created_at: datetime | None = None

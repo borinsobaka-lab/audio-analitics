@@ -2,6 +2,8 @@
 import logging
 import uuid
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from .. import storage
 from ..access import filter_locations, scope_days, visible_day
 from ..auth import UserContext, require_manage, require_user
+from ..config import get_settings
 from ..db import get_db
 from ..models import (
     Agreement,
@@ -40,11 +43,39 @@ from .feedback import feedback_for_day
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
+settings = get_settings()
+
+IN_FLIGHT = ("queued", "processing")
+
+
+def is_stale(rec: DayRecording) -> bool:
+    """Разбор, который числится идущим, но статус не двигался несколько часов.
+
+    Так выглядит воркер, убитый по памяти или при передеплое: обработчик
+    ошибки в нём не выполнился, и смена осталась «в обработке» навсегда.
+    Пайплайн отмечает каждый шаг, поэтому живой разбор сюда не попадает.
+    """
+    if rec.status not in IN_FLIGHT:
+        return False
+    changed = rec.status_changed_at or rec.created_at
+    if changed is None:
+        return True
+    if changed.tzinfo is None:
+        changed = changed.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - changed > timedelta(
+        seconds=settings.stale_processing_s
+    )
+
+
+def is_busy(rec: DayRecording) -> bool:
+    """Идёт ли разбор на самом деле — с поправкой на зависшие."""
+    return rec.status in IN_FLIGHT and not is_stale(rec)
 
 
 async def to_day_out(db: AsyncSession, rec: DayRecording) -> DayRecordingOut:
     """Day recording plus the names of the manager and the studio."""
     out = DayRecordingOut.model_validate(rec)
+    out.stale = is_stale(rec)
     if rec.employee_id:
         employee = await db.get(Employee, rec.employee_id)
         if employee:
@@ -207,8 +238,7 @@ async def force_finish_day(
             409, "На сервер не загружено ни одного сегмента — эту запись можно только удалить"
         )
 
-    rec.status = "uploaded"
-    rec.status_detail = "завершено вручную из админки, ждёт запуска разбора"
+    rec.set_status("uploaded", "завершено вручную из админки, ждёт запуска разбора")
     await db.commit()
     await db.refresh(rec)
     return await to_day_out(db, rec)
@@ -232,7 +262,7 @@ async def delete_day(
     rec = await db.get(DayRecording, recording_id)
     if not rec:
         raise HTTPException(404, "Recording not found")
-    if rec.status in ("processing", "queued"):
+    if is_busy(rec):
         raise HTTPException(409, "День сейчас обрабатывается, дождитесь окончания")
 
     dialog_ids = (
@@ -290,6 +320,10 @@ async def delete_day(
 @router.post("/days/{recording_id}/process", response_model=DayRecordingOut)
 async def process_day(
     recording_id: uuid.UUID,
+    full: bool = Query(
+        default=False,
+        description="Распознать речь заново, а не взять расшифровку прошлого разбора",
+    ),
     user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
@@ -301,24 +335,37 @@ async def process_day(
     нажал, обычный — оставил лежать.
 
     Этой же кнопкой смена пересчитывается после правки метрик или промптов:
-    прошлые диалоги и расшифровки заменяются новым прогоном.
+    расшифровка берётся с прошлого раза (за распознавание не платим), а
+    диалоги и оценки заменяются новым прогоном. `full=true` распознаёт заново.
+
+    Зависший разбор (статус не двигался несколько часов — воркер погиб) можно
+    перезапустить: раньше такая смена отвечала «уже в очереди» вечно.
     """
     rec = await db.get(DayRecording, recording_id)
     if not rec:
         raise HTTPException(404, "Recording not found")
-    if rec.status in ("processing", "queued"):
+    if is_busy(rec):
         raise HTTPException(409, "День уже поставлен в очередь")
     if rec.status == "recording":
         raise HTTPException(409, "Запись ещё не завершена в приложении")
 
-    rec.status = "queued"
-    rec.status_detail = "поставлен в очередь на разбор"
+    previous = (rec.status, rec.status_detail)
+    rec.set_status("queued", "поставлен в очередь на разбор")
     await db.commit()
-    await db.refresh(rec)
 
     from ..pipeline.tasks import process_day_recording
 
-    process_day_recording.delay(str(recording_id))
+    try:
+        process_day_recording.delay(str(recording_id), full)
+    except Exception as e:  # noqa: BLE001 — брокер недоступен
+        # Иначе смена осталась бы «в очереди», в которую не попала.
+        logger.error("failed to enqueue processing of %s: %s", recording_id, e)
+        rec.set_status(*previous)
+        await db.commit()
+        raise HTTPException(
+            503, "Очередь обработки недоступна — попробуйте через минуту"
+        ) from None
+    await db.refresh(rec)
     return await to_day_out(db, rec)
 
 

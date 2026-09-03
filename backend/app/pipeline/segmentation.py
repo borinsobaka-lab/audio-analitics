@@ -56,6 +56,52 @@ def group_conversations(turns: list[Turn], gap_s: float) -> list[Conversation]:
     return conversations
 
 
+def split_into_blocks(
+    turns: list[Turn], gap_s: float, max_chars: int
+) -> list[list[Turn]]:
+    """Cut the day's turns into blocks small enough for one model request.
+
+    The whole day used to go to the model in a single request. On a real
+    shift that is hours of speech in Russian and Georgian plus an answer that
+    lists a hundred dialogs: either side can outgrow the request limits, and
+    the failure mode was the entire day marked «error». Blocks are cut only
+    at pauses longer than `gap_s`, so a dialog is never split in the middle;
+    conversations are packed greedily until the rendered text would exceed
+    `max_chars`. A single conversation longer than the budget is split at its
+    longest internal pause, recursively, and only as a last resort by count.
+    """
+    if not turns:
+        return []
+
+    def size(items: list[Turn]) -> int:
+        return len(render_transcript(items))
+
+    def split_long(items: list[Turn]) -> list[list[Turn]]:
+        if size(items) <= max_chars or len(items) < 2:
+            return [items]
+        # Longest pause inside the conversation, ties → closest to the middle.
+        best_idx = max(
+            range(1, len(items)),
+            key=lambda i: (
+                items[i].start - items[i - 1].end,
+                -abs(i - len(items) / 2),
+            ),
+        )
+        return split_long(items[:best_idx]) + split_long(items[best_idx:])
+
+    blocks: list[list[Turn]] = []
+    current: list[Turn] = []
+    for conv in group_conversations(turns, gap_s):
+        for piece in split_long(conv.turns):
+            if current and size(current) + size(piece) + 1 > max_chars:
+                blocks.append(current)
+                current = []
+            current.extend(piece)
+    if current:
+        blocks.append(current)
+    return blocks
+
+
 def format_ts(seconds: float) -> str:
     s = int(seconds)
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"

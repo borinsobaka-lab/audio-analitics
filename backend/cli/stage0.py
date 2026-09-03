@@ -27,6 +27,7 @@ from app.pipeline.llm import (  # noqa: E402
 from app.pipeline.segmentation import (  # noqa: E402
     format_ts,
     render_transcript,
+    split_into_blocks,
     words_to_turns,
 )
 from app.pipeline.vad import find_speech_regions  # noqa: E402
@@ -80,9 +81,10 @@ def main() -> None:
 
         print("4/5 Transcribing (ElevenLabs Scribe)...")
         asr_result = get_asr().transcribe(str(speech_wav))
+        mapper = audio_prep.TimelineMapper(timeline)
         for w in asr_result.words:
-            w.start = audio_prep.map_to_original_ts(w.start, timeline)
-            w.end = audio_prep.map_to_original_ts(w.end, timeline)
+            w.start = mapper.to_original(w.start)
+            w.end = max(w.start, mapper.to_original(w.end))
         (out_dir / "asr_raw.json").write_text(
             json.dumps(asr_result.raw or {}, ensure_ascii=False, indent=1),
             encoding="utf-8",
@@ -99,11 +101,23 @@ def main() -> None:
 
         print("5/5 Analyzing with Claude...")
         llm = LlmClient()
-        dialogs_meta = llm.segment_dialogs(
-            day_text,
-            DEFAULT_PROMPTS["dialog_segmentation"]["content"],
-            settings.llm_model_stage1,
+        # Как и в боевом пайплайне: день режется на блоки по длинным паузам,
+        # чтобы ни вход, ни ответ модели не упирались в лимиты запроса.
+        blocks = split_into_blocks(
+            turns, settings.conversation_gap_s, settings.llm_stage1_block_chars
         )
+        dialogs_meta = []
+        for i, block in enumerate(blocks, start=1):
+            print(f"    segmenting block {i}/{len(blocks)}...")
+            dialogs_meta.extend(
+                llm.segment_dialogs(
+                    render_transcript(block),
+                    DEFAULT_PROMPTS["dialog_segmentation"]["content"],
+                    settings.llm_model_stage1,
+                    day_duration_s=total_s,
+                )
+            )
+        dialogs_meta.sort(key=lambda d: d["start_s"])
         print(f"    dialogs found: {len(dialogs_meta)}")
 
         analyses = []
@@ -114,7 +128,7 @@ def main() -> None:
             if d_type not in ANALYZABLE_TYPES:
                 continue
             d_start, d_end = float(meta.get("start_s", 0)), float(meta.get("end_s", 0))
-            d_turns = [t for t in turns if t.start >= d_start - 1 and t.end <= d_end + 1]
+            d_turns = [t for t in turns if t.start < d_end + 1 and t.end > d_start - 1]
             if not d_turns:
                 continue
             print(f"    dialog {i + 1}: {d_type} [{format_ts(d_start)}–{format_ts(d_end)}]")

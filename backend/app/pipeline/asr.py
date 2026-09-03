@@ -2,12 +2,16 @@
 timestamps + auto language detection). Keep the interface narrow so Google
 Chirp can be added as a drop-in fallback.
 """
+import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
 
 from ..config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -38,7 +42,14 @@ class ElevenLabsASR:
         if not self.api_key:
             raise RuntimeError("ELEVENLABS_API_KEY is not configured")
 
-    def transcribe(self, audio_path: str) -> AsrResult:
+    # Расшифровка идёт одним запросом на несколько часов речи: сеть или сервис
+    # могут споткнуться на середине, а повторять ради этого весь день (склейку,
+    # VAD) незачем. Повторяем только сам запрос — на обрыве соединения и на
+    # ответах, которые провайдер сам считает временными.
+    RETRY_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
+    RETRY_DELAYS_S = (30, 90, 180)
+
+    def _post(self, audio_path: str) -> httpx.Response:
         with open(audio_path, "rb") as f:
             files = {"file": (Path(audio_path).name, f, "audio/wav")}
             data = {
@@ -48,13 +59,36 @@ class ElevenLabsASR:
                 "tag_audio_events": "false",
             }
             with httpx.Client(timeout=httpx.Timeout(3600.0, connect=30.0)) as client:
-                resp = client.post(
+                return client.post(
                     self.url,
                     headers={"xi-api-key": self.api_key},
                     files=files,
                     data=data,
                 )
-        resp.raise_for_status()
+
+    def transcribe(self, audio_path: str) -> AsrResult:
+        attempts = len(self.RETRY_DELAYS_S) + 1
+        for attempt in range(attempts):
+            try:
+                resp = self._post(audio_path)
+            except httpx.TransportError as e:
+                if attempt == attempts - 1:
+                    raise
+                logger.warning("ASR transport error (%s), retry %d", e, attempt + 1)
+                time.sleep(self.RETRY_DELAYS_S[attempt])
+                continue
+            if resp.status_code in self.RETRY_STATUSES and attempt < attempts - 1:
+                logger.warning(
+                    "ASR answered %s, retry %d: %s",
+                    resp.status_code, attempt + 1, resp.text[:300],
+                )
+                time.sleep(self.RETRY_DELAYS_S[attempt])
+                continue
+            break
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"ElevenLabs Scribe ответил {resp.status_code}: {resp.text[:500]}"
+            )
         payload = resp.json()
 
         words = [

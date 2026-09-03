@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # Current models think before answering, and max_tokens caps thinking plus
     # the answer together — too low a limit returns an empty response.
     llm_max_tokens: int = 16000
+    # Сегментация дня идёт блоками, а не одним запросом на всю смену: блок
+    # режется только по паузам длиннее conversation_gap_s и не превышает этого
+    # числа символов транскрипта. Кириллица и грузинский токенизируются дорого,
+    # поэтому 40 000 символов — это порядка 15–25 тыс. токенов на вход.
+    llm_stage1_block_chars: int = 40_000
 
     # --- Тарифы для подсчёта стоимости смены (USD) ---
     # Расход (минуты и токены) хранится отдельно от суммы, поэтому при смене
@@ -78,6 +83,10 @@ class Settings(BaseSettings):
     conversation_gap_s: float = 30.0
     # Audio retention in days (lifecycle policy should mirror this on the bucket).
     audio_retention_days: int = 60
+    # Разбор, статус которого не двигался дольше этого (секунды), считается
+    # зависшим: воркер убит, а смена так и осталась «в обработке». Пайплайн
+    # обновляет статус по ходу дела, поэтому живой разбор сюда не попадает.
+    stale_processing_s: int = 3 * 3600
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
