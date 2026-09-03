@@ -86,6 +86,10 @@ export interface DayRecording {
   date: string;
   status: string;
   status_detail: string;
+  status_changed_at: string | null;
+  // Разбор числится идущим, но статус не двигался несколько часов: воркер
+  // его потерял. Кнопки «Пересчитать» и «Удалить» при этом снова доступны.
+  stale: boolean;
   total_duration_s: number | null;
   speech_duration_s: number | null;
   created_at: string | null;
@@ -324,8 +328,12 @@ export const api = {
     return request<DayRecording[]>(`/api/reports/days${tail ? `?${tail}` : ""}`);
   },
   dayReport: (id: string) => request<DayReport>(`/api/reports/days/${id}`),
-  processDay: (id: string) =>
-    request<DayRecording>(`/api/reports/days/${id}/process`, { method: "POST" }),
+  /** `full` — распознать речь заново, а не взять расшифровку прошлого разбора. */
+  processDay: (id: string, opts: { full?: boolean } = {}) =>
+    request<DayRecording>(
+      `/api/reports/days/${id}/process${opts.full ? "?full=true" : ""}`,
+      { method: "POST" }
+    ),
   forceFinishDay: (id: string) =>
     request<DayRecording>(`/api/reports/days/${id}/force-finish`, { method: "POST" }),
   deleteDay: (id: string) =>

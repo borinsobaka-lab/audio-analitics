@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogDetail,
   DialogFeedback,
+  fmtClock,
   fmtDate,
   fmtDur,
   fmtTs,
@@ -13,7 +14,7 @@ import {
   MetricEvaluation,
 } from "../api";
 import { CarriedAgreements, DayAgreements } from "../components/Agreements";
-import { Deck, DeckHandle } from "../components/Deck";
+import { canPlayRecording, Deck, DeckHandle } from "../components/Deck";
 import { FeedbackControl } from "../components/Feedback";
 import {
   Empty,
@@ -64,15 +65,21 @@ export default function DayReportPage() {
   }, [id, load]);
 
   const seek = (seconds: number) => deck.current?.seek(seconds);
+  const refreshSrc = useCallback(
+    () => (id ? api.dayAudioUrl(id).then((r) => r.url) : Promise.reject(new Error("no id"))),
+    [id]
+  );
 
-  const reprocess = async () => {
+  const reprocess = async (full = false) => {
     if (!id || reprocessing) return;
     setReprocessing(true);
     setError("");
     try {
-      await api.processDay(id);
+      await api.processDay(id, { full });
       setNotice(
-        "Поставлено в очередь: разбор появится через несколько минут — обновите страницу."
+        full
+          ? "Поставлено в очередь: речь будет распознана заново, это займёт дольше и стоит денег — обновите страницу позже."
+          : "Поставлено в очередь: разбор появится через несколько минут — обновите страницу."
       );
     } catch (e) {
       setError(String(e));
@@ -86,6 +93,9 @@ export default function DayReportPage() {
 
   const { recording, summary } = report;
   const { day, weekday } = fmtDate(recording.date);
+  // Запись идёт по часам: пауза и пропажа микрофона пишутся тишиной, поэтому
+  // «начало смены + смещение» — это настоящее время разговора на стойке.
+  const dayStartMs = recording.created_at ? new Date(recording.created_at).getTime() : null;
   const shown = report.dialogs.filter((d) => d.type !== "irrelevant");
   const conversion =
     report.conversion != null ? `${Math.round(report.conversion * 100)}%` : "—";
@@ -102,23 +112,41 @@ export default function DayReportPage() {
           </p>
         </div>
         {me.can_manage && (
-          <button
-            className="secondary"
-            onClick={reprocess}
-            disabled={reprocessing}
-            title="Прогнать ту же запись через анализ заново — например, после правки метрик"
-          >
-            {reprocessing
-              ? "Запуск…"
-              : recording.status === "done"
-                ? "Пересчитать"
-                : "Обработать"}
-          </button>
+          <div className="actions end">
+            <button
+              className="secondary"
+              onClick={() => reprocess(false)}
+              disabled={reprocessing}
+              title="Прогнать ту же расшифровку через анализ заново — например, после правки метрик. Речь не распознаётся второй раз."
+            >
+              {reprocessing
+                ? "Запуск…"
+                : recording.status === "done"
+                  ? "Пересчитать"
+                  : "Обработать"}
+            </button>
+            {(recording.status === "done" || recording.status === "error") && (
+              <button
+                className="secondary"
+                onClick={() => reprocess(true)}
+                disabled={reprocessing}
+                title="Распознать речь заново и разобрать с нуля. Платно — нужно, только если расшифровка получилась плохой."
+              >
+                Распознать заново
+              </button>
+            )}
+          </div>
         )}
       </header>
 
       {notice && <Note kind="success">{notice}</Note>}
       {error && <Note kind="error">{error}</Note>}
+      {!canPlayRecording() && (
+        <Note kind="info">
+          Этот браузер не воспроизводит формат записи (Ogg Opus), поэтому кнопки
+          ▶ работать не будут. Откройте отчёт в Chrome, Edge или Firefox.
+        </Note>
+      )}
 
       {/* Разбор начинается с проверки того, о чём договорились в прошлый раз,
           поэтому блок стоит выше цифр этого дня. */}
@@ -244,6 +272,7 @@ export default function DayReportPage() {
           <DialogCard
             key={d.id}
             dialog={d}
+            dayStartMs={dayStartMs}
             onSeek={seek}
             feedback={feedback}
             onFeedback={setFeedback}
@@ -257,6 +286,7 @@ export default function DayReportPage() {
           src={audioUrl}
           dialogs={report.dialogs}
           totalDuration={recording.total_duration_s}
+          refreshSrc={refreshSrc}
         />
       )}
     </div>
@@ -375,13 +405,21 @@ function Evaluation({
   );
 }
 
+/** Время на часах студии для смещения внутри записи. */
+function clockAt(dayStartMs: number | null, offsetS: number): string {
+  if (dayStartMs == null || Number.isNaN(dayStartMs)) return "";
+  return fmtClock(new Date(dayStartMs + offsetS * 1000).toISOString());
+}
+
 function DialogCard({
   dialog,
+  dayStartMs,
   onSeek,
   feedback,
   onFeedback,
 }: {
   dialog: Dialog;
+  dayStartMs: number | null;
   onSeek: (s: number) => void;
   feedback: DialogFeedback[];
   onFeedback: (items: DialogFeedback[]) => void;
@@ -409,6 +447,11 @@ function DialogCard({
           <IconPlay size={9} />
           {fmtTs(dialog.start_s)}–{fmtTs(dialog.end_s)}
         </button>
+        {clockAt(dayStartMs, dialog.start_s) && (
+          <span className="muted" title="Время на часах: начало смены плюс смещение в записи">
+            {clockAt(dayStartMs, dialog.start_s)}
+          </span>
+        )}
         {evals.map((ev) =>
           ev.score != null ? (
             // Цифра окрашена по той же зоне, что и полосы: в свёрнутом виде

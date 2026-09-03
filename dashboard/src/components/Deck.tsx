@@ -26,6 +26,17 @@ interface Props {
   dialogs: Dialog[];
   /** Длительность записи по данным сервера — известна до загрузки аудио. */
   totalDuration: number | null;
+  /** Свежая ссылка на аудио. Ссылка временная (час): у отчёта, открытого с
+   *  утра, перемотка в новое место после обеда молча ломалась. */
+  refreshSrc?: () => Promise<string>;
+}
+
+/** Умеет ли этот браузер играть Ogg Opus — формат, в котором лежит смена.
+ *  Safari не умеет; без подсказки кнопки ▶ выглядят сломанными. */
+export function canPlayRecording(): boolean {
+  if (typeof document === "undefined") return true;
+  const probe = document.createElement("audio");
+  return probe.canPlayType("audio/ogg; codecs=opus") !== "";
 }
 
 const LEGEND: [string, string][] = [
@@ -36,11 +47,12 @@ const LEGEND: [string, string][] = [
 ];
 
 export const Deck = forwardRef<DeckHandle, Props>(function Deck(
-  { src, dialogs, totalDuration },
+  { src, dialogs, totalDuration, refreshSrc },
   ref
 ) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const pendingSeek = useRef<number | null>(null);
+  const lastRefresh = useRef(0);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loaded, setLoaded] = useState<number | null>(null);
@@ -82,19 +94,40 @@ export const Deck = forwardRef<DeckHandle, Props>(function Deck(
     };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    // Ссылка протухла (403 на перемотке) или сеть моргнула: берём новую
+    // ссылку и возвращаемся на то же место. Не чаще раза в полминуты, чтобы
+    // настоящая ошибка не превратилась в бесконечный цикл запросов.
+    const onError = async () => {
+      if (!refreshSrc) return;
+      const now = Date.now();
+      if (now - lastRefresh.current < 30_000) return;
+      lastRefresh.current = now;
+      const at = pendingSeek.current ?? el.currentTime;
+      const wasPlaying = !el.paused;
+      try {
+        el.src = await refreshSrc();
+        pendingSeek.current = at;
+        el.load();
+        if (wasPlaying) el.play().catch(() => {});
+      } catch {
+        /* следующая попытка — по следующей ошибке */
+      }
+    };
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("loadedmetadata", onMeta);
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
     el.addEventListener("ended", onPause);
+    el.addEventListener("error", onError);
     return () => {
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("loadedmetadata", onMeta);
       el.removeEventListener("play", onPlay);
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onPause);
+      el.removeEventListener("error", onError);
     };
-  }, []);
+  }, [refreshSrc]);
 
   const toggle = () => {
     const el = audioRef.current;

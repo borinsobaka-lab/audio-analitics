@@ -100,7 +100,17 @@ const STATUS_LABELS: Record<string, string> = {
 
 const KNOWN = ["recording", "uploaded", "queued", "processing", "done", "error"];
 
-export function StatusLight({ status }: { status: string }) {
+export function StatusLight({ status, stale }: { status: string; stale?: boolean }) {
+  if (stale) {
+    // Воркер погиб, а смена так и осталась «в обработке». Это ошибка, а не
+    // ожидание, и выглядеть должна как ошибка.
+    return (
+      <span className="status error" title="Статус не менялся несколько часов — разбор потерян. Запустите заново.">
+        <span className="dot" />
+        Разбор завис
+      </span>
+    );
+  }
   const cls = KNOWN.includes(status) ? status : "";
   return (
     <span className={`status ${cls}`}>

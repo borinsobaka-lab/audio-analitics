@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd, plural } from "../api";
+import { api, DayRecording, fmtClock, fmtDate, fmtDur, fmtUsd, fmtWhen, plural } from "../api";
 import { useSession, useStudio } from "../session";
 import {
   ConfirmAction,
@@ -44,7 +44,7 @@ export default function DaysPage() {
   useEffect(load, [load]);
 
   useEffect(() => {
-    if (!days?.some((d) => IN_FLIGHT.includes(d.status))) return;
+    if (!days?.some((d) => IN_FLIGHT.includes(d.status) && !d.stale)) return;
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
   }, [days, load]);
@@ -161,7 +161,7 @@ export default function DaysPage() {
                       <span className="muted"> · {d.location_name}</span>
                     )}
                   </div>
-                  <StatusLight status={d.status} />
+                  <StatusLight status={d.status} stale={d.stale} />
                   {d.total_duration_s != null && (
                     <span className="muted">
                       {" · "}
@@ -177,6 +177,12 @@ export default function DaysPage() {
                   )}
                   {d.status_detail && (
                     <div className="day-detail">{d.status_detail.slice(0, 220)}</div>
+                  )}
+                  {d.stale && (
+                    <div className="day-detail">
+                      Статус не менялся с {fmtWhen(d.status_changed_at)} — воркер потерял
+                      этот разбор. Запустите его заново.
+                    </div>
                   )}
                   {/* Средние по метрикам — не просто «7.3 из 10»: полоса
                       отвечает на «хорошо или плохо» цветом, до чтения цифры,
@@ -232,19 +238,23 @@ export default function DaysPage() {
                       Обработать
                     </button>
                   )}
-                  {me.can_manage && (d.status === "done" || d.status === "error") && (
+                  {me.can_manage && (d.status === "done" || d.status === "error" || d.stale) && (
                     <button
                       className="secondary"
                       disabled={busyId === d.id}
-                      title="Прогнать ту же запись через анализ заново — например, после правки метрик"
+                      title={
+                        d.stale
+                          ? "Разбор потерян воркером — поставить его в очередь заново"
+                          : "Прогнать ту же запись через анализ заново — например, после правки метрик. Расшифровка берётся с прошлого раза, за распознавание платить не придётся."
+                      }
                       onClick={() =>
                         run(d.id, () => api.processDay(d.id), "Поставлено в очередь")
                       }
                     >
-                      Пересчитать
+                      {d.stale ? "Запустить заново" : "Пересчитать"}
                     </button>
                   )}
-                  {me.can_manage && !IN_FLIGHT.includes(d.status) && (
+                  {me.can_manage && (!IN_FLIGHT.includes(d.status) || d.stale) && (
                     <ConfirmAction
                       label="Удалить"
                       confirmLabel="Удалить навсегда"
@@ -263,10 +273,12 @@ export default function DaysPage() {
       {days !== null && days.length > 0 && me.can_manage && (
         <p className="muted page-note">
           «Обработать» запускает распознавание и разбор — до нажатия смена
-          просто лежит и ничего не стоит. «Пересчитать» прогоняет ту же запись
-          по текущим метрикам, аудио заново не загружается. «Завершить
-          принудительно» закрывает смену, которую приложение не закрыло само.
-          «Удалить» безвозвратно стирает и аудио, и разбор.
+          просто лежит и ничего не стоит. «Пересчитать» прогоняет ту же
+          расшифровку по текущим метрикам: речь заново не распознаётся, и
+          платить за неё второй раз не нужно. «Завершить принудительно»
+          закрывает смену, которую приложение не закрыло само. «Удалить»
+          безвозвратно стирает и аудио, и разбор. Разбор, который не двигался
+          несколько часов, помечается «завис» и запускается заново.
         </p>
       )}
     </div>
