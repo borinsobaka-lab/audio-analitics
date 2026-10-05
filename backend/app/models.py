@@ -502,6 +502,29 @@ class PlaybookItem(UUIDMixin, Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_by: Mapped[str] = mapped_column(String(255), default="")
+    # Что изменили при последней правке — показывается внизу карточки.
+    change_note: Mapped[str] = mapped_column(Text, default="")
+
+
+class PlaybookSettings(Base):
+    """Настройки продукта «Скрипты» одной строкой JSON на организацию:
+
+        {"studios":   {"<location_id>": {"ru": "Ваке", "en": "Vake", "ka": "ვაკე"}},
+         "admins":    {"<employee_id>": {"ru": "Анастасия", "en": "Anastasia", "ka": "…"}},
+         "variables": [{"key": "цена", "description": "…", "ru": "…", "en": "…", "ka": "…"}]}
+
+    Читается и сохраняется только целиком: это одна форма в админке, и
+    отдельные таблицы под каждый её блок дали бы лишь лишние джойны.
+    """
+
+    __tablename__ = "playbook_settings"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), primary_key=True
+    )
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
 
 
 class PlaybookState(Base):

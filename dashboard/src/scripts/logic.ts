@@ -5,6 +5,10 @@
  *  совпадением. Их легко сломать правкой разметки, если они в ней живут.
  */
 import type {
+  LangText,
+  Location,
+  Me,
+  PlaybookSettings,
   ScriptItem,
   ScriptKind,
   ScriptLang,
@@ -177,4 +181,90 @@ export function findByTitle(
 
 export function scriptPath(sectionId: string, itemId?: string): string {
   return itemId ? `/scripts/${sectionId}?item=${itemId}` : `/scripts/${sectionId}`;
+}
+
+
+/* --- Переменные: {админ}, {студия}, свои -------------------------------- */
+
+/** {ключ}: буквы, цифры, подчёркивание. Квадратные скобки [день] — другое:
+ *  это места, которые администратор заполняет руками. */
+export const VARIABLE_RE = /\{([0-9A-Za-zА-Яа-яЁё_]{1,40})\}/g;
+
+export const BUILTIN_VARIABLES: { key: string; description: string }[] = [
+  { key: "админ", description: "имя того, кто вошёл, — из настроек скриптов" },
+  { key: "студия", description: "выбранная студия — название на языке текста" },
+];
+
+export interface VarValue {
+  /** null — переменная известна, но на этом языке значения нет. */
+  value: string | null;
+  /** Почему нет значения — для подсказки на подсвеченной переменной. */
+  why?: string;
+}
+
+/** Подстановщик для текущего языка, студии и вошедшего. undefined —
+ *  такой переменной нет вовсе: текст в фигурных скобках остаётся текстом. */
+export type VarResolver = (key: string) => VarValue | undefined;
+
+function pick(texts: LangText | undefined, lang: ScriptLang): string | null {
+  const value = texts?.[lang]?.trim();
+  return value ? value : null;
+}
+
+export function makeResolver({
+  settings,
+  me,
+  lang,
+  studio,
+  locations,
+}: {
+  settings: PlaybookSettings | null;
+  me: Me;
+  lang: ScriptLang;
+  /** Выбранная студия — название варианта (совпадает с названием точки). */
+  studio: string;
+  locations: Location[];
+}): VarResolver {
+  const inLang = langInfo(lang).inName;
+  return (rawKey) => {
+    const key = rawKey.toLowerCase();
+    if (key === "админ") {
+      const mine = settings?.admins.find((a) => a.employee_id === me.employee_id);
+      if (!mine)
+        return {
+          value: null,
+          why: me.employee_id
+            ? "Имя не задано — откройте «Настройки» скриптов"
+            : "Вы вошли владельческим ключом — у ключа нет имени",
+        };
+      const value = pick(mine, lang);
+      return value ? { value } : { value: null, why: `Нет имени на ${inLang} — задайте в настройках` };
+    }
+    if (key === "студия") {
+      const studios = settings?.studios ?? [];
+      const location = locations.find((l) => l.name === studio);
+      const names =
+        studios.find((s) => s.location_id === location?.id) ??
+        studios.find((s) => s.location_name === studio || s.ru === studio) ??
+        (studios.filter((s) => s.active).length === 1
+          ? studios.find((s) => s.active)
+          : undefined);
+      if (!names) return { value: null, why: "Выберите студию вверху страницы" };
+      const value = pick(names, lang);
+      return value
+        ? { value }
+        : { value: null, why: `Нет названия студии на ${inLang} — задайте в настройках` };
+    }
+    const custom = settings?.variables.find((v) => v.key.toLowerCase() === key);
+    if (!custom) return undefined;
+    const value = pick(custom, lang);
+    return value ? { value } : { value: null, why: `Нет значения на ${inLang} — задайте в настройках` };
+  };
+}
+
+/** Текст с подставленными переменными — то, что уйдёт в чат по кнопке
+ *  «Копировать». Неизвестные и пустые остаются как были, в скобках: их
+ *  видно и в чате, и на экране, где они подсвечены. */
+export function resolveText(text: string, resolve: VarResolver): string {
+  return text.replace(VARIABLE_RE, (whole, key: string) => resolve(key)?.value ?? whole);
 }

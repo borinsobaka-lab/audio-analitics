@@ -524,6 +524,9 @@ class PlaybookItemIn(BaseModel):
     note: str = Field(default="", max_length=5000)
     follow_up: str = Field(default="", max_length=5000)
     variants: list[PlaybookVariant] = Field(min_length=1, max_length=12)
+    # Что изменили — обязательно при правке, при создании подставляется
+    # «Новый скрипт». Хранится только последний.
+    change_note: str = Field(default="", max_length=500)
 
     @field_validator("title")
     @classmethod
@@ -557,6 +560,7 @@ class PlaybookItemOut(BaseModel):
     position: int = 0
     updated_at: datetime | None = None
     updated_by: str = ""
+    change_note: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -588,3 +592,67 @@ class PlaybookOut(BaseModel):
 
 class PlaybookOrder(BaseModel):
     ids: list[uuid.UUID] = Field(max_length=500)
+
+
+# --- Настройки скриптов: студии, имена администраторов, переменные ---
+
+VARIABLE_KEY = r"^[0-9A-Za-zА-Яа-яЁё_]{1,40}$"
+# Имена, которые админка подставляет сама; своей переменной их не назвать.
+BUILTIN_VARIABLES = ("админ", "студия")
+
+
+class LangText(BaseModel):
+    ru: str = Field(default="", max_length=200)
+    en: str = Field(default="", max_length=200)
+    ka: str = Field(default="", max_length=200)
+
+
+class PlaybookVariable(BaseModel):
+    key: str = Field(pattern=VARIABLE_KEY)
+    description: str = Field(default="", max_length=300)
+    ru: str = Field(default="", max_length=2000)
+    en: str = Field(default="", max_length=2000)
+    ka: str = Field(default="", max_length=2000)
+
+
+class PlaybookSettingsIn(BaseModel):
+    # location_id -> названия; employee_id -> имена.
+    studios: dict[uuid.UUID, LangText] = {}
+    admins: dict[uuid.UUID, LangText] = {}
+    variables: list[PlaybookVariable] = Field(default=[], max_length=100)
+
+    @field_validator("variables")
+    @classmethod
+    def unique_keys(cls, variables: list[PlaybookVariable]) -> list[PlaybookVariable]:
+        seen: set[str] = set()
+        for v in variables:
+            key = v.key.lower()
+            if key in BUILTIN_VARIABLES:
+                raise ValueError(f"{{{v.key}}} подставляется автоматически — выберите другое имя")
+            if key in seen:
+                raise ValueError(f"Переменная {{{v.key}}} задана дважды")
+            seen.add(key)
+        return variables
+
+
+class StudioNamesOut(LangText):
+    location_id: uuid.UUID
+    location_name: str
+    active: bool = True
+
+
+class AdminNamesOut(LangText):
+    employee_id: uuid.UUID
+    full_name: str
+    has_login: bool = False
+
+
+class PlaybookSettingsOut(BaseModel):
+    """Настройки, уже собранные с людьми и студиями: у кого имя не задано,
+    приходит имя по умолчанию — русское из карточки сотрудника или точки."""
+
+    studios: list[StudioNamesOut] = []
+    admins: list[AdminNamesOut] = []
+    variables: list[PlaybookVariable] = []
+    updated_at: datetime | None = None
+    updated_by: str = ""

@@ -15,8 +15,10 @@ import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
 import {
+  BUILTIN_VARIABLES,
   findByTitle,
   LANGS,
+  makeResolver,
   scriptPath,
   searchScripts,
   searchTerms,
@@ -45,7 +47,7 @@ export default function ScriptsPage() {
   const [params] = useSearchParams();
   const focusId = params.get("item");
   const navigate = useNavigate();
-  const { playbook, error, reload } = usePlaybook();
+  const { playbook, settings, error, reload } = usePlaybook();
   const { locations } = useStudio();
   const { lang, setLang, studio, setStudio } = useScriptPrefs();
 
@@ -63,13 +65,28 @@ export default function ScriptsPage() {
   const hits = useMemo(() => searchScripts(sections, terms), [sections, terms]);
   const section = sectionId ? sections.find((s) => s.id === sectionId) : undefined;
 
-  const studios = useMemo(() => studioLabels(sections), [sections]);
-  const editorStudios = useMemo(() => {
-    const names = [...studios];
+  // Студии — и те, под которые у скриптов есть свои варианты текста, и
+  // работающие точки продаж: от выбранной зависит и вариант текста, и
+  // подстановка {студия}.
+  const studios = useMemo(() => {
+    const names = studioLabels(sections);
     for (const l of locations) if (l.active && !names.includes(l.name)) names.push(l.name);
     return names;
-  }, [studios, locations]);
+  }, [sections, locations]);
+  const editorStudios = studios;
   const activeStudio = studios.includes(studio) ? studio : studios[0] ?? "";
+
+  const resolveVar = useMemo(
+    () => makeResolver({ settings, me, lang, studio: activeStudio, locations }),
+    [settings, me, lang, activeStudio, locations]
+  );
+  const insertable = useMemo(
+    () => [
+      ...BUILTIN_VARIABLES,
+      ...(settings?.variables ?? []).map((v) => ({ key: v.key, description: v.description })),
+    ],
+    [settings]
+  );
 
   // Переход в другой раздел — это просмотр, а не поиск: запрос сбрасывается.
   useEffect(() => {
@@ -143,9 +160,19 @@ export default function ScriptsPage() {
     run(() => api.orderScripts(sec.id, ids));
   }
 
-  async function saveItem(item: ScriptItem | null, draft: ScriptItemDraft) {
-    if (item) await api.updateScript(item.id, draft);
-    else await api.createScript(draft);
+  async function saveItem(item: ScriptItem | null, draft: ScriptItemDraft, changeNote: string) {
+    const body = {
+      section_id: draft.section_id,
+      title: draft.title,
+      kind: draft.kind,
+      keywords: draft.keywords,
+      note: draft.note,
+      follow_up: draft.follow_up,
+      variants: draft.variants,
+      change_note: changeNote,
+    };
+    if (item) await api.updateScript(item.id, body);
+    else await api.createScript(body);
     await reload();
     setEditing(null);
     if (draft.section_id !== sectionId) navigate(scriptPath(draft.section_id));
@@ -178,8 +205,9 @@ export default function ScriptsPage() {
           initial={item}
           sections={sections}
           studios={editorStudios}
+          variables={insertable}
           isNew={false}
-          onSave={(draft) => saveItem(item, draft)}
+          onSave={(draft, note) => saveItem(item, draft, note)}
           onCancel={() => setEditing(null)}
         />
       );
@@ -199,6 +227,7 @@ export default function ScriptsPage() {
         studio={activeStudio}
         onStudio={setStudio}
         resolveRef={resolveRef}
+        resolveVar={resolveVar}
         flash={flash === item.id}
         canEdit={canEdit}
         onEdit={() => setEditing(item.id)}
@@ -220,8 +249,9 @@ export default function ScriptsPage() {
             initial={emptyDraft(sec.id)}
             sections={sections}
             studios={editorStudios}
+            variables={insertable}
             isNew
-            onSave={(draft) => saveItem(null, draft)}
+            onSave={(draft, note) => saveItem(null, draft, note)}
             onCancel={() => setEditing(null)}
           />
         )}
@@ -317,6 +347,11 @@ export default function ScriptsPage() {
             {s.title}
           </NavLink>
         ))}
+        {canEdit && (
+          <NavLink to="/scripts/settings" className="chip">
+            Настройки
+          </NavLink>
+        )}
       </nav>
 
       <PageHead title={title} hint={hint}>

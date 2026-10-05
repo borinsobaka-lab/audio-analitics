@@ -349,6 +349,8 @@ export interface ScriptItem {
   position: number;
   updated_at: string | null;
   updated_by: string;
+  /** Что изменили при последней правке — показывается внизу карточки. */
+  change_note: string;
 }
 
 export interface ScriptSection {
@@ -364,7 +366,43 @@ export interface Playbook {
   sections: ScriptSection[];
 }
 
-export type ScriptItemDraft = Omit<ScriptItem, "id" | "position" | "updated_at" | "updated_by">;
+export type ScriptItemDraft = Omit<
+  ScriptItem,
+  "id" | "position" | "updated_at" | "updated_by" | "change_note"
+>;
+
+export interface LangText {
+  ru: string;
+  en: string;
+  ka: string;
+}
+
+export interface ScriptVariable extends LangText {
+  key: string;
+  description: string;
+}
+
+export interface StudioNames extends LangText {
+  location_id: string;
+  location_name: string;
+  active: boolean;
+}
+
+export interface AdminNames extends LangText {
+  employee_id: string;
+  full_name: string;
+  has_login: boolean;
+}
+
+/** Настройки скриптов: из них подставляются {админ}, {студия} и свои
+ *  переменные — на выбранном языке. */
+export interface PlaybookSettings {
+  studios: StudioNames[];
+  admins: AdminNames[];
+  variables: ScriptVariable[];
+  updated_at: string | null;
+  updated_by: string;
+}
 
 // --- Endpoints ---
 
@@ -576,15 +614,25 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ ids }),
     }),
-  createScript: (body: ScriptItemDraft) =>
+  createScript: (body: ScriptItemDraft & { change_note?: string }) =>
     request<ScriptItem>("/api/playbook/items", { method: "POST", body: JSON.stringify(body) }),
-  updateScript: (id: string, body: ScriptItemDraft) =>
+  updateScript: (id: string, body: ScriptItemDraft & { change_note: string }) =>
     request<ScriptItem>(`/api/playbook/items/${id}`, {
       method: "PUT",
       body: JSON.stringify(body),
     }),
   deleteScript: (id: string) =>
     request<void>(`/api/playbook/items/${id}`, { method: "DELETE" }),
+  playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
+  savePlaybookSettings: (body: {
+    studios: Record<string, LangText>;
+    admins: Record<string, LangText>;
+    variables: ScriptVariable[];
+  }) =>
+    request<PlaybookSettings>("/api/playbook/settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };
 
 /** Позиция в записи: всегда ЧЧ:ММ:СС — смена длиннее часа, и обрезанный

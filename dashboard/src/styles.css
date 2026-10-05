@@ -1633,16 +1633,45 @@ tbody tr:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* Название и тип — в одну строку: метка справа от названия, а не отдельной
+   строкой над ним, — карточка ниже на строку. */
+.script-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Тип скрипта — цветом, чтобы различаться взглядом в длинном списке.
+   Цвета из набора, без новых: чат — синий (данные, переписка), звонок —
+   зелёный, задача — янтарный (дело в работе), справка — нейтральная.
+   Красный не берём: он значит ошибку и удаление. */
 .kind {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 8px;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 9px;
   border-radius: 999px;
   background: var(--sunk);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
+}
+.kind-chat {
+  background: var(--data-tint);
+  color: var(--data-ink);
+}
+.kind-call {
+  background: var(--green-tint);
+  color: var(--green-ink);
+}
+.kind-task {
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+}
+.script-more {
+  font-size: 12px;
+  color: var(--ink-3);
 }
 .script-section {
   font-size: 12px;
@@ -1653,21 +1682,6 @@ tbody tr:hover {
   font-weight: 600;
   letter-spacing: -0.01em;
   text-wrap: balance;
-}
-.script-preview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  color: var(--ink-3);
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
-}
-.script-quick {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
 }
 .icon-btn {
   width: var(--control-h-sm);
@@ -1693,12 +1707,20 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 0 20px 18px;
+  padding: 0 20px 16px;
 }
+/* «Как использовать» и «Дальше» — пара плашек одной формы: зелёная —
+   «до отправки», синяя — «после». Заголовки обычным текстом, не капсом:
+   их читают, а не сканируют. */
 .script-note {
-  background: var(--sunk);
-  border-radius: var(--r-sm);
-  padding: 10px 14px;
+  background: var(--green-tint);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+.script-note-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-ink);
 }
 .script-note p,
 .script-after p {
@@ -1740,7 +1762,6 @@ tbody tr:hover {
   text-wrap: pretty;
 }
 .script-text a,
-.script-preview a,
 .script-note a,
 .script-after a {
   color: var(--accent-ink);
@@ -1763,6 +1784,21 @@ tbody tr:hover {
   font-size: 13px;
   font-weight: 600;
   color: var(--data-ink);
+}
+
+/* Переменная, подставленная сама: {админ}, {студия}, свои. Зелёная
+   подложка — «уже заполнено за вас»; синяя у [день] — «заполните сами».
+   Без значения — янтарная, с подсказкой, где его задать. */
+.var {
+  background: var(--green-tint);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.var.missing {
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+  font-weight: 500;
+  cursor: help;
 }
 
 /* Место, которое надо заполнить перед отправкой: [день], [время]. */
@@ -1801,14 +1837,44 @@ button.ref:active {
   transform: none;
 }
 
+/* Полоса истории внизу каждой карточки, и в свёрнутой тоже: кто, когда и
+   что изменил. Чуть темнее карточки — читается как подвал, а не как текст
+   скрипта; мелко, третьей ступенью — это справка, не содержание. */
 .script-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   flex-wrap: wrap;
-  padding: 10px 14px 10px 20px;
+  min-height: 40px;
+  padding: 4px 10px 4px 20px;
+  background: var(--card-2);
   border-top: 1px solid var(--edge-soft);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.script-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
+.script-history > span + span::before {
+  content: "·";
+  margin-right: 6px;
+}
+.script-change {
+  color: var(--ink-2);
+}
+.script-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.script-actions button.small {
+  min-height: 30px;
+  font-size: 12px;
 }
 
 .section-form {
@@ -2223,6 +2289,139 @@ input.switch:focus-visible {
   margin: -6px 0 14px;
 }
 
+/* --- Переменные в редакторе, «что изменили», настройки скриптов -------- */
+
+.editor-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 4px;
+}
+.var-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+button.var-chip,
+.var-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--green-tint);
+  color: var(--green-ink);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+button.var-chip:hover {
+  background: var(--green);
+  color: #fff;
+  box-shadow: none;
+}
+.var-chip.static {
+  min-height: 26px;
+}
+
+/* Шаг «что изменили» — отдельная плашка над кнопками: её нельзя
+   проскочить, не заметив. */
+.change-ask {
+  background: var(--data-tint);
+  border-radius: var(--r-md);
+  padding: 14px 16px 2px;
+  margin-bottom: 12px;
+}
+.change-ask input[type="text"] {
+  background: var(--card);
+}
+
+.nav-settings {
+  margin-top: 8px;
+}
+
+.settings-page .section:first-of-type {
+  margin-top: 0;
+}
+.names-grid,
+.vars-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.names-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+.names-head {
+  padding-bottom: 2px;
+}
+.names-who {
+  font-weight: 500;
+}
+.vars-builtin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--edge-soft);
+}
+.vars-builtin-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.var-row {
+  align-items: start;
+}
+.var-key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.var-key-input {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  color: var(--green-ink);
+  font-weight: 600;
+}
+.var-key-input input[type="text"] {
+  color: var(--green-ink);
+  font-weight: 600;
+}
+.var-desc {
+  font-size: 13px;
+}
+.var-row textarea {
+  min-height: var(--control-h);
+  resize: vertical;
+}
+/* Сохранение — липкой полосой внизу: форма длинная, кнопка должна быть
+   под рукой из любого её места. */
+.settings-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-2);
+}
+
 /* --- Адаптив ------------------------------------------------------------ */
 
 @media (max-width: 900px) {
@@ -2353,6 +2552,16 @@ input.switch:focus-visible {
   .choices {
     grid-template-columns: 1fr;
   }
+  .names-row {
+    grid-template-columns: 1fr;
+  }
+  .names-head {
+    display: none;
+  }
+  .names-row + .names-row {
+    padding-top: 10px;
+    border-top: 1px solid var(--edge-soft);
+  }
   .modal {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
@@ -2381,15 +2590,6 @@ input.switch:focus-visible {
   }
   .copy-btn {
     min-width: 0;
-  }
-  /* В свёрнутой карточке на телефоне — только значок: подпись отняла бы
-     у названия скрипта половину строки. */
-  .script-quick .copy-btn {
-    width: var(--control-h-sm);
-    padding: 0;
-  }
-  .script-quick .copy-label {
-    display: none;
   }
 }
 

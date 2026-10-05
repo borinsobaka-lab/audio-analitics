@@ -28,6 +28,7 @@ import { MapPointIcon } from "@solar-icons/react/bold-duotone/map-point";
 import { PhoneCallingRoundedIcon } from "@solar-icons/react/bold-duotone/phone-calling-rounded";
 import { QuestionCircleIcon } from "@solar-icons/react/bold-duotone/question-circle";
 import { Shop2Icon } from "@solar-icons/react/bold-duotone/shop-2";
+import { SettingsIcon } from "@solar-icons/react/bold-duotone/settings";
 import { ShieldCheckIcon } from "@solar-icons/react/bold-duotone/shield-check";
 import { SmartphoneUpdateIcon } from "@solar-icons/react/bold-duotone/smartphone-update";
 import { StarShineIcon } from "@solar-icons/react/bold-duotone/star-shine";
@@ -47,6 +48,7 @@ export const NavIcons = {
   studio: Shop2Icon,
   app: SmartphoneUpdateIcon,
   allScripts: DocumentsIcon,
+  settings: SettingsIcon,
 } satisfies Record<string, IconComponent>;
 
 /** Иконки, из которых владелец выбирает иконку раздела скриптов. Ключи

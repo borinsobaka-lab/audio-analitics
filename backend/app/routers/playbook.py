@@ -24,7 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import UserContext, require_scripts_edit, require_user
 from ..db import get_db
-from ..models import Organization, PlaybookItem, PlaybookSection, PlaybookState, utcnow
+from ..models import (
+    Employee,
+    Location,
+    Organization,
+    PlaybookItem,
+    PlaybookSection,
+    PlaybookSettings,
+    PlaybookState,
+    utcnow,
+)
 from ..schemas import (
     PlaybookItemIn,
     PlaybookItemOut,
@@ -33,11 +42,16 @@ from ..schemas import (
     PlaybookSectionIn,
     PlaybookSectionOut,
     PlaybookSectionPatch,
+    PlaybookSettingsIn,
+    PlaybookSettingsOut,
+    AdminNamesOut,
+    StudioNamesOut,
 )
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "playbook_default.json"
+SEED_NOTE = "Перенесено из документа «Скрипты LS Tbilisi»"
 
 
 @lru_cache
@@ -89,6 +103,8 @@ def clean_variants(body: PlaybookItemIn) -> list[dict]:
 
 
 def author(user: UserContext) -> str:
+    if user.is_owner:
+        return "Владелец"
     return user.full_name or user.email or "владелец"
 
 
@@ -125,6 +141,7 @@ async def ensure_seeded(db: AsyncSession, org: Organization) -> None:
                         variants=clean_variants(item),
                         position=i_pos,
                         updated_by="перенесено из документа",
+                        change_note=SEED_NOTE,
                     )
                 )
     db.add(PlaybookState(org_id=org.id))
@@ -334,6 +351,7 @@ async def create_item(
             db, PlaybookItem, PlaybookItem.section_id == section.id
         ),
         updated_by=author(user),
+        change_note=body.change_note.strip() or "Новый скрипт",
     )
     db.add(item)
     await db.commit()
@@ -348,6 +366,11 @@ async def update_item(
     user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
+    note = body.change_note.strip()
+    if not note:
+        # Скрипт меняется у всех сразу: без пары слов «что и зачем» человек у
+        # стойки увидит другой текст и не поймёт, ошибка это или так задумано.
+        raise HTTPException(422, "Опишите, что изменили — это увидят все на карточке скрипта")
     item = await get_item(db, item_id)
     if body.section_id != item.section_id:
         # Перенесённый скрипт встаёт в конец нового раздела — там его и ищут
@@ -365,6 +388,7 @@ async def update_item(
     item.variants = clean_variants(body)
     item.updated_at = utcnow()
     item.updated_by = author(user)
+    item.change_note = note
     await db.commit()
     await db.refresh(item)
     return item
@@ -380,3 +404,105 @@ async def delete_item(
     await db.delete(item)
     await db.commit()
     return None
+
+
+# --- Настройки: студии, имена администраторов, переменные ---
+
+def first_name(full_name: str) -> str:
+    """Имя по умолчанию — первое слово: в чате пишут «Меня зовут Анна», а не
+    «Анна Гелашвили»."""
+    parts = full_name.split()
+    return parts[0] if parts else ""
+
+
+@router.get("/settings", response_model=PlaybookSettingsOut)
+async def get_settings(
+    user: UserContext = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Читают все вошедшие: без настроек админка не подставит в скрипт ни
+    имя администратора, ни студию, ни переменные."""
+    org = await current_org(db)
+    row = await db.get(PlaybookSettings, org.id)
+    data = (row.data if row else None) or {}
+    studios = data.get("studios", {})
+    admins = data.get("admins", {})
+
+    locations = (
+        await db.scalars(select(Location).order_by(Location.active.desc(), Location.name))
+    ).all()
+    employees = (
+        await db.scalars(
+            select(Employee)
+            .where(Employee.active.is_(True))
+            .order_by(Employee.login.is_(None), Employee.full_name)
+        )
+    ).all()
+
+    def names(saved: dict | None, default_ru: str) -> dict:
+        saved = saved or {}
+        return {
+            "ru": saved.get("ru") or default_ru,
+            "en": saved.get("en", ""),
+            "ka": saved.get("ka", ""),
+        }
+
+    return PlaybookSettingsOut(
+        studios=[
+            StudioNamesOut(
+                location_id=loc.id,
+                location_name=loc.name,
+                active=loc.active,
+                **names(studios.get(str(loc.id)), loc.name),
+            )
+            for loc in locations
+        ],
+        admins=[
+            AdminNamesOut(
+                employee_id=emp.id,
+                full_name=emp.full_name,
+                has_login=bool(emp.login),
+                **names(admins.get(str(emp.id)), first_name(emp.full_name)),
+            )
+            for emp in employees
+        ],
+        variables=data.get("variables", []),
+        updated_at=row.updated_at if row else None,
+        updated_by=row.updated_by if row else "",
+    )
+
+
+@router.put("/settings", response_model=PlaybookSettingsOut)
+async def save_settings(
+    body: PlaybookSettingsIn,
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await current_org(db)
+
+    def clean(texts) -> dict:
+        return {lang: getattr(texts, lang).strip() for lang in ("ru", "en", "ka")}
+
+    data = {
+        "studios": {str(k): clean(v) for k, v in body.studios.items()},
+        "admins": {str(k): clean(v) for k, v in body.admins.items()},
+        "variables": [
+            {
+                "key": v.key.strip(),
+                "description": v.description.strip(),
+                "ru": v.ru.strip(),
+                "en": v.en.strip(),
+                "ka": v.ka.strip(),
+            }
+            for v in body.variables
+        ],
+    }
+    row = await db.get(PlaybookSettings, org.id)
+    if row:
+        row.data = data
+        row.updated_at = utcnow()
+        row.updated_by = author(user)
+    else:
+        db.add(PlaybookSettings(org_id=org.id, data=data, updated_by=author(user)))
+    await db.commit()
+    return await get_settings(user, db)

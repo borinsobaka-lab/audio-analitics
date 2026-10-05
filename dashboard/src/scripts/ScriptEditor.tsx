@@ -4,7 +4,7 @@
  *  сообщения на трёх языках, «что дальше». Пишется прямо на месте карточки,
  *  чтобы правка не уводила со страницы, где видно соседние скрипты.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ScriptItemDraft,
   ScriptKind,
@@ -43,6 +43,7 @@ export default function ScriptEditor({
   sections,
   studios,
   isNew,
+  variables,
   onSave,
   onCancel,
 }: {
@@ -51,13 +52,51 @@ export default function ScriptEditor({
   /** Названия студий, под которые можно разделить текст. */
   studios: string[];
   isNew: boolean;
-  onSave: (draft: ScriptItemDraft) => Promise<void>;
+  /** Переменные, которые можно вставить в текст: {админ}, {студия}, свои. */
+  variables: { key: string; description: string }[];
+  onSave: (draft: ScriptItemDraft, changeNote: string) => Promise<void>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ScriptItemDraft>(() => clone(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Сохранение правки — в два шага: сначала «что изменили», потом запись.
+  const [asking, setAsking] = useState(false);
+  const [changeNote, setChangeNote] = useState("");
+  // Поле, в котором стоял курсор: туда вставляется переменная по кнопке.
+  const lastField = useRef<string | null>(null);
   const byStudio = draft.variants.length > 1;
+
+  /** Вставить {переменную} туда, где стоял курсор, — в текст сообщения,
+   *  пояснение или «Дальше». */
+  function insertVariable(key: string) {
+    const id = lastField.current;
+    const el = id ? (document.getElementById(id) as HTMLTextAreaElement | null) : null;
+    if (!id || !el) {
+      setError("Поставьте курсор в текст сообщения, а потом нажмите на переменную");
+      return;
+    }
+    setError(null);
+    const token = `{${key}}`;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    const next = el.value.slice(0, start) + token + el.value.slice(end);
+    const m = /^msg-(\d+)-(\d+)-(ru|en|ka)$/.exec(id);
+    if (m) setMessage(Number(m[1]), Number(m[2]), { [m[3]]: next } as Partial<ScriptMessage>);
+    else if (id === "ed-note") patch({ note: next });
+    else if (id === "ed-follow") patch({ follow_up: next });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
+
+  const focusProps = (id: string) => ({
+    id,
+    onFocus: () => {
+      lastField.current = id;
+    },
+  });
 
   function patch(fields: Partial<ScriptItemDraft>) {
     setDraft((d) => ({ ...d, ...fields }));
@@ -115,16 +154,28 @@ export default function ScriptEditor({
     return null;
   }
 
-  async function save() {
+  /** Первый шаг: проверить форму и спросить, что изменили. Новый скрипт
+   *  сохраняется сразу — «что изменили» у него одно: «Новый скрипт». */
+  function requestSave() {
     const problem = validate();
     if (problem) {
       setError(problem);
       return;
     }
+    setError(null);
+    if (isNew) commit("Новый скрипт");
+    else setAsking(true);
+  }
+
+  async function commit(note: string) {
+    if (!note.trim()) {
+      setError("Опишите в двух словах, что изменили, — это увидят все на карточке скрипта");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await onSave(draft);
+      await onSave(draft, note.trim());
     } catch (e) {
       setError((e as Error).message);
       setSaving(false);
@@ -178,6 +229,7 @@ export default function ScriptEditor({
         <label className="field">
           <span className="label">Как использовать — видит только администратор</span>
           <textarea
+            {...focusProps("ed-note")}
             value={draft.note}
             rows={rowsFor(draft.note, 2)}
             placeholder="Когда отправлять, что проверить перед этим. Необязательно."
@@ -248,6 +300,7 @@ export default function ScriptEditor({
                   <label className="lang-field" key={l.key}>
                     <span className="lang-tag">{l.label}</span>
                     <textarea
+                      {...focusProps(`msg-${vi}-${mi}-${l.key}`)}
                       value={message[l.key]}
                       lang={l.key}
                       rows={rowsFor(message[l.key])}
@@ -293,15 +346,36 @@ export default function ScriptEditor({
             </button>
           )}
         </div>
-        <p className="muted editor-hint">
-          [день], [время] в квадратных скобках подсвечиваются как места, которые
-          надо заполнить. «Название другого скрипта» в кавычках-ёлочках
-          становится ссылкой на него.
-        </p>
+        <div className="editor-vars">
+          <span className="label">Вставить переменную — туда, где курсор</span>
+          <div className="var-chips">
+            {variables.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                className="var-chip"
+                title={v.description || undefined}
+                // mousedown не уводит фокус из текста — курсор остаётся там,
+                // куда вставлять.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => insertVariable(v.key)}
+              >
+                {`{${v.key}}`}
+              </button>
+            ))}
+          </div>
+          <p className="muted editor-hint">
+            {"{переменные}"} в фигурных скобках подставляются сами — имя вошедшего,
+            студия, значения из настроек — на языке текста. [день], [время] в
+            квадратных скобках — места, которые администратор заполняет руками.
+            «Название другого скрипта» в кавычках-ёлочках становится ссылкой.
+          </p>
+        </div>
 
         <label className="field">
           <span className="label">Дальше — что сделать после отправки</span>
           <textarea
+            {...focusProps("ed-follow")}
             value={draft.follow_up}
             rows={rowsFor(draft.follow_up, 2)}
             placeholder="Например: через 2 дня поставить задачу «Заканчиваем запись»"
@@ -319,15 +393,48 @@ export default function ScriptEditor({
           />
         </label>
 
+        {asking && (
+          <div className="change-ask">
+            <label className="field">
+              <span className="label">Что изменили? Это увидят все на карточке скрипта</span>
+              <input
+                type="text"
+                value={changeNote}
+                autoFocus
+                maxLength={500}
+                placeholder="Например: обновили цену пробного, добавили ветку для EN"
+                onChange={(e) => setChangeNote(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit(changeNote);
+                  if (e.key === "Escape") setAsking(false);
+                }}
+              />
+            </label>
+          </div>
+        )}
+
         {error && <Note kind="error">{error}</Note>}
 
         <div className="actions">
-          <button type="button" onClick={save} disabled={saving}>
-            {saving ? "Сохраняем…" : isNew ? "Добавить скрипт" : "Сохранить"}
-          </button>
-          <button type="button" className="ghost" onClick={onCancel} disabled={saving}>
-            Отмена
-          </button>
+          {asking ? (
+            <>
+              <button type="button" onClick={() => commit(changeNote)} disabled={saving || !changeNote.trim()}>
+                {saving ? "Сохраняем…" : "Сохранить изменения"}
+              </button>
+              <button type="button" className="ghost" onClick={() => setAsking(false)} disabled={saving}>
+                Назад к правке
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={requestSave} disabled={saving}>
+                {saving ? "Сохраняем…" : isNew ? "Добавить скрипт" : "Сохранить"}
+              </button>
+              <button type="button" className="ghost" onClick={onCancel} disabled={saving}>
+                Отмена
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

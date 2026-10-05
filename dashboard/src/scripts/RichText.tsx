@@ -2,13 +2,15 @@
  *
  *  В базе тексты лежат ровно такими, какими уйдут в чат: без звёздочек и
  *  тегов. Разметка добавляется только при показе:
+ *  - {админ}, {студия}, свои переменные — подставлены значением на языке
+ *    текста; если значения нет, переменная подсвечена и объясняет почему;
  *  - [день], [время] — места, которые надо заполнить перед отправкой;
  *  - ссылки кликабельны (карта, отзывы, приложение — их проверяют глазами);
  *  - «Название скрипта» в пояснениях ведёт к этому скрипту;
  *  - слова поиска подсвечены.
  */
 import { ReactNode } from "react";
-import { normalize } from "./logic";
+import { normalize, VARIABLE_RE, VarResolver } from "./logic";
 
 const URL_RE = /https?:\/\/[^\s<>"«»]+/g;
 const PLACEHOLDER_RE = /\[[^[\]\n]{1,40}\]/g;
@@ -19,6 +21,7 @@ type Piece =
   | { kind: "text"; value: string }
   | { kind: "url"; value: string }
   | { kind: "placeholder"; value: string }
+  | { kind: "var"; key: string; value: string | null; why?: string }
   | { kind: "ref"; value: string; open: () => void };
 
 function splitUrls(text: string): Piece[] {
@@ -102,13 +105,22 @@ export default function RichText({
   text,
   terms = [],
   resolveRef,
+  resolveVar,
 }: {
   text: string;
   terms?: string[];
   /** Вернуть переход к скрипту с таким названием или null, если его нет. */
   resolveRef?: (title: string) => (() => void) | null;
+  /** Подстановка переменных; без неё {…} остаются текстом. */
+  resolveVar?: VarResolver;
 }) {
   let pieces = splitUrls(text);
+  if (resolveVar) {
+    pieces = splitPattern(pieces, new RegExp(VARIABLE_RE.source, "g"), (m) => {
+      const found = resolveVar(m[1]);
+      return found ? { kind: "var", key: m[1], value: found.value, why: found.why } : null;
+    });
+  }
   pieces = splitPattern(pieces, PLACEHOLDER_RE, (m) => ({ kind: "placeholder", value: m[0] }));
   if (resolveRef) {
     pieces = splitPattern(pieces, REF_RE, (m) => {
@@ -125,6 +137,16 @@ export default function RichText({
               <a key={i} href={piece.value} target="_blank" rel="noreferrer noopener">
                 <Highlight text={piece.value} terms={terms} />
               </a>
+            );
+          case "var":
+            return piece.value !== null ? (
+              <span key={i} className="var" title={`Подставлено из {${piece.key}}`}>
+                <Highlight text={piece.value} terms={terms} />
+              </span>
+            ) : (
+              <span key={i} className="var missing" title={piece.why}>
+                {`{${piece.key}}`}
+              </span>
             );
           case "placeholder":
             return (

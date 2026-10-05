@@ -1,12 +1,16 @@
 /** Карточка скрипта.
  *
- *  Свёрнутая — название, начало текста и кнопка «Копировать»: опытному
- *  администратору этого хватает, раскрывать ничего не нужно. Раскрытая —
- *  всё, что было в документе вокруг текста: когда отправлять, ветки «если
- *  выбирают…», варианты по студиям и что сделать после отправки.
+ *  Свёрнутая — название и первое сообщение целиком, на подложке и с кнопкой
+ *  «Копировать»: обрезанный текст заставлял раскрывать карточку только ради
+ *  того, чтобы его дочитать, а копировать вслепую то, чего не видно, нельзя.
+ *  Раскрытая — всё, что было в документе вокруг текста: когда отправлять,
+ *  ветки «если выбирают…», варианты по студиям и что сделать после отправки.
+ *
+ *  Внизу всегда полоса: кто, когда и что изменил в последний раз. Скрипт
+ *  меняется у всех сразу, и у стойки должно быть видно, почему текст другой.
  */
 import { useEffect, useRef, useState } from "react";
-import { fmtWhen, ScriptItem, ScriptLang, ScriptSection } from "../api";
+import { fmtWhen, ScriptItem, ScriptLang, ScriptMessage, ScriptSection } from "../api";
 import { ConfirmAction } from "../components/ui";
 import {
   copyText,
@@ -14,6 +18,8 @@ import {
   langInfo,
   messageText,
   pickVariant,
+  resolveText,
+  VarResolver,
 } from "./logic";
 import RichText, { Highlight } from "./RichText";
 
@@ -73,6 +79,43 @@ export function CopyButton({ text, label = "Копировать" }: { text: str
   );
 }
 
+/** Одно сообщение: подпись, «Копировать» и текст на подложке-пузыре. */
+function MessageBlock({
+  message,
+  index,
+  total,
+  lang,
+  terms,
+  resolveVar,
+}: {
+  message: ScriptMessage;
+  index: number;
+  total: number;
+  lang: ScriptLang;
+  terms: string[];
+  resolveVar: VarResolver;
+}) {
+  const shown = messageText(message, lang);
+  return (
+    <div className="script-msg">
+      <div className="script-msg-head">
+        <span className="script-msg-label">
+          {message.label || (total > 1 ? `Сообщение ${index + 1}` : "Текст")}
+        </span>
+        <CopyButton text={resolveText(shown.text, resolveVar)} />
+      </div>
+      {shown.fallback && (
+        <p className="script-missing">
+          Текста на {langInfo(lang).inName} нет — показан {langInfo(shown.lang).name}.
+        </p>
+      )}
+      <div className="script-text" lang={shown.lang}>
+        <RichText text={shown.text} terms={terms} resolveVar={resolveVar} />
+      </div>
+    </div>
+  );
+}
+
 export default function ScriptCard({
   item,
   section,
@@ -84,6 +127,7 @@ export default function ScriptCard({
   studio,
   onStudio,
   resolveRef,
+  resolveVar,
   flash,
   canEdit,
   onEdit,
@@ -102,6 +146,7 @@ export default function ScriptCard({
   studio: string;
   onStudio: (label: string) => void;
   resolveRef: (title: string) => (() => void) | null;
+  resolveVar: VarResolver;
   flash: boolean;
   canEdit: boolean;
   onEdit: () => void;
@@ -111,9 +156,10 @@ export default function ScriptCard({
   isLast: boolean;
 }) {
   const variant = pickVariant(item, studio);
-  const messages = variant.messages.map((m) => ({ message: m, shown: messageText(m, lang) }));
-  const first = messages[0]?.shown;
-  const single = messages.length === 1 ? first : null;
+  const messages = variant.messages;
+  const shownMessages = expanded ? messages : messages.slice(0, 1);
+  const more = messages.length - 1;
+  const hasExtras = more > 0 || Boolean(item.note) || Boolean(item.follow_up) || item.variants.length > 1;
   const bodyId = `script-body-${item.id}`;
 
   return (
@@ -126,125 +172,122 @@ export default function ScriptCard({
           aria-controls={bodyId}
           onClick={onToggle}
         >
-          <span className="script-meta">
-            <span className="kind">{KIND_LABELS[item.kind]}</span>
-            {showSection && <span className="script-section">{section.title}</span>}
-            {variant.label && item.variants.length > 1 && (
-              <span className="script-section">{variant.label}</span>
-            )}
+          {/* Тип — цветной меткой справа от названия: отдельная строка под
+              метку съедала высоту каждой карточки. */}
+          <span className="script-title-row">
+            <span className="script-title">
+              <Highlight text={item.title} terms={terms} />
+            </span>
+            <span className={`kind kind-${item.kind}`}>{KIND_LABELS[item.kind]}</span>
           </span>
-          <span className="script-title">
-            <Highlight text={item.title} terms={terms} />
-          </span>
-          {!expanded && first && (
-            <span className="script-preview">
-              {/* Превью — одной строкой: переносы из письма здесь только
-                  съели бы две отведённые строки пустотой. */}
-              <RichText text={first.text.replace(/\s*\n\s*/g, " ")} terms={terms} />
+          {(showSection || (variant.label && item.variants.length > 1) || (!expanded && more > 0)) && (
+            <span className="script-meta">
+              {showSection && <span className="script-section">{section.title}</span>}
+              {variant.label && item.variants.length > 1 && (
+                <span className="script-section">{variant.label}</span>
+              )}
+              {!expanded && more > 0 && (
+                <span className="script-more">
+                  ещё {more} {more === 1 ? "сообщение" : more < 5 ? "сообщения" : "сообщений"}
+                </span>
+              )}
             </span>
           )}
         </button>
-        <div className="script-quick">
-          {/* Быстрое копирование — только когда сообщение одно: из скрипта
-              с ветками «если выбирают…» нечего копировать вслепую. */}
-          {single && !expanded && <CopyButton text={single.text} />}
+        {hasExtras && (
           <button
             type="button"
             className="ghost small icon-btn"
             onClick={onToggle}
-            aria-label={expanded ? "Свернуть" : "Развернуть"}
+            aria-label={expanded ? "Свернуть" : "Развернуть: пояснения, все сообщения, что дальше"}
+            title={expanded ? "Свернуть" : "Пояснения, все сообщения, что дальше"}
             aria-expanded={expanded}
             aria-controls={bodyId}
           >
             <IconChevron open={expanded} />
           </button>
-        </div>
+        )}
       </div>
 
-      {expanded && (
-        <div className="script-body" id={bodyId}>
-          {item.note && (
-            <div className="script-note">
-              <span className="label">Как использовать</span>
-              <p>
-                <RichText text={item.note} terms={terms} resolveRef={resolveRef} />
-              </p>
-            </div>
-          )}
+      <div className="script-body" id={bodyId}>
+        {expanded && item.note && (
+          <div className="script-note">
+            <span className="script-note-title">Как использовать</span>
+            <p>
+              <RichText text={item.note} terms={terms} resolveRef={resolveRef} resolveVar={resolveVar} />
+            </p>
+          </div>
+        )}
 
-          {item.variants.length > 1 && (
-            <div className="script-variants">
-              <span className="label">Студия</span>
-              <div className="seg" role="group" aria-label="Вариант для студии">
-                {item.variants.map((v) => (
-                  <button
-                    key={v.label}
-                    type="button"
-                    className={`seg-btn${v === variant ? " on" : ""}`}
-                    aria-pressed={v === variant}
-                    onClick={() => onStudio(v.label)}
-                  >
-                    {v.label}
-                  </button>
-                ))}
-              </div>
+        {expanded && item.variants.length > 1 && (
+          <div className="script-variants">
+            <span className="label">Студия</span>
+            <div className="seg" role="group" aria-label="Вариант для студии">
+              {item.variants.map((v) => (
+                <button
+                  key={v.label}
+                  type="button"
+                  className={`seg-btn${v === variant ? " on" : ""}`}
+                  aria-pressed={v === variant}
+                  onClick={() => onStudio(v.label)}
+                >
+                  {v.label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {messages.map(({ message, shown }, i) => (
-            <div className="script-msg" key={i}>
-              <div className="script-msg-head">
-                <span className="script-msg-label">
-                  {message.label ||
-                    (messages.length > 1 ? `Сообщение ${i + 1}` : "Текст")}
-                </span>
-                <CopyButton text={shown.text} />
-              </div>
-              {shown.fallback && (
-                <p className="script-missing">
-                  Текста на {langInfo(lang).inName} нет — показан{" "}
-                  {langInfo(shown.lang).name}.
-                </p>
-              )}
-              <div className="script-text" lang={shown.lang}>
-                <RichText text={shown.text} terms={terms} />
-              </div>
-            </div>
-          ))}
+        {shownMessages.map((message, i) => (
+          <MessageBlock
+            key={i}
+            message={message}
+            index={i}
+            total={messages.length}
+            lang={lang}
+            terms={terms}
+            resolveVar={resolveVar}
+          />
+        ))}
 
-          {item.follow_up && (
-            <div className="script-after">
-              <span className="script-after-title">Дальше</span>
-              <p>
-                <RichText text={item.follow_up} terms={terms} resolveRef={resolveRef} />
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+        {expanded && item.follow_up && (
+          <div className="script-after">
+            <span className="script-after-title">❗ Дальше</span>
+            <p>
+              <RichText text={item.follow_up} terms={terms} resolveRef={resolveRef} resolveVar={resolveVar} />
+            </p>
+          </div>
+        )}
+      </div>
 
-      {expanded && canEdit && (
-        <div className="script-foot">
-          <span className="muted">
-            {item.updated_by ? `${item.updated_by} · ` : ""}
-            {item.updated_at ? fmtWhen(item.updated_at) : ""}
-          </span>
-          <div className="actions">
-            <button type="button" className="ghost small" disabled={isFirst}
-              onClick={() => onMove(-1)} aria-label="Выше" title="Выше">
-              ↑
-            </button>
-            <button type="button" className="ghost small" disabled={isLast}
-              onClick={() => onMove(1)} aria-label="Ниже" title="Ниже">
-              ↓
-            </button>
-            <button type="button" className="secondary small" onClick={onEdit}>
+      {/* Полоса истории — на любой карточке, и в свёрнутом виде тоже. */}
+      <footer className="script-foot">
+        <span className="script-history">
+          {item.updated_at && <span className="num">{fmtWhen(item.updated_at)}</span>}
+          {item.updated_by && <span>{item.updated_by}</span>}
+          {item.change_note && <span className="script-change">{item.change_note}</span>}
+        </span>
+        {canEdit && (
+          <span className="script-actions">
+            {expanded && (
+              <>
+                <button type="button" className="ghost small" disabled={isFirst}
+                  onClick={() => onMove(-1)} aria-label="Выше" title="Выше">
+                  ↑
+                </button>
+                <button type="button" className="ghost small" disabled={isLast}
+                  onClick={() => onMove(1)} aria-label="Ниже" title="Ниже">
+                  ↓
+                </button>
+                <ConfirmAction small label="Удалить" confirmLabel="Удалить скрипт" onConfirm={onDelete} />
+              </>
+            )}
+            <button type="button" className="ghost small" onClick={onEdit}>
               Изменить
             </button>
-            <ConfirmAction small label="Удалить" confirmLabel="Удалить скрипт" onConfirm={onDelete} />
-          </div>
-        </div>
-      )}
+          </span>
+        )}
+      </footer>
     </article>
   );
 }

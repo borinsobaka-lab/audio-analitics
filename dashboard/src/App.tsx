@@ -13,9 +13,10 @@ import LocationsPage from "./pages/LocationsPage";
 import LoginPage from "./pages/LoginPage";
 import MetricsPage from "./pages/MetricsPage";
 import ScriptsPage from "./pages/ScriptsPage";
+import ScriptsSettingsPage from "./pages/ScriptsSettingsPage";
 import { totalScripts } from "./scripts/logic";
 import { PlaybookProvider, usePlaybook } from "./scripts/store";
-import { SessionContext, StudioContext } from "./session";
+import { SessionContext, StudioContext, useSession } from "./session";
 
 const STUDIO_KEY = "aa_studios";
 /** Прежний ключ хранил одну студию строкой — переносим выбор молча. */
@@ -145,6 +146,7 @@ function ProductSwitch({
 /** Разделы скриптов в боковом меню — оглавление, которое было у документа,
  *  только всегда на виду. */
 function ScriptsNav() {
+  const me = useSession();
   const { playbook } = usePlaybook();
   const sections = playbook?.sections ?? [];
   return (
@@ -161,6 +163,14 @@ function ScriptsNav() {
           <span className="nav-count num">{s.items.length}</span>
         </NavLink>
       ))}
+      {/* Настройки подстановки ({админ}, {студия}, переменные) — тем, кто
+          правит скрипты: читателю в них делать нечего. */}
+      {me.can_edit_scripts && (
+        <NavLink to="/scripts/settings" className="nav-link wrap nav-settings">
+          <NavIcon icon={NavIcons.settings} />
+          <span className="grow">Настройки</span>
+        </NavLink>
+      )}
     </div>
   );
 }
@@ -352,6 +362,7 @@ export default function App() {
                 {/* После входа открываются скрипты: ими пользуются каждый час,
                     аналитику смотрят раз в день. */}
                 <Route path="/" element={<Navigate to="/scripts" replace />} />
+                <Route path="/scripts/settings" element={<ScriptsSettingsPage />} />
                 <Route path="/scripts/:sectionId?" element={<ScriptsPage />} />
                 <Route path="/analytics" element={<DashboardPage />} />
                 <Route path="/days" element={<DaysPage />} />

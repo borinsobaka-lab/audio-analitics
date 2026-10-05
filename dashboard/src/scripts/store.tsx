@@ -14,10 +14,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { api, Playbook, ScriptLang } from "../api";
+import { api, Playbook, PlaybookSettings, ScriptLang } from "../api";
 
 interface PlaybookState {
   playbook: Playbook | null;
+  /** Настройки подстановки ({админ}, {студия}, свои переменные). null —
+   *  ещё грузятся или недоступны: тогда переменные остаются как есть. */
+  settings: PlaybookSettings | null;
+  setSettings: (settings: PlaybookSettings) => void;
   error: string | null;
   /** Перечитать дерево; старые данные остаются на экране, пока идёт запрос. */
   reload: () => Promise<void>;
@@ -25,6 +29,8 @@ interface PlaybookState {
 
 const PlaybookContext = createContext<PlaybookState>({
   playbook: null,
+  settings: null,
+  setSettings: () => {},
   error: null,
   reload: async () => {},
 });
@@ -38,6 +44,7 @@ export function PlaybookProvider({
   children: ReactNode;
 }) {
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
+  const [settings, setSettings] = useState<PlaybookSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
 
@@ -51,13 +58,23 @@ export function PlaybookProvider({
     }
   }, []);
 
+  // Настройки грузятся рядом, но отдельно: без них скрипты всё равно
+  // читаются, просто {админ} и {студия} останутся неподставленными.
+  const loadSettings = useCallback(() => {
+    api.playbookSettings().then(setSettings).catch(() => setSettings(null));
+  }, []);
+
   useEffect(() => {
     if (!enabled || started.current) return;
     started.current = true;
     reload();
-  }, [enabled, reload]);
+    loadSettings();
+  }, [enabled, reload, loadSettings]);
 
-  const value = useMemo(() => ({ playbook, error, reload }), [playbook, error, reload]);
+  const value = useMemo(
+    () => ({ playbook, settings, setSettings, error, reload }),
+    [playbook, settings, error, reload]
+  );
   return <PlaybookContext.Provider value={value}>{children}</PlaybookContext.Provider>;
 }
 
