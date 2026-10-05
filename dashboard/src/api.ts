@@ -434,6 +434,9 @@ export interface ScriptChange {
 export interface ScriptSuggestion {
   id: string;
   author_name: string;
+  /** Скрипт, к которому предложение; название — на момент отправки. */
+  item_id: string | null;
+  item_title: string;
   text: string;
   status: "open" | "done";
   created_at: string;
@@ -670,10 +673,10 @@ export const api = {
     request<Page<ScriptChange>>(
       `/api/playbook/changes${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`
     ),
-  suggestScript: (text: string) =>
+  suggestScript: (text: string, itemId: string) =>
     request<ScriptSuggestion>("/api/playbook/suggestions", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, item_id: itemId }),
     }),
   scriptSuggestions: (cursor = "") =>
     request<Page<ScriptSuggestion>>(

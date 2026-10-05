@@ -1,4 +1,6 @@
-/** «Предложить изменения»: сотрудник у стойки пишет, что стоит поправить.
+/** «Предложить изменения» к конкретному скрипту: кнопка — на шапке каждой
+ *  карточки, и в окне сразу видно, о каком скрипте речь. Писать название
+ *  руками не нужно — в настройках предложение придёт уже со ссылкой.
  *
  *  Неудачный текст чаще всего замечают те, кто им пользуется, а прав на
  *  правку у них нет. Предложение уходит в «Настройки» скриптов — там его
@@ -8,7 +10,14 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Note } from "../components/ui";
 
-export default function SuggestDialog({ onClose }: { onClose: () => void }) {
+export default function SuggestDialog({
+  item,
+  onClose,
+}: {
+  /** Скрипт, к которому предложение: id для ссылки, название и раздел — для глаз. */
+  item: { id: string; title: string; section: string };
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
@@ -30,7 +39,7 @@ export default function SuggestDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError("");
     try {
-      await api.suggestScript(trimmed);
+      await api.suggestScript(trimmed, item.id);
       setSent(true);
     } catch (e) {
       setError((e as Error).message);
@@ -66,6 +75,13 @@ export default function SuggestDialog({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
+      {/* О каком скрипте речь — тёмной плашкой, как шапка карточки. */}
+      <div className="suggest-target">
+        <span className="suggest-target-label">Скрипт</span>
+        <strong className="suggest-target-title">{item.title}</strong>
+        {item.section && <span className="suggest-target-section">{item.section}</span>}
+      </div>
+
       {sent ? (
         <div className="modal-body">
           <div className="suggest-sent">
@@ -93,7 +109,7 @@ export default function SuggestDialog({ onClose }: { onClose: () => void }) {
               rows={6}
               maxLength={3000}
               value={text}
-              placeholder="Какой скрипт и что в нём поправить. Например: в «Дорого» добавить ответ про рассрочку"
+              placeholder="Например: добавить ответ про рассрочку, в EN-версии старая цена"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 // Ctrl/⌘ + Enter — отправить, не дотягиваясь до кнопки.

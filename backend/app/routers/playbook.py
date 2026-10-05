@@ -643,10 +643,17 @@ async def create_suggestion(
     """Предложить может любой, кто видит скрипты: замечают неудачный текст
     чаще всего те, кто им пользуется у стойки."""
     org = await current_org(db)
+    item = None
+    if body.item_id:
+        item = await db.get(PlaybookItem, body.item_id)
+        if not item or item.org_id != org.id:
+            raise HTTPException(404, "Скрипт не найден — возможно, его удалили")
     row = PlaybookSuggestion(
         org_id=org.id,
         author_key=user.author_key,
         author_name=author(user),
+        item_id=item.id if item else None,
+        item_title=item.title if item else "",
         text=body.text.strip(),
     )
     db.add(row)

@@ -31,6 +31,15 @@ const IconCopy = () => (
   </svg>
 );
 
+/** Карандаш — «предложить правку»; тонкий контур, как остальные значки. */
+const IconPencil = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 20h4L19.5 8.5a2.12 2.12 0 0 0-3-3L5 17v3z" />
+    <path d="M14.5 7.5l3 3" />
+  </svg>
+);
+
 const IconCheck = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -122,6 +131,7 @@ export default function ScriptCard({
   flash,
   canEdit,
   onEdit,
+  onSuggest,
   onMove,
   isFirst,
   isLast,
@@ -140,6 +150,8 @@ export default function ScriptCard({
   flash: boolean;
   canEdit: boolean;
   onEdit: () => void;
+  /** «Предложить изменения» к этому скрипту — у всех, кто видит скрипты. */
+  onSuggest: () => void;
   onMove: (delta: -1 | 1) => void;
   isFirst: boolean;
   isLast: boolean;
@@ -164,6 +176,12 @@ export default function ScriptCard({
             {showSection && <span className="script-section">{section.title}</span>}
           </span>
         </div>
+        {/* Тихая кнопка справа: нужна редко и не должна спорить с названием. */}
+        <button type="button" className="script-suggest" onClick={onSuggest}
+          title={`Предложить изменения в «${item.title}»`}>
+          <IconPencil />
+          <span className="script-suggest-label">Предложить изменения</span>
+        </button>
       </header>
 
       <div className="script-body">

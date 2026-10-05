@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, plural, ScriptItem, ScriptItemDraft, ScriptSection } from "../api";
-import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
+import { Empty, Note, PageHead, Skeleton } from "../components/ui";
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import { Slider } from "../components/Slider";
 import ScriptCard from "../scripts/ScriptCard";
@@ -54,8 +54,9 @@ export default function ScriptsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [suggesting, setSuggesting] = useState(false);
-  const [sectionForm, setSectionForm] = useState<"new" | "edit" | null>(null);
+  const [suggesting, setSuggesting] = useState<{ id: string; title: string; section: string } | null>(null);
+  /** Форма раздела: новый или правка названия и иконки конкретного. */
+  const [sectionForm, setSectionForm] = useState<"new" | { edit: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const sections = playbook?.sections ?? [];
@@ -160,6 +161,59 @@ export default function ScriptsPage() {
     }
   }
 
+  /** «+ Скрипт»: редактор нового скрипта — над списком, в открытом
+   *  разделе (в «Все скрипты» — в первом; раздел меняется в самом редакторе). */
+  function startNewScript() {
+    setQuery("");
+    setSectionForm(null);
+    setEditing("new");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function moveSection(sec: ScriptSection, delta: -1 | 1) {
+    const ids = sections.map((s) => s.id);
+    const index = ids.indexOf(sec.id);
+    ids.splice(index, 1);
+    ids.splice(index + delta, 0, sec.id);
+    return run(() => api.orderScriptSections(ids));
+  }
+
+  function sectionMenu(sec: ScriptSection) {
+    if (!canEdit) return null;
+    const index = sections.indexOf(sec);
+    return (
+      <SectionMenu
+        section={sec}
+        isFirst={index <= 0}
+        isLast={index >= sections.length - 1}
+        onEdit={() => {
+          setEditing(null);
+          setSectionForm({ edit: sec.id });
+        }}
+        onMove={(delta) => moveSection(sec, delta)}
+        onDelete={() =>
+          run(() => api.deleteScriptSection(sec.id)).then((ok) => {
+            if (ok && sectionId === sec.id) navigate("/scripts");
+          })
+        }
+      />
+    );
+  }
+
+  function sectionEditForm(sec: ScriptSection) {
+    if (!canEdit || !sectionForm || sectionForm === "new" || sectionForm.edit !== sec.id) return null;
+    return (
+      <SectionForm
+        heading="Раздел"
+        submitLabel="Сохранить"
+        initialTitle={sec.title}
+        initialIcon={sec.icon || DEFAULT_SECTION_ICON}
+        onSubmit={(body) => run(() => api.updateScriptSection(sec.id, body))}
+        onDone={() => setSectionForm(null)}
+      />
+    );
+  }
+
   function moveItem(sec: ScriptSection, index: number, delta: -1 | 1) {
     const ids = sec.items.map((i) => i.id);
     const [id] = ids.splice(index, 1);
@@ -239,6 +293,7 @@ export default function ScriptsPage() {
         flash={flash === item.id}
         canEdit={canEdit}
         onEdit={() => setEditing(item.id)}
+        onSuggest={() => setSuggesting({ id: item.id, title: item.title, section: sec.title })}
         onMove={(delta) => moveItem(sec, index, delta)}
         isFirst={index === 0}
         isLast={index === sec.items.length - 1}
@@ -250,20 +305,9 @@ export default function ScriptsPage() {
     return (
       <div className="script-list">
         {sec.items.map((item, i) => renderCard(item, sec, i, false))}
-        {editing === `new:${sec.id}` && (
-          <ScriptEditor
-            initial={emptyDraft(sec.id)}
-            sections={sections}
-            studios={editorStudios}
-            variables={insertable}
-            isNew
-            onSave={(draft, note) => saveItem(null, draft, note)}
-            onCancel={() => setEditing(null)}
-          />
-        )}
-        {!sec.items.length && editing !== `new:${sec.id}` && (
+        {!sec.items.length && (
           <Empty title="В разделе пока нет скриптов">
-            {canEdit ? "Добавьте первый кнопкой «Новый скрипт»." : "Их добавит владелец."}
+            {canEdit ? "Добавьте первый кнопкой «+ Скрипт» вверху." : "Их добавит владелец."}
           </Empty>
         )}
       </div>
@@ -344,13 +388,16 @@ export default function ScriptsPage() {
             </Slider>
           )}
         </div>
-        {/* Предложить может любой, кто видит скрипты: прав на правку у
-            администраторов у стойки нет, а неудачный текст замечают они. */}
-        <button type="button" className="secondary suggest-btn" onClick={() => setSuggesting(true)}>
-          Предложить изменения
-        </button>
+        {canEdit && (
+          <button type="button" className="secondary add-script-btn" onClick={startNewScript}
+            title="Новый скрипт">
+            <span aria-hidden="true">+</span> Скрипт
+          </button>
+        )}
       </div>
-      {suggesting && <SuggestDialog onClose={() => setSuggesting(false)} />}
+      {/* Предложить может любой, кто видит скрипты: прав на правку у
+          администраторов у стойки нет, а неудачный текст замечают они. */}
+      {suggesting && <SuggestDialog item={suggesting} onClose={() => setSuggesting(null)} />}
 
       {/* На телефоне боковое меню — узкая полоса, и разделы в ней не
           поместятся: там они живут здесь, лентой над списком. */}
@@ -370,17 +417,19 @@ export default function ScriptsPage() {
         )}
       </nav>
 
-      <PageHead title={title} hint={hint}>
-        {canEdit && !searching && section && !sectionForm && (
-          <SectionActions
-            section={section}
-            sections={sections}
-            onRun={run}
-            onAdd={() => setEditing(`new:${section.id}`)}
-            onEdit={() => setSectionForm("edit")}
-            onDeleted={() => navigate("/scripts")}
-          />
-        )}
+      <PageHead
+        title={
+          !searching && section ? (
+            <span className="title-with-menu">
+              {title}
+              {sectionMenu(section)}
+            </span>
+          ) : (
+            title
+          )
+        }
+        hint={hint}
+      >
         {canEdit && !searching && !section && !sectionId && !sectionForm && (
           <button type="button" className="secondary" onClick={() => setSectionForm("new")}>
             Новый раздел
@@ -398,18 +447,23 @@ export default function ScriptsPage() {
           onDone={() => setSectionForm(null)}
         />
       )}
-      {canEdit && !searching && sectionForm === "edit" && section && (
-        <SectionForm
-          heading="Раздел"
-          submitLabel="Сохранить"
-          initialTitle={section.title}
-          initialIcon={section.icon || DEFAULT_SECTION_ICON}
-          onSubmit={(body) => run(() => api.updateScriptSection(section.id, body))}
-          onDone={() => setSectionForm(null)}
-        />
-      )}
+      {!searching && section && sectionEditForm(section)}
 
       {actionError && <Note kind="error">{actionError}</Note>}
+
+      {canEdit && editing === "new" && sections.length > 0 && (
+        <div className="new-script">
+          <ScriptEditor
+            initial={emptyDraft(section?.id ?? sections[0].id)}
+            sections={sections}
+            studios={editorStudios}
+            variables={insertable}
+            isNew
+            onSave={(draft, note) => saveItem(null, draft, note)}
+            onCancel={() => setEditing(null)}
+          />
+        </div>
+      )}
 
       {searching ? (
         hits.length ? (
@@ -438,7 +492,9 @@ export default function ScriptsPage() {
                 </NavLink>
               </h3>
               <span className="count">{sec.items.length}</span>
+              {sectionMenu(sec)}
             </div>
+            {sectionEditForm(sec)}
             {renderSection(sec)}
           </div>
         ))
@@ -527,57 +583,95 @@ function SectionForm({
   );
 }
 
-function SectionActions({
+const IconDots = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx="5.5" cy="12" r="1.7" />
+    <circle cx="12" cy="12" r="1.7" />
+    <circle cx="18.5" cy="12" r="1.7" />
+  </svg>
+);
+
+/** «⋯» справа от названия раздела: название и иконка, порядок в меню,
+ *  удаление пустого раздела. Нужно редко — поэтому в меню, а не кнопками
+ *  в шапке страницы, где они отвлекали от скриптов. */
+function SectionMenu({
   section,
-  sections,
-  onRun,
-  onAdd,
+  isFirst,
+  isLast,
   onEdit,
-  onDeleted,
+  onMove,
+  onDelete,
 }: {
   section: ScriptSection;
-  sections: ScriptSection[];
-  onRun: (action: () => Promise<unknown>) => Promise<boolean>;
-  onAdd: () => void;
+  isFirst: boolean;
+  isLast: boolean;
   onEdit: () => void;
-  onDeleted: () => void;
+  onMove: (delta: -1 | 1) => Promise<boolean>;
+  onDelete: () => void;
 }) {
-  const index = sections.indexOf(section);
+  const [open, setOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
 
-  function move(delta: -1 | 1) {
-    const ids = sections.map((s) => s.id);
-    ids.splice(index, 1);
-    ids.splice(index + delta, 0, section.id);
-    onRun(() => api.orderScriptSections(ids));
-  }
+  useEffect(() => {
+    if (!open) {
+      setConfirmDelete(false);
+      return;
+    }
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
-    <>
-      <button type="button" onClick={onAdd}>
-        Новый скрипт
+    <span className="section-menu" ref={ref}>
+      <button
+        type="button"
+        className={`section-menu-btn${open ? " on" : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Раздел «${section.title}»: действия`}
+        title="Название, иконка, порядок"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <IconDots />
       </button>
-      <button type="button" className="ghost" onClick={onEdit}>
-        Название и иконка
-      </button>
-      <button type="button" className="ghost" disabled={index <= 0} onClick={() => move(-1)}
-        aria-label="Раздел выше" title="Раздел выше">
-        ↑
-      </button>
-      <button type="button" className="ghost" disabled={index >= sections.length - 1}
-        onClick={() => move(1)} aria-label="Раздел ниже" title="Раздел ниже">
-        ↓
-      </button>
-      {/* Раздел со скриптами не удаляется вовсе — сервер откажет, и прятать
-          кнопку честнее, чем показывать отказ после второго нажатия. */}
-      {section.items.length === 0 && (
-        <ConfirmAction
-          label="Удалить раздел"
-          confirmLabel="Удалить"
-          onConfirm={() =>
-            onRun(() => api.deleteScriptSection(section.id)).then((ok) => ok && onDeleted())
-          }
-        />
+      {open && (
+        <span className="menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onEdit(); }}>
+            Название и иконка
+          </button>
+          {/* Порядок — меню не закрывается: раздел часто двигают на
+              несколько позиций подряд. */}
+          <button type="button" role="menuitem" disabled={isFirst} onClick={() => onMove(-1)}>
+            ↑ Выше в меню
+          </button>
+          <button type="button" role="menuitem" disabled={isLast} onClick={() => onMove(1)}>
+            ↓ Ниже в меню
+          </button>
+          {/* Раздел со скриптами не удаляется вовсе — сервер откажет, и
+              прятать пункт честнее, чем показывать отказ. */}
+          {section.items.length === 0 &&
+            (confirmDelete ? (
+              <button type="button" role="menuitem" className="danger"
+                onClick={() => { setOpen(false); onDelete(); }}>
+                Точно удалить раздел
+              </button>
+            ) : (
+              <button type="button" role="menuitem" className="danger"
+                onClick={() => setConfirmDelete(true)}>
+                Удалить раздел…
+              </button>
+            ))}
+        </span>
       )}
-    </>
+    </span>
   );
 }

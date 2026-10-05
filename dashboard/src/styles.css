@@ -1569,7 +1569,10 @@ tbody tr:hover {
   pointer-events: none;
 }
 .search input[type="text"] {
-  min-height: 44px;
+  /* Одна высота с переключателями языка и студии и с «+ Скрипт» — 40px:
+     всё стоит в одну линию. */
+  min-height: 40px;
+  height: 40px;
   padding-left: 40px;
   /* Справа — подсказка «быстрый поиск /», текст под неё не заходит. */
   padding-right: 152px;
@@ -3758,12 +3761,6 @@ input[type="file"]::file-selector-button:hover {
 
 /* --- «Предложить изменения» -------------------------------------------- */
 
-.suggest-btn {
-  margin-left: auto;
-  min-height: 44px;
-  background: var(--card);
-  box-shadow: var(--sh-1);
-}
 .modal-narrow {
   width: min(520px, calc(100vw - 32px));
 }
@@ -4021,10 +4018,6 @@ button.change-title:hover {
 }
 
 @media (max-width: 900px) {
-  .suggest-btn {
-    width: 100%;
-    margin-left: 0;
-  }
   .diff-pair {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4110,4 +4103,219 @@ button.change-title:hover {
   .slide > .tab {
     transition: none;
   }
+}
+
+/* --- Шапка панели скриптов: «+ Скрипт» ---------------------------------- */
+
+.add-script-btn {
+  flex: none;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 6px;
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.add-script-btn > span {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+}
+.new-script {
+  margin-bottom: 20px;
+}
+
+/* --- «Предложить изменения» на шапке скрипта ---------------------------- */
+
+/* Тихая: полупрозрачный текст на тёмной шапке, без рамки и подложки —
+   заметна, когда её ищут, и не спорит с названием. */
+.script-suggest {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-height: 0;
+  margin: -4px -8px -4px auto;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.script-suggest:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--nav-ink-hi);
+}
+.script-suggest:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  color: var(--nav-ink-hi);
+}
+
+/* Окно: о каком скрипте речь — тёмной плашкой, как шапка карточки. */
+.suggest-target {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 16px 24px 0;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--nav-active);
+  color: var(--nav-ink-hi);
+}
+.suggest-target-label {
+  font-size: 12px;
+  color: var(--nav-ink-2);
+}
+.suggest-target-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+.suggest-target-section {
+  font-size: 13px;
+  color: var(--nav-ink-2);
+}
+
+/* В списке предложений — к какому скрипту. */
+.suggestion-script {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.suggestion-script-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.suggestion-script-link {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.suggestion-script-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.suggestion-script-gone {
+  font-weight: 600;
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+/* --- «⋯» у названия раздела ---------------------------------------------- */
+
+.title-with-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-menu {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.section-menu-btn {
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.section-menu-btn:hover,
+.section-menu-btn.on {
+  background: var(--sunk);
+  color: var(--ink);
+}
+.section-menu-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge), var(--sh-2);
+  animation: menu-in 140ms var(--ease);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.menu > button {
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+.menu > button:hover:not(:disabled) {
+  background: var(--sunk);
+}
+.menu > button:disabled {
+  opacity: 0.4;
+}
+.menu > button.danger {
+  color: var(--red-ink);
+}
+.menu > button.danger:hover {
+  background: var(--red-tint);
+}
+
+@media (max-width: 900px) {
+  /* На телефоне у «Предложить изменения» остаётся только карандаш. */
+  .script-suggest-label {
+    display: none;
+  }
+  .add-script-btn {
+    width: 100%;
+  }
+}
+.section-head .section-menu {
+  align-self: center;
+  margin-left: -6px;
 }

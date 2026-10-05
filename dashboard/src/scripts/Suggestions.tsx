@@ -5,8 +5,10 @@
  *  Сделанное отмечают кнопкой — оно остаётся в списке, приглушённым.
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, fmtWhen, ScriptSuggestion } from "../api";
 import { Empty, Note, Skeleton } from "../components/ui";
+import { scriptPath } from "./logic";
 import { usePaged } from "./paged";
 import { usePlaybook } from "./store";
 
@@ -20,6 +22,14 @@ function SuggestionCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const done = item.status === "done";
+  const { playbook } = usePlaybook();
+  const navigate = useNavigate();
+  // Скрипт жив — ведём к нему; удалён — остаётся название на момент отправки.
+  const live = item.item_id
+    ? playbook?.sections
+        .map((sec) => ({ sec, it: sec.items.find((i) => i.id === item.item_id) }))
+        .find((x) => x.it)
+    : undefined;
 
   async function toggle() {
     setBusy(true);
@@ -52,6 +62,22 @@ function SuggestionCard({
           {done ? "Вернуть" : "Сделано"}
         </button>
       </header>
+      {item.item_title && (
+        <div className="suggestion-script">
+          <span className="suggestion-script-label">Скрипт</span>
+          {live ? (
+            <button type="button" className="suggestion-script-link" title="Открыть скрипт"
+              onClick={() => navigate(scriptPath(live.sec.id, live.it!.id))}>
+              {live.it!.title}
+            </button>
+          ) : (
+            <span className="suggestion-script-gone" title="Скрипт удалён">
+              {item.item_title}
+            </span>
+          )}
+          {live && live.sec.title && <span className="muted">· {live.sec.title}</span>}
+        </div>
+      )}
       <p className="suggestion-text">{item.text}</p>
       {error && <Note kind="error">{error}</Note>}
     </article>

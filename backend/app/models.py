@@ -573,6 +573,11 @@ class PlaybookSuggestion(UUIDMixin, Base):
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     author_key: Mapped[str] = mapped_column(String(64))
     author_name: Mapped[str] = mapped_column(String(255), default="")
+    # К какому скрипту предложение — кнопка стоит на каждой карточке.
+    # Название запомнено на момент отправки: скрипт могут переименовать или
+    # удалить, а предложение должно остаться понятным.
+    item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    item_title: Mapped[str] = mapped_column(String(255), default="")
     text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

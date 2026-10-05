@@ -688,11 +688,15 @@ class PlaybookChangesPage(BaseModel):
 
 class PlaybookSuggestionIn(BaseModel):
     text: str = Field(min_length=3, max_length=3000)
+    # Скрипт, на карточке которого нажали «Предложить изменения».
+    item_id: uuid.UUID | None = None
 
 
 class PlaybookSuggestionOut(BaseModel):
     id: uuid.UUID
     author_name: str = ""
+    item_id: uuid.UUID | None = None
+    item_title: str = ""
     text: str
     status: Literal["open", "done"] = "open"
     created_at: datetime
