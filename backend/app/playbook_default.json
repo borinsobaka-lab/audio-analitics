@@ -2,6 +2,7 @@
   "sections": [
     {
       "title": "Запись на пробное",
+      "icon": "calendar-add",
       "items": [
         {
           "title": "Первое сообщение",
@@ -124,6 +125,7 @@
     },
     {
       "title": "Возврат не отвечающих",
+      "icon": "chat-round-dots",
       "items": [
         {
           "title": "Какие вопросы",
@@ -189,6 +191,7 @@
     },
     {
       "title": "Перед пробным — напоминание",
+      "icon": "alarm",
       "items": [
         {
           "title": "Напоминание о пробном",
@@ -233,6 +236,7 @@
     },
     {
       "title": "После пробного",
+      "icon": "hand-heart",
       "items": [
         {
           "title": "Мобильное приложение",
@@ -323,6 +327,7 @@
     },
     {
       "title": "Частые вопросы",
+      "icon": "question-circle",
       "items": [
         {
           "title": "О студии",
@@ -660,6 +665,7 @@
     },
     {
       "title": "Возражения",
+      "icon": "shield-check",
       "items": [
         {
           "title": "Мне далеко",
@@ -867,6 +873,7 @@
     },
     {
       "title": "Подписка на Instagram",
+      "icon": "hashtag-circle",
       "items": [
         {
           "title": "Когда подписались",
@@ -891,6 +898,7 @@
     },
     {
       "title": "Звонок: абонемент со скидкой",
+      "icon": "phone-calling-rounded",
       "items": [
         {
           "title": "Абонемент со скидкой",
@@ -916,6 +924,7 @@
     },
     {
       "title": "Доплата за абонемент",
+      "icon": "wallet-money",
       "items": [
         {
           "title": "Напоминание о доплате",

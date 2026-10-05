@@ -32,6 +32,7 @@ from ..schemas import (
     PlaybookOut,
     PlaybookSectionIn,
     PlaybookSectionOut,
+    PlaybookSectionPatch,
 )
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
@@ -40,7 +41,7 @@ DEFAULT_PATH = Path(__file__).resolve().parents[1] / "playbook_default.json"
 
 
 @lru_cache
-def default_playbook() -> list[tuple[str, list[PlaybookItemIn]]]:
+def default_playbook() -> list[tuple[str, str, list[PlaybookItemIn]]]:
     """Стартовые разделы и скрипты, проверенные той же схемой, что и правки
     из админки: битый файл должен падать в тестах, а не у владельца."""
     raw = json.loads(DEFAULT_PATH.read_text(encoding="utf-8"))
@@ -59,7 +60,7 @@ def default_playbook() -> list[tuple[str, list[PlaybookItemIn]]]:
             )
             for item in section["items"]
         ]
-        sections.append((section["title"], items))
+        sections.append((section["title"], section.get("icon", ""), items))
     return sections
 
 
@@ -107,8 +108,8 @@ async def ensure_seeded(db: AsyncSession, org: Organization) -> None:
         select(PlaybookSection.id).where(PlaybookSection.org_id == org.id).limit(1)
     )
     if not has_sections:
-        for s_pos, (title, items) in enumerate(default_playbook()):
-            section = PlaybookSection(org_id=org.id, title=title, position=s_pos)
+        for s_pos, (title, icon, items) in enumerate(default_playbook()):
+            section = PlaybookSection(org_id=org.id, title=title, icon=icon, position=s_pos)
             db.add(section)
             await db.flush()
             for i_pos, item in enumerate(items):
@@ -188,6 +189,7 @@ async def get_playbook(
             PlaybookSectionOut(
                 id=s.id,
                 title=s.title,
+                icon=s.icon or "",
                 position=s.position,
                 items=by_section.get(s.id, []),
             )
@@ -211,6 +213,7 @@ async def create_section(
     section = PlaybookSection(
         org_id=org.id,
         title=title,
+        icon=body.icon,
         position=await next_position(
             db, PlaybookSection, PlaybookSection.org_id == org.id
         ),
@@ -218,23 +221,33 @@ async def create_section(
     db.add(section)
     await db.commit()
     await db.refresh(section)
-    return PlaybookSectionOut(id=section.id, title=section.title, position=section.position)
+    return section_out(section)
+
+
+def section_out(section: PlaybookSection) -> PlaybookSectionOut:
+    return PlaybookSectionOut(
+        id=section.id, title=section.title, icon=section.icon or "", position=section.position
+    )
 
 
 @router.patch("/sections/{section_id}", response_model=PlaybookSectionOut)
-async def rename_section(
+async def update_section(
     section_id: uuid.UUID,
-    body: PlaybookSectionIn,
+    body: PlaybookSectionPatch,
     user: UserContext = Depends(require_manage),
     db: AsyncSession = Depends(get_db),
 ):
+    """Переименовать раздел или сменить его иконку в меню."""
     section = await get_section(db, section_id)
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(422, "Название раздела не может быть пустым")
-    section.title = title
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(422, "Название раздела не может быть пустым")
+        section.title = title
+    if body.icon is not None:
+        section.icon = body.icon
     await db.commit()
-    return PlaybookSectionOut(id=section.id, title=section.title, position=section.position)
+    return section_out(section)
 
 
 @router.delete("/sections/{section_id}", status_code=204)

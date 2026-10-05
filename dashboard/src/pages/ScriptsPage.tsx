@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, plural, ScriptItem, ScriptItemDraft, ScriptSection } from "../api";
 import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
+import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
 import {
@@ -54,6 +55,7 @@ export default function ScriptsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sectionForm, setSectionForm] = useState<"new" | "edit" | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const sections = playbook?.sections ?? [];
@@ -73,6 +75,7 @@ export default function ScriptsPage() {
   useEffect(() => {
     setQuery("");
     setEditing(null);
+    setSectionForm(null);
   }, [sectionId]);
 
   // «/» — к поиску из любого места страницы, кроме полей ввода.
@@ -317,17 +320,43 @@ export default function ScriptsPage() {
       </nav>
 
       <PageHead title={title} hint={hint}>
-        {canEdit && !searching && section && (
+        {canEdit && !searching && section && !sectionForm && (
           <SectionActions
             section={section}
             sections={sections}
             onRun={run}
             onAdd={() => setEditing(`new:${section.id}`)}
+            onEdit={() => setSectionForm("edit")}
             onDeleted={() => navigate("/scripts")}
           />
         )}
-        {canEdit && !searching && !section && !sectionId && <NewSection onRun={run} />}
+        {canEdit && !searching && !section && !sectionId && !sectionForm && (
+          <button type="button" className="secondary" onClick={() => setSectionForm("new")}>
+            Новый раздел
+          </button>
+        )}
       </PageHead>
+
+      {canEdit && !searching && sectionForm === "new" && !sectionId && (
+        <SectionForm
+          heading="Новый раздел"
+          submitLabel="Создать"
+          initialTitle=""
+          initialIcon={DEFAULT_SECTION_ICON}
+          onSubmit={(body) => run(() => api.createScriptSection(body))}
+          onDone={() => setSectionForm(null)}
+        />
+      )}
+      {canEdit && !searching && sectionForm === "edit" && section && (
+        <SectionForm
+          heading="Раздел"
+          submitLabel="Сохранить"
+          initialTitle={section.title}
+          initialIcon={section.icon || DEFAULT_SECTION_ICON}
+          onSubmit={(body) => run(() => api.updateScriptSection(section.id, body))}
+          onDone={() => setSectionForm(null)}
+        />
+      )}
 
       {actionError && <Note kind="error">{actionError}</Note>}
 
@@ -371,43 +400,78 @@ export default function ScriptsPage() {
   );
 }
 
-function NewSection({ onRun }: { onRun: (action: () => Promise<unknown>) => Promise<boolean> }) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  if (!open) {
-    return (
-      <button type="button" className="secondary" onClick={() => setOpen(true)}>
-        Новый раздел
-      </button>
-    );
-  }
+/** Название и иконка раздела. Иконка — из набора Solar, тем же стилем, что
+ *  остальное меню: свободная загрузка картинок развалила бы его в разнобой. */
+function SectionForm({
+  heading,
+  submitLabel,
+  initialTitle,
+  initialIcon,
+  onSubmit,
+  onDone,
+}: {
+  heading: string;
+  submitLabel: string;
+  initialTitle: string;
+  initialIcon: string;
+  onSubmit: (body: { title: string; icon: string }) => Promise<boolean>;
+  onDone: () => void;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const [icon, setIcon] = useState(initialIcon);
+  const [saving, setSaving] = useState(false);
+
   return (
     <form
-      className="inline-form"
+      className="sheet sheet-pad section-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!title.trim()) return;
-        onRun(() => api.createScriptSection(title.trim())).then((ok) => {
-          if (!ok) return;
-          setTitle("");
-          setOpen(false);
+        if (!title.trim() || saving) return;
+        setSaving(true);
+        onSubmit({ title: title.trim(), icon }).then((ok) => {
+          setSaving(false);
+          if (ok) onDone();
         });
       }}
     >
-      <input
-        type="text"
-        value={title}
-        autoFocus
-        placeholder="Название раздела"
-        aria-label="Название раздела"
-        onChange={(e) => setTitle(e.target.value)}
-      />
-      <button type="submit" disabled={!title.trim()}>
-        Создать
-      </button>
-      <button type="button" className="ghost" onClick={() => setOpen(false)}>
-        Отмена
-      </button>
+      <h3>{heading}</h3>
+      <label className="field">
+        <span className="label">Название</span>
+        <input
+          type="text"
+          value={title}
+          autoFocus
+          placeholder="Например: «Работа с отзывами»"
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </label>
+      <div className="field">
+        <span className="label" id="section-icon-label">Иконка в меню</span>
+        <div className="icon-picker" role="radiogroup" aria-labelledby="section-icon-label">
+          {SECTION_ICONS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={icon === key}
+              aria-label={label}
+              title={label}
+              className={`icon-choice${icon === key ? " on" : ""}`}
+              onClick={() => setIcon(key)}
+            >
+              <Icon size={22} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="actions">
+        <button type="submit" disabled={!title.trim() || saving}>
+          {saving ? "Сохраняем…" : submitLabel}
+        </button>
+        <button type="button" className="ghost" onClick={onDone} disabled={saving}>
+          Отмена
+        </button>
+      </div>
     </form>
   );
 }
@@ -417,22 +481,17 @@ function SectionActions({
   sections,
   onRun,
   onAdd,
+  onEdit,
   onDeleted,
 }: {
   section: ScriptSection;
   sections: ScriptSection[];
   onRun: (action: () => Promise<unknown>) => Promise<boolean>;
   onAdd: () => void;
+  onEdit: () => void;
   onDeleted: () => void;
 }) {
-  const [renaming, setRenaming] = useState(false);
-  const [title, setTitle] = useState(section.title);
   const index = sections.indexOf(section);
-
-  useEffect(() => {
-    setRenaming(false);
-    setTitle(section.title);
-  }, [section.id, section.title]);
 
   function move(delta: -1 | 1) {
     const ids = sections.map((s) => s.id);
@@ -441,42 +500,13 @@ function SectionActions({
     onRun(() => api.orderScriptSections(ids));
   }
 
-  if (renaming) {
-    return (
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!title.trim()) return;
-          onRun(() => api.renameScriptSection(section.id, title.trim())).then(
-            (ok) => ok && setRenaming(false)
-          );
-        }}
-      >
-        <input
-          type="text"
-          value={title}
-          autoFocus
-          aria-label="Название раздела"
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <button type="submit" disabled={!title.trim()}>
-          Сохранить
-        </button>
-        <button type="button" className="ghost" onClick={() => setRenaming(false)}>
-          Отмена
-        </button>
-      </form>
-    );
-  }
-
   return (
     <>
       <button type="button" onClick={onAdd}>
         Новый скрипт
       </button>
-      <button type="button" className="ghost" onClick={() => setRenaming(true)}>
-        Переименовать
+      <button type="button" className="ghost" onClick={onEdit}>
+        Название и иконка
       </button>
       <button type="button" className="ghost" disabled={index <= 0} onClick={() => move(-1)}
         aria-label="Раздел выше" title="Раздел выше">

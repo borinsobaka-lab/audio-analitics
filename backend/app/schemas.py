@@ -557,13 +557,23 @@ class PlaybookItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+ICON_KEY = r"^[a-z0-9-]{0,40}$"
+
+
 class PlaybookSectionIn(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+    icon: str = Field(default="", pattern=ICON_KEY)
+
+
+class PlaybookSectionPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    icon: str | None = Field(default=None, pattern=ICON_KEY)
 
 
 class PlaybookSectionOut(BaseModel):
     id: uuid.UUID
     title: str
+    icon: str = ""
     position: int = 0
     items: list[PlaybookItemOut] = []
 

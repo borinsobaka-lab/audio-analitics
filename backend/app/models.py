@@ -459,6 +459,9 @@ class PlaybookSection(UUIDMixin, Base):
 
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     title: Mapped[str] = mapped_column(String(255))
+    # Ключ иконки в боковом меню; набор иконок живёт в админке, здесь только
+    # имя. Пустая строка — иконка по умолчанию.
+    icon: Mapped[str] = mapped_column(String(40), default="")
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

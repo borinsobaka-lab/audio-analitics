@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, getToken, Location, Me, onSessionExpired, plural, setToken } from "./api";
-import {
-  IconApp,
-  IconDashboard,
-  IconDays,
-  IconMetrics,
-  IconPeople,
-  IconStudio,
-  IconWave,
-  Skeleton,
-} from "./components/ui";
+import { IconWave, Skeleton } from "./components/ui";
+import { NavIcon, NavIcons, sectionIcon } from "./components/navIcons";
 import DashboardPage from "./pages/DashboardPage";
 import DaysPage from "./pages/DaysPage";
 import DayReportPage from "./pages/DayReportPage";
@@ -159,11 +151,13 @@ function ScriptsNav() {
   return (
     <div className="nav-sections">
       <NavLink to="/scripts" end className="nav-link wrap">
+        <NavIcon icon={NavIcons.allScripts} />
         <span className="grow">Все скрипты</span>
         {playbook && <span className="nav-count num">{totalScripts(sections)}</span>}
       </NavLink>
       {sections.map((s) => (
         <NavLink key={s.id} to={`/scripts/${s.id}`} className="nav-link wrap">
+          <NavIcon icon={sectionIcon(s.icon)} />
           <span className="grow">{s.title}</span>
           <span className="nav-count num">{s.items.length}</span>
         </NavLink>
@@ -278,11 +272,11 @@ export default function App() {
               ) : (
                 <>
                   <NavLink to="/analytics" className="nav-link">
-                    <IconDashboard />
+                    <NavIcon icon={NavIcons.dashboard} />
                     Дашборд
                   </NavLink>
                   <NavLink to="/days" className="nav-link">
-                    <IconDays />
+                    <NavIcon icon={NavIcons.days} />
                     {me.can_view_all ? "Смены" : "Мои смены"}
                   </NavLink>
                   {/* Настройки системы видит только тот, кому открыты все записи:
@@ -291,19 +285,19 @@ export default function App() {
                   {me.can_manage && (
                     <>
                       <NavLink to="/metrics" className="nav-link">
-                        <IconMetrics />
+                        <NavIcon icon={NavIcons.metrics} />
                         Метрики и анализ
                       </NavLink>
                       <NavLink to="/employees" className="nav-link">
-                        <IconPeople />
+                        <NavIcon icon={NavIcons.people} />
                         Сотрудники
                       </NavLink>
                       <NavLink to="/locations" className="nav-link">
-                        <IconStudio />
+                        <NavIcon icon={NavIcons.studio} />
                         Точки продажи
                       </NavLink>
                       <NavLink to="/app" className="nav-link">
-                        <IconApp />
+                        <NavIcon icon={NavIcons.app} />
                         Приложение
                       </NavLink>
                     </>

@@ -16,49 +16,6 @@ const base = (size: number) => ({
   strokeLinejoin: "round" as const,
 });
 
-export const IconDays = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <rect x="3" y="5" width="18" height="16" rx="2.5" />
-    <path d="M3 10h18M8 3v4M16 3v4" />
-  </svg>
-);
-
-export const IconDashboard = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <path d="M3 17a9 9 0 0 1 18 0" />
-    <path d="M12 17l4.5-5" />
-    <path d="M3 17h2M19 17h2M12 8V6" />
-  </svg>
-);
-
-export const IconMetrics = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <path d="M4 19V9M10 19V5M16 19v-6M22 19H2" />
-  </svg>
-);
-
-export const IconPeople = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <path d="M16 20v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V20" />
-    <circle cx="9.5" cy="7" r="3.2" />
-    <path d="M21 20v-1.5a4 4 0 0 0-3-3.87" />
-  </svg>
-);
-
-export const IconStudio = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <path d="M4 21V10.5L12 4l8 6.5V21" />
-    <path d="M9.5 21v-5.5h5V21" />
-  </svg>
-);
-
-export const IconApp = ({ size = 17 }: IconProps) => (
-  <svg {...base(size)}>
-    <rect x="4" y="3" width="16" height="18" rx="2.5" />
-    <path d="M12 8v6M9 11.5l3 3 3-3" />
-  </svg>
-);
-
 export const IconCalendar = ({ size = 15 }: IconProps) => (
   <svg {...base(size)}>
     <rect x="3" y="5" width="18" height="16" rx="2.5" />

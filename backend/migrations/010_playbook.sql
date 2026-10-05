@@ -25,6 +25,11 @@ create table if not exists playbook_sections (
     created_at timestamptz not null default now()
 );
 
+-- Иконка раздела в боковом меню — ключ из набора админки (calendar-add,
+-- wallet-money…). Пустая строка — иконка по умолчанию.
+alter table playbook_sections
+    add column if not exists icon varchar(40) not null default '';
+
 create index if not exists ix_playbook_sections_org
     on playbook_sections (org_id, position);
 

@@ -17,7 +17,7 @@ CYRILLIC = re.compile(r"[Ѐ-ӿ]")
 
 
 def all_items():
-    return [item for _, items in default_playbook() for item in items]
+    return [item for _, _, items in default_playbook() for item in items]
 
 
 def test_default_playbook_loads_through_the_api_schema():
@@ -25,7 +25,8 @@ def test_default_playbook_loads_through_the_api_schema():
     битый файл должен падать здесь, а не у владельца при первом входе."""
     sections = default_playbook()
     assert len(sections) >= 5
-    assert all(title.strip() for title, _ in sections)
+    assert all(title.strip() for title, _, _ in sections)
+    assert all(icon for _, icon, _ in sections), "у каждого раздела стартового набора своя иконка"
     assert len(all_items()) >= 30
 
 

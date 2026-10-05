@@ -349,6 +349,8 @@ export interface ScriptItem {
 export interface ScriptSection {
   id: string;
   title: string;
+  /** Ключ иконки в меню из набора navIcons; пусто — иконка по умолчанию. */
+  icon: string;
   position: number;
   items: ScriptItem[];
 }
@@ -545,15 +547,15 @@ export const api = {
     request<ScriptTemplate>("/api/script", { method: "PUT", body: JSON.stringify(body) }),
 
   playbook: () => request<Playbook>("/api/playbook"),
-  createScriptSection: (title: string) =>
+  createScriptSection: (body: { title: string; icon: string }) =>
     request<ScriptSection>("/api/playbook/sections", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
     }),
-  renameScriptSection: (id: string, title: string) =>
+  updateScriptSection: (id: string, body: { title?: string; icon?: string }) =>
     request<ScriptSection>(`/api/playbook/sections/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
     }),
   deleteScriptSection: (id: string) =>
     request<void>(`/api/playbook/sections/${id}`, { method: "DELETE" }),
