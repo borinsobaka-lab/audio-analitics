@@ -224,34 +224,25 @@ a {
   height: 100vh;
 }
 
+/* Логотип компании в шапке меню. Исходник тёмный, здесь он перекрашен в
+   цвет текста меню через currentColor. Ширина — по колонке меню минус
+   отступы: скрипт логотипа тонкий, мельче он перестаёт читаться. */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px 22px;
-}
-.brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-on);
-  display: grid;
-  place-items: center;
+  display: block;
+  padding: 2px 10px 20px;
+  color: var(--nav-ink-hi);
+  text-decoration: none;
   flex-shrink: 0;
 }
-.brand-name {
+.brand-logo {
   display: block;
-  font-size: 13.5px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  width: 152px;
+  height: auto;
 }
-.brand-sub {
-  display: block;
-  font-size: 11px;
-  color: var(--nav-ink-2);
-  line-height: 1.25;
+.brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
 }
 
 .nav-link {
@@ -1932,6 +1923,303 @@ button.ref:active {
   margin: 4px 0 12px;
 }
 
+/* --- Сотрудники и права ---------------------------------------------- */
+
+/* Ссылка на общий раздел внизу меню — тот же пункт меню, что и разделы
+   продукта, со своим свечением. */
+.foot-link {
+  margin: 0 -2px 12px;
+}
+
+.row-click {
+  cursor: pointer;
+}
+.person {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.person-name {
+  font-weight: 500;
+}
+
+/* Право в таблице — метка. «Широкое» право — акцентный текст на подложке:
+   его видно сразу, глазами по колонке. */
+.access-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.access-chip.on {
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+
+/* Модальное окно — нативный <dialog>: фокус, Esc и подложку даёт браузер.
+   Единственное окно поверх страницы в админке: всё про одного человека —
+   имя, вход, права в двух продуктах — правится в одном месте. */
+.modal {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--sh-deck);
+  overflow: hidden;
+}
+.modal[open] {
+  display: flex;
+  flex-direction: column;
+  animation: modal-in 180ms var(--ease);
+}
+.modal::backdrop {
+  background: rgba(11, 13, 22, 0.5);
+  backdrop-filter: blur(3px);
+}
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 16px 24px;
+  border-bottom: 1px solid var(--edge-soft);
+}
+.modal-head h2 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.modal-head p {
+  margin: 4px 0 0;
+}
+.modal-me {
+  font-size: 14px;
+  font-weight: 400;
+}
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 24px;
+}
+.modal-section {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--edge-soft);
+}
+.modal-section:last-of-type {
+  border-bottom: none;
+}
+.modal-section.dimmed .product-access {
+  opacity: 0.55;
+}
+.modal-section-title {
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.modal-hint {
+  margin: -4px 0 12px;
+}
+.modal-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 -24px;
+  padding: 14px 24px 18px;
+  background: var(--card);
+  border-top: 1px solid var(--edge-soft);
+}
+.modal-foot .muted {
+  margin-right: auto;
+}
+
+.login-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.login-row .field {
+  margin-bottom: 0;
+}
+.login-row .grow {
+  flex: 1;
+}
+.login-reset {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
+/* Переключатель «вход в админку», «работает в студии» — родной checkbox с
+   ролью switch: клавиатура и скринридер достаются даром. */
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.toggle.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.toggle-title {
+  display: block;
+  font-weight: 500;
+}
+.toggle-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+input.switch {
+  appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--edge-strong);
+  cursor: inherit;
+  transition: background 160ms var(--ease);
+}
+input.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  transition: transform 160ms var(--ease);
+}
+input.switch:checked {
+  background: var(--accent);
+}
+input.switch:checked::after {
+  transform: translateX(16px);
+}
+input.switch:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Право в продукте — две плитки рядом: оба варианта видны сразу вместе с
+   тем, что каждый разрешает. Выбранная — белая с кольцом цвета действия. */
+.product-access {
+  margin: 0 0 16px;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+.product-access:last-child {
+  margin-bottom: 0;
+}
+.product-access-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.product-access-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+.choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 12px 40px;
+  border-radius: var(--r-md);
+  background: var(--sunk);
+  cursor: pointer;
+  transition: background 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.choice:hover {
+  background: var(--card-2);
+}
+.choice.on {
+  background: var(--card);
+  box-shadow: inset 0 0 0 2px var(--accent-ink), var(--sh-1);
+}
+.product-access:disabled .choice {
+  cursor: not-allowed;
+}
+.choice input {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-ink);
+}
+.choice input:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 50%;
+}
+.choice-title {
+  font-weight: 600;
+}
+.choice-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.modal-danger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.issued {
+  padding: 20px 0;
+}
+.issued .muted {
+  margin: -6px 0 14px;
+}
+
 /* --- Адаптив ------------------------------------------------------------ */
 
 @media (max-width: 900px) {
@@ -1953,10 +2241,11 @@ button.ref:active {
     overflow-x: auto;
   }
   .brand {
-    padding: 0 12px 0 0;
+    padding: 0 12px 0 2px;
   }
-  .brand-sub {
-    display: none;
+  .brand-logo {
+    width: auto;
+    height: 30px;
   }
   .sidebar-foot {
     margin: 0 0 0 auto;
@@ -2057,6 +2346,29 @@ button.ref:active {
     background: var(--accent-tint);
     color: var(--accent-ink);
     font-weight: 600;
+  }
+  .choices {
+    grid-template-columns: 1fr;
+  }
+  .modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .modal-head {
+    padding: 16px 12px 12px 16px;
+  }
+  .modal-body {
+    padding: 0 16px;
+  }
+  .modal-foot {
+    margin: 0 -16px;
+    padding: 12px 16px 14px;
+  }
+  .login-row {
+    flex-wrap: wrap;
+  }
+  .foot-link {
+    margin: 0;
   }
   .script-top {
     padding: 12px 10px 12px 16px;
@@ -2397,7 +2709,16 @@ button.ref:active {
   max-width: 380px;
 }
 .login-brand {
-  margin-bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  color: var(--ink);
+}
+.login-logo {
+  display: block;
+  width: 184px;
+  height: auto;
 }
 .login-hint {
   margin: -6px 0 14px;
@@ -2537,19 +2858,8 @@ button.ref:active {
 
 /* --- Выданный пароль ----------------------------------------------------- */
 
-/* Пароль виден один раз, поэтому карточка кричит: акцентная рамка, крупный
-   моноширинный шрифт и кнопка «скопировать» рядом. */
-.creds {
-  margin-bottom: 16px;
-  border: 1px solid var(--accent);
-}
-.creds-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
+/* Пароль виден один раз: крупные табличные цифры и кнопка «скопировать»
+   рядом; окно не закроется, пока не нажали «Готово». */
 .creds-body {
   display: flex;
   align-items: center;
@@ -2784,9 +3094,6 @@ button.vote.on.disagree {
 .input-inline {
   max-width: 300px;
 }
-.select-inline {
-  min-width: 168px;
-}
 .form-hint {
   margin: 10px 0 0;
   max-width: 70ch;
@@ -2827,9 +3134,6 @@ input[type="file"]::file-selector-button:hover {
 .col-name {
   width: 18%;
 }
-.col-access {
-  min-width: 210px;
-}
 /* Ряд действий держится в одну строку: перенос кнопок делает строки разной
    высоты, и таблица перестаёт читаться как таблица. */
 .col-row-actions {
@@ -2837,10 +3141,6 @@ input[type="file"]::file-selector-button:hover {
 }
 .col-row-actions .actions {
   flex-wrap: nowrap;
-}
-.actions.tight {
-  gap: 4px;
-  margin-top: 4px;
 }
 .nowrap {
   white-space: nowrap;

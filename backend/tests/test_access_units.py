@@ -103,3 +103,22 @@ def test_author_key_distinguishes_owner_and_employee():
     employee_id = uuid.uuid4()
     assert make("own", employee_id).author_key == f"emp:{employee_id}"
     assert make("all").author_key == "owner"
+
+
+# --- права по продуктам ---
+
+def test_scripts_edit_is_independent_of_analytics_scope():
+    """Скрипты и аналитика — разные права: правка текстов не открывает чужие
+    смены, а доступ ко всем сменам не даёт править тексты."""
+    editor = UserContext(user_id="u", employee_id=uuid.uuid4(), scope="own", scripts_access="edit")
+    assert editor.can_edit_scripts
+    assert not editor.can_view_all and not editor.can_manage
+
+    analyst = UserContext(user_id="u", employee_id=uuid.uuid4(), scope="all", scripts_access="read")
+    assert analyst.can_manage
+    assert not analyst.can_edit_scripts
+
+
+def test_owner_always_edits_scripts():
+    owner = UserContext(user_id="owner", scope="all", is_owner=True, scripts_access="read")
+    assert owner.can_edit_scripts

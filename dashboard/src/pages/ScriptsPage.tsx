@@ -40,7 +40,7 @@ const AUTO_OPEN = 3;
 
 export default function ScriptsPage() {
   const me = useSession();
-  const canEdit = me.can_manage;
+  const canEdit = me.can_edit_scripts;
   const { sectionId } = useParams();
   const [params] = useSearchParams();
   const focusId = params.get("item");

@@ -6,7 +6,8 @@
  */
 import { FormEvent, useEffect, useState } from "react";
 import { api, Me, setToken } from "../api";
-import { IconWave, Note } from "../components/ui";
+import Logo from "../components/Logo";
+import { Note } from "../components/ui";
 
 export default function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
   const [login, setLogin] = useState("");
@@ -52,14 +53,9 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void
   return (
     <div className="login-screen">
       <form className="sheet sheet-pad login-card" onSubmit={submit}>
-        <div className="brand login-brand">
-          <span className="brand-mark">
-            <IconWave />
-          </span>
-          <span>
-            <span className="brand-name">Ресепшен</span>
-            <span className="brand-sub">речевая аналитика</span>
-          </span>
+        <div className="login-brand">
+          <Logo className="login-logo" />
+          <span className="muted">Скрипты и речевая аналитика ресепшена</span>
         </div>
 
         {byToken ? (

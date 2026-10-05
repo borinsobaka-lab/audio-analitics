@@ -23,12 +23,6 @@ export const IconCalendar = ({ size = 15 }: IconProps) => (
   </svg>
 );
 
-export const IconWave = ({ size = 15 }: IconProps) => (
-  <svg {...base(size)}>
-    <path d="M5 10v4M9 6v12M13 8.5v7M17 4.5v15" />
-  </svg>
-);
-
 export const IconPlay = ({ size = 14 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
     <path d="M8 5.2a1 1 0 0 1 1.53-.85l9.1 5.8a1 1 0 0 1 0 1.7l-9.1 5.8A1 1 0 0 1 8 16.8Z" />

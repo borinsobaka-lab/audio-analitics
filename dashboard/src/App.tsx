@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, getToken, Location, Me, onSessionExpired, plural, setToken } from "./api";
-import { IconWave, Skeleton } from "./components/ui";
+import Logo from "./components/Logo";
+import { Skeleton } from "./components/ui";
 import { NavIcon, NavIcons, sectionIcon } from "./components/navIcons";
 import DashboardPage from "./pages/DashboardPage";
 import DaysPage from "./pages/DaysPage";
@@ -104,11 +105,6 @@ function StudioPicker({
 
 type Product = "scripts" | "analytics";
 
-const PRODUCT_NAMES: Record<Product, string> = {
-  scripts: "скрипты",
-  analytics: "речевая аналитика",
-};
-
 /** Переключатель продуктов в шапке меню.
  *
  *  Два продукта — две кнопки, а не выпадающий список: выбор виден сразу и
@@ -119,23 +115,26 @@ const PRODUCT_NAMES: Record<Product, string> = {
 function ProductSwitch({
   product,
   lastPath,
+  onProductPage,
 }: {
   product: Product;
   lastPath: Record<Product, string>;
+  /** false — открыт общий раздел (сотрудники), а не страница продукта. */
+  onProductPage: boolean;
 }) {
   return (
     <div className="product-switch" role="group" aria-label="Продукт">
       <Link
         to={lastPath.scripts}
         className={`product-btn${product === "scripts" ? " on" : ""}`}
-        aria-current={product === "scripts" ? "page" : undefined}
+        aria-current={onProductPage && product === "scripts" ? "page" : undefined}
       >
         Скрипты
       </Link>
       <Link
         to={lastPath.analytics}
         className={`product-btn${product === "analytics" ? " on" : ""}`}
-        aria-current={product === "analytics" ? "page" : undefined}
+        aria-current={onProductPage && product === "analytics" ? "page" : undefined}
       >
         Аналитика
       </Link>
@@ -210,13 +209,22 @@ export default function App() {
   const selectAll = useCallback(() => remember([]), [remember]);
 
   const location = useLocation();
-  const product: Product = location.pathname.startsWith("/scripts") ? "scripts" : "analytics";
   const lastPath = useRef<Record<Product, string>>({
     scripts: "/scripts",
     analytics: "/analytics",
   });
-  if (location.pathname !== "/") {
+  const lastProduct = useRef<Product>("scripts");
+  // Сотрудники — общий раздел, не продукт: пока он открыт, меню остаётся в
+  // том продукте, откуда пришли, чтобы вернуться одним нажатием.
+  const shared = location.pathname.startsWith("/users");
+  const product: Product = shared
+    ? lastProduct.current
+    : location.pathname.startsWith("/scripts") || location.pathname === "/"
+      ? "scripts"
+      : "analytics";
+  if (!shared && location.pathname !== "/") {
     lastPath.current[product] = location.pathname + location.search;
+    lastProduct.current = product;
   }
 
   // Точку могли закрыть или удалить, пока выбор лежал в localStorage: без
@@ -256,16 +264,15 @@ export default function App() {
         <PlaybookProvider enabled={product === "scripts"}>
           <div className="layout">
             <nav className="sidebar">
-              <div className="brand">
-                <span className="brand-mark">
-                  <IconWave />
-                </span>
-                <span>
-                  <span className="brand-name">Ресепшен</span>
-                  <span className="brand-sub">{PRODUCT_NAMES[product]}</span>
-                </span>
-              </div>
-              <ProductSwitch product={product} lastPath={lastPath.current} />
+              {/* Логотип ведёт на главную — в скрипты, как после входа. */}
+              <Link to="/" className="brand" aria-label="Lady Stretch — на главную">
+                <Logo className="brand-logo" />
+              </Link>
+              <ProductSwitch
+                product={product}
+                lastPath={lastPath.current}
+                onProductPage={!shared}
+              />
 
               {product === "scripts" ? (
                 <ScriptsNav />
@@ -287,10 +294,6 @@ export default function App() {
                       <NavLink to="/metrics" className="nav-link">
                         <NavIcon icon={NavIcons.metrics} />
                         Метрики и анализ
-                      </NavLink>
-                      <NavLink to="/employees" className="nav-link">
-                        <NavIcon icon={NavIcons.people} />
-                        Сотрудники
                       </NavLink>
                       <NavLink to="/locations" className="nav-link">
                         <NavIcon icon={NavIcons.studio} />
@@ -317,6 +320,15 @@ export default function App() {
                     onAll={selectAll}
                   />
                 )}
+                {/* Сотрудники — общие для всех продуктов: один вход на всё, а
+                    права у каждого продукта свои. Поэтому раздел живёт не в
+                    меню продукта, а здесь, рядом с тем, кто вошёл. */}
+                {me.can_manage && (
+                  <NavLink to="/users" className="nav-link foot-link">
+                    <NavIcon icon={NavIcons.people} />
+                    Сотрудники
+                  </NavLink>
+                )}
                 <div className="who">
                   <span className="who-name">
                     {me.full_name || me.login || "Пользователь"}
@@ -324,9 +336,9 @@ export default function App() {
                   <span className="who-role">
                     {me.is_owner
                       ? "владелец"
-                      : me.can_view_all
-                        ? "все смены"
-                        : "только свои смены"}
+                      : `${me.can_edit_scripts ? "правит скрипты" : "читает скрипты"} · ${
+                          me.can_view_all ? "все смены" : "свои смены"
+                        }`}
                   </span>
                 </div>
                 <button className="ghost small btn-block" onClick={signOut}>
@@ -345,7 +357,9 @@ export default function App() {
                 <Route path="/days" element={<DaysPage />} />
                 <Route path="/days/:id" element={<DayReportPage />} />
                 {me.can_manage && <Route path="/metrics" element={<MetricsPage />} />}
-                {me.can_manage && <Route path="/employees" element={<EmployeesPage />} />}
+                {me.can_manage && <Route path="/users" element={<EmployeesPage />} />}
+                {/* Прежний адрес раздела — из закладок и старых ссылок. */}
+                <Route path="/employees" element={<Navigate to="/users" replace />} />
                 {me.can_manage && <Route path="/locations" element={<LocationsPage />} />}
                 {me.can_manage && <Route path="/app" element={<AppPage />} />}
                 <Route path="*" element={<Navigate to="/scripts" replace />} />

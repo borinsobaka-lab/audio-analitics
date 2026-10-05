@@ -6,7 +6,7 @@
 пометками «RU:» и «После отправки…», которые потом приходится стирать в чате.
 
 Читают скрипты все вошедшие: менеджер на ресепшене — главный их читатель.
-Правит тот же круг, что настраивает метрики, — доступ «все смены».
+Правят те, кому в карточке сотрудника выдано «Скрипты: правка», и владелец.
 
 Стартовый набор — перенос того самого документа (playbook_default.json). Он
 загружается сам при первом открытии раздела, ровно один раз: отметка в
@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import UserContext, require_manage, require_user
+from ..auth import UserContext, require_scripts_edit, require_user
 from ..db import get_db
 from ..models import Organization, PlaybookItem, PlaybookSection, PlaybookState, utcnow
 from ..schemas import (
@@ -203,7 +203,7 @@ async def get_playbook(
 @router.post("/sections", response_model=PlaybookSectionOut, status_code=201)
 async def create_section(
     body: PlaybookSectionIn,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     org = await current_org(db)
@@ -234,7 +234,7 @@ def section_out(section: PlaybookSection) -> PlaybookSectionOut:
 async def update_section(
     section_id: uuid.UUID,
     body: PlaybookSectionPatch,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     """Переименовать раздел или сменить его иконку в меню."""
@@ -253,7 +253,7 @@ async def update_section(
 @router.delete("/sections/{section_id}", status_code=204)
 async def delete_section(
     section_id: uuid.UUID,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     """Удаляется только пустой раздел: вместе с ним молча ушли бы скрипты,
@@ -274,7 +274,7 @@ async def delete_section(
 @router.put("/sections/order", status_code=204)
 async def reorder_sections(
     body: PlaybookOrder,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     org = await current_org(db)
@@ -296,7 +296,7 @@ async def reorder_sections(
 async def reorder_items(
     section_id: uuid.UUID,
     body: PlaybookOrder,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     section = await get_section(db, section_id)
@@ -317,7 +317,7 @@ async def reorder_items(
 @router.post("/items", response_model=PlaybookItemOut, status_code=201)
 async def create_item(
     body: PlaybookItemIn,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     section = await get_section(db, body.section_id)
@@ -345,7 +345,7 @@ async def create_item(
 async def update_item(
     item_id: uuid.UUID,
     body: PlaybookItemIn,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     item = await get_item(db, item_id)
@@ -373,7 +373,7 @@ async def update_item(
 @router.delete("/items/{item_id}", status_code=204)
 async def delete_item(
     item_id: uuid.UUID,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_scripts_edit),
     db: AsyncSession = Depends(get_db),
 ):
     item = await get_item(db, item_id)

@@ -47,6 +47,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             scope=employee.access_scope or "own",
             can_view_all=(employee.access_scope or "own") == "all",
             can_manage=(employee.access_scope or "own") == "all",
+            can_edit_scripts=(employee.scripts_access or "read") == "edit",
             is_owner=False,
         ),
     )
@@ -61,5 +62,6 @@ async def me(user: UserContext = Depends(require_user)):
         scope=user.scope,
         can_view_all=user.can_view_all,
         can_manage=user.can_manage,
+        can_edit_scripts=user.can_edit_scripts,
         is_owner=user.is_owner,
     )

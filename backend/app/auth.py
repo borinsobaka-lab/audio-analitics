@@ -42,6 +42,7 @@ class UserContext:
 
     scope: «all» — видит смены всех менеджеров и правит настройки;
            «own» — видит только свои смены и ничего не настраивает.
+    scripts_access: «edit» — правит скрипты; «read» — читает и копирует.
     """
 
     def __init__(
@@ -52,6 +53,7 @@ class UserContext:
         full_name: str = "",
         scope: str = "all",
         is_owner: bool = False,
+        scripts_access: str = "edit",
     ):
         self.user_id = user_id
         self.email = email
@@ -59,6 +61,7 @@ class UserContext:
         self.full_name = full_name
         self.scope = scope
         self.is_owner = is_owner
+        self.scripts_access = scripts_access
 
     @property
     def can_view_all(self) -> bool:
@@ -73,6 +76,12 @@ class UserContext:
         места, где доступ можно случайно разойтись с ожиданием, не возникает.
         """
         return self.scope == "all"
+
+    @property
+    def can_edit_scripts(self) -> bool:
+        """Право в продукте «Скрипты» — своё, не из области видимости смен.
+        Владелец правит всегда."""
+        return self.is_owner or self.scripts_access == "edit"
 
     @property
     def author_key(self) -> str:
@@ -153,6 +162,7 @@ async def _employee_context(db: AsyncSession, token: str) -> UserContext | None:
         employee_id=employee.id,
         full_name=employee.full_name,
         scope=employee.access_scope or "own",
+        scripts_access=employee.scripts_access or "read",
     )
 
 
@@ -209,6 +219,13 @@ async def any_login_exists(db: AsyncSession) -> bool:
     return (
         await db.scalar(select(Employee.id).where(Employee.login.is_not(None)).limit(1))
     ) is not None
+
+
+async def require_scripts_edit(user: UserContext = Depends(require_user)) -> UserContext:
+    """Правка скриптов и разделов — по праву «Скрипты: правка»."""
+    if not user.can_edit_scripts:
+        raise HTTPException(403, "Недостаточно прав: скрипты доступны только для чтения")
+    return user
 
 
 RequireDevice = Depends(require_device)

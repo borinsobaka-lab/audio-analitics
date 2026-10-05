@@ -95,6 +95,10 @@ class Employee(UUIDMixin, Base):
     # own | all — чьи смены видно. Право редактировать раздел сотрудников
     # выводится отсюда же: им обладают только те, кто видит все записи.
     access_scope: Mapped[str] = mapped_column(String(16), default="own")
+    # read | edit — право в продукте «Скрипты». Независимо от access_scope:
+    # администратор ресепшена может править скрипты, не видя чужих смен, а
+    # аналитик — видеть все смены, не трогая тексты.
+    scripts_access: Mapped[str] = mapped_column(String(16), default="read")
 
 
 class DayRecording(UUIDMixin, Base):

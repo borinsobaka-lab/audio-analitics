@@ -5,6 +5,10 @@
 показывает всех, а смена достаётся той студии, на которой стоит компьютер.
 В базе у карточки остаётся точка, где её завели, но ни на что она не влияет.
 
+Сотрудник — пользователь всех продуктов админки сразу: один логин, а права
+у каждого продукта свои (аналитика — чьи смены видно, скрипты — читать или
+править).
+
 Раздел целиком закрыт правом «видит все записи»: сотрудник, которому открыты
 только свои смены, не может ни завести пользователя, ни расширить себе доступ.
 Единственное исключение — чтение списка: имена нужны и в отчётах.
@@ -120,6 +124,7 @@ async def create_employee(
         active=True,
         login=login,
         access_scope=body.access_scope,
+        scripts_access=body.scripts_access,
     )
     db.add(employee)
     await db.commit()
@@ -156,6 +161,8 @@ async def update_employee(
             # доступ можно только владельческим токеном.
             raise HTTPException(400, "Нельзя снять с себя доступ ко всем записям")
         employee.access_scope = body.access_scope
+    if body.scripts_access is not None:
+        employee.scripts_access = body.scripts_access
 
     password = ""
     if body.login is not None:

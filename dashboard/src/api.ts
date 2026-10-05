@@ -157,6 +157,8 @@ export interface Location {
   shifts_count: number;
 }
 
+export type ScriptsAccess = "read" | "edit";
+
 export interface Employee {
   id: string;
   /** Точка, где карточку завели. Ни на что не влияет: сотрудник работает на
@@ -167,8 +169,10 @@ export interface Employee {
   active: boolean;
   /** Логин в админку. Пусто — сотрудник есть только в приложении записи. */
   login: string | null;
-  /** own — видит свои смены; all — видит все и настраивает систему. */
+  /** Аналитика: own — видит свои смены; all — видит все и настраивает систему. */
   access_scope: "own" | "all";
+  /** Скрипты: read — читает и копирует; edit — правит тексты и разделы. */
+  scripts_access: ScriptsAccess;
   has_password: boolean;
   last_login_at: string | null;
 }
@@ -187,6 +191,7 @@ export interface Me {
   scope: "own" | "all";
   can_view_all: boolean;
   can_manage: boolean;
+  can_edit_scripts: boolean;
   is_owner: boolean;
 }
 
@@ -455,6 +460,7 @@ export const api = {
     full_name: string;
     login?: string | null;
     access_scope?: "own" | "all";
+    scripts_access?: ScriptsAccess;
   }) =>
     request<EmployeeCredentials>("/api/employees", {
       method: "POST",
@@ -467,6 +473,7 @@ export const api = {
       active?: boolean;
       login?: string | null;
       access_scope?: "own" | "all";
+      scripts_access?: ScriptsAccess;
     }
   ) =>
     request<EmployeeCredentials>(`/api/employees/${id}`, {

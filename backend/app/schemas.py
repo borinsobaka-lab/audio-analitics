@@ -64,6 +64,7 @@ class MeOut(BaseModel):
     scope: str = "own"
     can_view_all: bool = False
     can_manage: bool = False
+    can_edit_scripts: bool = False
     is_owner: bool = False
 
 
@@ -147,6 +148,7 @@ class EmployeeOut(BaseModel):
     # того, что он выдан.
     login: str | None = None
     access_scope: str = "own"
+    scripts_access: str = "read"
     has_password: bool = False
     last_login_at: datetime | None = None
 
@@ -172,6 +174,7 @@ class EmployeeCreate(BaseModel):
     # Логин необязателен: менеджера можно завести только для приложения.
     login: str | None = Field(default=None, max_length=64)
     access_scope: str = Field(default="own", pattern="^(own|all)$")
+    scripts_access: str = Field(default="read", pattern="^(read|edit)$")
 
 
 class EmployeeUpdate(BaseModel):
@@ -179,6 +182,7 @@ class EmployeeUpdate(BaseModel):
     active: bool | None = None
     login: str | None = Field(default=None, max_length=64)
     access_scope: str | None = Field(default=None, pattern="^(own|all)$")
+    scripts_access: str | None = Field(default=None, pattern="^(read|edit)$")
 
 
 class EmployeeCredentialsOut(BaseModel):
