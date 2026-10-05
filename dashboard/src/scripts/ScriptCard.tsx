@@ -148,20 +148,16 @@ export default function ScriptCard({
         <div className="script-head">
           {/* Тип — цветной меткой справа от названия: отдельная строка под
               метку съедала высоту каждой карточки. */}
+          {/* Шапка — всегда одна строка: название, тип и (в поиске) раздел.
+              Студию здесь не пишем — её выбирают вкладками под шапкой, а
+              вторая строка делала шапки разной высоты. */}
           <span className="script-title-row">
             <h3 className="script-title">
               <Highlight text={item.title} terms={terms} />
             </h3>
             <span className={`kind kind-${item.kind}`}>{KIND_LABELS[item.kind]}</span>
+            {showSection && <span className="script-section">{section.title}</span>}
           </span>
-          {(showSection || (variant.label && item.variants.length > 1)) && (
-            <span className="script-meta">
-              {showSection && <span className="script-section">{section.title}</span>}
-              {variant.label && item.variants.length > 1 && (
-                <span className="script-section">{variant.label}</span>
-              )}
-            </span>
-          )}
         </div>
       </header>
 

@@ -1654,12 +1654,6 @@ tbody tr:hover {
   align-items: flex-start;
   gap: 4px;
 }
-.script-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 /* Название и тип — в одну строку: метка справа от названия, а не отдельной
    строкой над ним, — карточка ниже на строку. */
 .script-title-row {
