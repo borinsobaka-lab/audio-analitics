@@ -65,6 +65,88 @@ function LangInputs({
   );
 }
 
+/** Как переменные выглядят в скриптах — теми же цветами, что там. */
+function VarLegend() {
+  return (
+    <div className="var-legend">
+      <div className="var-legend-row">
+        <span className="var-legend-sample">
+          <span className="var">Мари</span>
+        </span>
+        <span>
+          <strong>Подставится.</strong> Переменная есть здесь и заполнена на языке
+          текста — в скрипте и при копировании будет значение.
+        </span>
+      </div>
+      <div className="var-legend-row">
+        <span className="var-legend-sample">
+          <span className="var missing">{"{скидка}"}</span>
+        </span>
+        <span>
+          <strong>Не подставится.</strong> Переменной нет в настройках или она пустая на
+          языке текста — останется в скобках и так же скопируется. Довнесите значение.
+        </span>
+      </div>
+      <div className="var-legend-row">
+        <span className="var-legend-sample">
+          <span className="ph">[время]</span>
+        </span>
+        <span>
+          <strong>Заполняют руками.</strong> Квадратные скобки — администратор меняет сам
+          перед отправкой.
+        </span>
+      </div>
+      <ul className="var-rules">
+        <li>
+          В тексте скрипта — в фигурных скобках: <code>{"{цена_пробного}"}</code>. Имя —
+          буквы, цифры и _, без пробелов.
+        </li>
+        <li>
+          <strong>Текст</strong> — своё значение на RU, EN, GE. Пустой язык — оранжевая на
+          этом языке.
+        </li>
+        <li>
+          <strong>Дата</strong> — через N дней от сегодня, ДД.ММ, на всех языках
+          одинаково.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+/** Состояние своей переменной по языкам: где подставится (синим), где
+ *  останется в скобках (оранжевым). */
+function VarStatus({ variable }: { variable: ScriptVariable }) {
+  if (!variable.key) return null;
+  if (variable.type === "date") {
+    return (
+      <span className="var-status" title="Дата подставляется на всех языках одинаково">
+        <span className="var">все языки</span>
+      </span>
+    );
+  }
+  return (
+    <span className="var-status">
+      {LANGS.map((l) => {
+        const ok = Boolean(variable[l.key].trim());
+        return (
+          <span
+            key={l.key}
+            className={ok ? "var" : "var missing"}
+            title={
+              ok
+                ? `На ${l.inName} подставится значение`
+                : `На ${l.inName} пусто — в скрипте останется {${variable.key}}`
+            }
+          >
+            {l.label}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /** Дата «через N дней»: число дней и сразу значение на сегодня — видно,
  *  что подставится в скрипт и не выпадает ли день на выходной. */
 function DateOffset({ days, onChange }: { days: number; onChange: (days: number) => void }) {
@@ -261,6 +343,8 @@ export default function ScriptsSettingsPage() {
             hint="текст на трёх языках — цены, ссылки, реквизиты; дата — через сколько дней от сегодня"
           >
             <div className="sheet sheet-pad vars-card">
+              <VarLegend />
+
               <div className="vars-builtin">
                 {BUILTIN_VARIABLES.map((b) => (
                   <span key={b.key} className="vars-builtin-item">
@@ -302,6 +386,7 @@ export default function ScriptsSettingsPage() {
                         )
                       }
                     />
+                    <VarStatus variable={v} />
                     <button
                       type="button"
                       className="ghost small"

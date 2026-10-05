@@ -2393,6 +2393,55 @@ button.var-chip:hover {
 .names-who {
   font-weight: 500;
 }
+/* Легенда цветов переменных — те же классы, что в скриптах (.var,
+   .var.missing, .ph): образец выглядит ровно так, как в тексте скрипта. */
+.var-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--edge-soft);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.var-legend-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+.var-legend-sample {
+  font-size: 14px;
+  color: var(--ink);
+}
+.var-legend strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.var-rules {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--ink-3);
+}
+.var-rules li + li {
+  margin-top: 2px;
+}
+.var-rules code {
+  font-family: inherit;
+  color: var(--data-ink);
+  font-weight: 600;
+}
+.var-status {
+  display: inline-flex;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.var-status .var {
+  padding: 1px 6px;
+}
+
 .vars-builtin {
   display: flex;
   flex-wrap: wrap;
@@ -2636,6 +2685,10 @@ button.var-chip:hover {
   }
   .var-date {
     grid-column: auto;
+  }
+  .var-legend-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
   .names-head {
     display: none;
