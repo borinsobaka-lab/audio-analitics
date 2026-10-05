@@ -13,13 +13,14 @@
 playbook_state не даёт удалённым разделам вернуться.
 """
 import json
+import logging
 import uuid
 from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +61,7 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
+log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "playbook_default.json"
 SEED_NOTE = "Перенесено из документа «Скрипты LS Tbilisi»"
@@ -192,7 +194,7 @@ async def snapshot(db: AsyncSession, item: PlaybookItem) -> dict:
     }
 
 
-def record(
+async def record(
     db: AsyncSession,
     item: PlaybookItem,
     action: str,
@@ -201,18 +203,28 @@ def record(
     after: dict | None,
     note: str,
 ) -> None:
-    db.add(
-        PlaybookChange(
-            org_id=item.org_id,
-            item_id=item.id,
-            item_title=(after or before or {}).get("title", item.title),
-            action=action,
-            before=before,
-            after=after,
-            change_note=note,
-            author=author(user),
-        )
-    )
+    """Запись в хронологию — в точке сохранения: если миграция 013 ещё не
+    выполнена и таблицы нет, правка скрипта всё равно сохраняется, просто
+    без записи в журнал. Порядок «миграция, потом деплой» не должен ломать
+    работу у стойки."""
+    try:
+        async with db.begin_nested():
+            db.add(
+                PlaybookChange(
+                    org_id=item.org_id,
+                    item_id=item.id,
+                    item_title=(after or before or {}).get("title", item.title),
+                    action=action,
+                    before=before,
+                    after=after,
+                    change_note=note,
+                    author=author(user),
+                )
+            )
+    except ProgrammingError as exc:
+        if "playbook_changes" not in str(exc):
+            raise
+        log.warning("Хронология скриптов не записана: нет таблицы playbook_changes (миграция 013)")
 
 
 def encode_cursor(created_at, row_id) -> str:
@@ -417,7 +429,7 @@ async def create_item(
     )
     db.add(item)
     await db.flush()
-    record(db, item, "created", user, None, await snapshot(db, item), item.change_note)
+    await record(db, item, "created", user, None, await snapshot(db, item), item.change_note)
     await db.commit()
     await db.refresh(item)
     return item
@@ -454,7 +466,7 @@ async def update_item(
     item.updated_at = utcnow()
     item.updated_by = author(user)
     item.change_note = note
-    record(db, item, "updated", user, before, await snapshot(db, item), note)
+    await record(db, item, "updated", user, before, await snapshot(db, item), note)
     await db.commit()
     await db.refresh(item)
     return item
@@ -467,7 +479,7 @@ async def delete_item(
     db: AsyncSession = Depends(get_db),
 ):
     item = await get_item(db, item_id)
-    record(db, item, "deleted", user, await snapshot(db, item), None, "Скрипт удалён")
+    await record(db, item, "deleted", user, await snapshot(db, item), None, "Скрипт удалён")
     await db.delete(item)
     await db.commit()
     return None
