@@ -1679,6 +1679,10 @@ tbody tr:hover {
 .script.flash {
   box-shadow: var(--ring), var(--sh-2);
 }
+/* Подсветка гаснет плавно, а не обрывается. */
+.script:not(.flash) {
+  transition: box-shadow 600ms var(--ease);
+}
 
 /* Шапка карточки — тёмная, цветом открытого пункта меню, название белым
    (решение владельца): по тёмным шапкам глаз находит, где начинается
@@ -1781,6 +1785,25 @@ tbody tr:hover {
 
 .copy-btn {
   min-width: 132px;
+}
+.script-msg-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+/* «Ссылка на скрипт» — квадратная, той же высоты, что «Копировать»;
+   иконка приглушённая, чтобы главным оставалось копирование текста. */
+.link-btn {
+  color: var(--ink-3);
+}
+.link-btn:hover {
+  color: var(--ink);
+}
+.link-btn.copied,
+.link-btn.copied:hover {
+  color: var(--green-ink);
+  border-color: var(--green-ink);
 }
 .copy-btn.copied,
 .copy-btn.copied:hover {
@@ -2827,12 +2850,8 @@ button.fmt-btn:hover {
     align-items: center;
     gap: 10px;
   }
-  .who {
-    margin-bottom: 0;
-    white-space: nowrap;
-  }
-  .sidebar-foot .btn-block {
-    width: auto;
+  .who-row {
+    padding: 0;
   }
   .content {
     padding: 20px 16px 40px;
@@ -3425,9 +3444,25 @@ button.fmt-btn:hover {
 }
 
 /* Кто вошёл — внизу меню, на месте прежнего поля токена. */
+.who-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0 0 10px;
+}
 .who {
-  margin-bottom: 10px;
+  min-width: 0;
   line-height: 1.35;
+}
+.who-name,
+.who-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who-signout {
+  flex: none;
 }
 .who-name {
   display: block;

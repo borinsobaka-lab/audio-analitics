@@ -346,21 +346,25 @@ export default function App() {
                     Сотрудники
                   </NavLink>
                 )}
-                <div className="who">
-                  <span className="who-name">
-                    {me.full_name || me.login || "Пользователь"}
-                  </span>
-                  <span className="who-role">
-                    {me.is_owner
-                      ? "владелец"
-                      : `${me.can_edit_scripts ? "правит скрипты" : "читает скрипты"} · ${
-                          me.can_view_all ? "все смены" : "свои смены"
-                        }`}
-                  </span>
+                {/* Кто вошёл и «Выйти» — одной строкой: так меню освобождает
+                    место под разделы скриптов. */}
+                <div className="who-row">
+                  <div className="who">
+                    <span className="who-name">
+                      {me.full_name || me.login || "Пользователь"}
+                    </span>
+                    <span className="who-role">
+                      {me.is_owner
+                        ? "владелец"
+                        : `${me.can_edit_scripts ? "правит скрипты" : "читает скрипты"} · ${
+                            me.can_view_all ? "все смены" : "свои смены"
+                          }`}
+                    </span>
+                  </div>
+                  <button className="ghost small who-signout" onClick={signOut}>
+                    Выйти
+                  </button>
                 </div>
-                <button className="ghost small btn-block" onClick={signOut}>
-                  Выйти
-                </button>
               </div>
             </nav>
 

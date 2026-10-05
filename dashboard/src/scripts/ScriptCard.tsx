@@ -17,6 +17,7 @@ import {
   messageText,
   pickVariant,
   resolveText,
+  scriptUrl,
   VarResolver,
 } from "./logic";
 import { Slider } from "../components/Slider";
@@ -37,6 +38,14 @@ const IconPencil = () => (
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M4 20h4L19.5 8.5a2.12 2.12 0 0 0-3-3L5 17v3z" />
     <path d="M14.5 7.5l3 3" />
+  </svg>
+);
+
+const IconLink = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6" />
+    <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" />
   </svg>
 );
 
@@ -80,6 +89,32 @@ export function CopyButton({ text, label = "Копировать" }: { text: str
   );
 }
 
+/** Ссылка на скрипт — значок без текста слева от «Копировать». Ссылку
+ *  кладут в CRM, базу знаний, чат с коллегой: по ней скрипт открывается
+ *  сразу и подсвечивается, как при переходе внутри админки. */
+function LinkButton({ url }: { url: string }) {
+  const [done, setDone] = useState(false);
+  const timer = useRef<number>();
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <button
+      type="button"
+      className={`secondary small icon-btn link-btn${done ? " copied" : ""}`}
+      title={done ? "Ссылка скопирована" : "Копировать ссылку на скрипт"}
+      aria-label={done ? "Ссылка скопирована" : "Копировать ссылку на скрипт"}
+      aria-live="polite"
+      onClick={async () => {
+        if (!(await copyText(url))) return;
+        setDone(true);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setDone(false), 1600);
+      }}
+    >
+      {done ? <IconCheck /> : <IconLink />}
+    </button>
+  );
+}
+
 /** Одно сообщение: подпись, «Копировать» и текст на подложке-пузыре. */
 function MessageBlock({
   message,
@@ -88,6 +123,7 @@ function MessageBlock({
   lang,
   terms,
   resolveVar,
+  linkUrl,
 }: {
   message: ScriptMessage;
   index: number;
@@ -95,6 +131,8 @@ function MessageBlock({
   lang: ScriptLang;
   terms: string[];
   resolveVar: VarResolver;
+  /** Ссылка на скрипт — только у первого сообщения: одна на карточку. */
+  linkUrl?: string;
 }) {
   const shown = messageText(message, lang);
   return (
@@ -103,7 +141,10 @@ function MessageBlock({
         <span className="script-msg-label">
           {message.label || (total > 1 ? `Сообщение ${index + 1}` : "Текст")}
         </span>
-        <CopyButton text={resolveText(shown.text, resolveVar)} />
+        <span className="script-msg-actions">
+          {linkUrl && <LinkButton url={linkUrl} />}
+          <CopyButton text={resolveText(shown.text, resolveVar)} />
+        </span>
       </div>
       {shown.fallback && (
         <p className="script-missing">
@@ -221,6 +262,7 @@ export default function ScriptCard({
             lang={lang}
             terms={terms}
             resolveVar={resolveVar}
+            linkUrl={i === 0 ? scriptUrl(section.id, item.id) : undefined}
           />
         ))}
 

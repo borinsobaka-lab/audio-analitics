@@ -183,6 +183,12 @@ export function scriptPath(sectionId: string, itemId?: string): string {
   return itemId ? `/scripts/${sectionId}?item=${itemId}` : `/scripts/${sectionId}`;
 }
 
+/** Полная ссылка на скрипт — для CRM, базы знаний, переписки. Ведёт по id:
+ *  если скрипт потом перенесут в другой раздел, страница сама найдёт его. */
+export function scriptUrl(sectionId: string, itemId: string): string {
+  return `${window.location.origin}${scriptPath(sectionId, itemId)}`;
+}
+
 
 /* --- Переменные: {админ}, {студия}, свои -------------------------------- */
 

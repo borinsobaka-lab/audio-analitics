@@ -124,19 +124,29 @@ export default function ScriptsPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Ссылка на конкретный скрипт: докрутить и коротко подсветить.
+  // Ссылка на скрипт ведёт по id. Если скрипт с тех пор перенесли в другой
+  // раздел (или ссылка без раздела), — открыть его настоящий раздел.
+  useEffect(() => {
+    if (!focusId || !playbook) return;
+    const home = playbook.sections.find((s) => s.items.some((i) => i.id === focusId));
+    if (home && sectionId && home.id !== sectionId)
+      navigate(scriptPath(home.id, focusId), { replace: true });
+  }, [focusId, playbook, sectionId, navigate]);
+
+  // Ссылка на конкретный скрипт: докрутить и подсветить.
   useEffect(() => {
     if (!focusId || !playbook) return;
     setFlash(focusId);
     const frame = requestAnimationFrame(() =>
       document.getElementById(`script-${focusId}`)?.scrollIntoView({ block: "start" })
     );
-    const timer = window.setTimeout(() => setFlash(null), 1600);
+    const timer = window.setTimeout(() => setFlash(null), 2400);
     return () => {
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [focusId, playbook]);
+    // sectionId — чтобы докрутить и после переадресации в настоящий раздел.
+  }, [focusId, playbook, sectionId]);
 
   const openScript = useCallback(
     (target: { item: ScriptItem; section: ScriptSection }) => {
