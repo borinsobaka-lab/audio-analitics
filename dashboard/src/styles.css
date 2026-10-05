@@ -1941,10 +1941,9 @@ button.ref:active {
   transform: none;
 }
 
-/* Полоса истории внизу каждой карточки: кто, когда и что изменил. Светло-
-   серая, тёмный мелкий текст — заметна как подвал карточки, но не тянет
-   внимание с текста скрипта и заголовка (тёмная перетягивала, решение
-   владельца). Низкая — 26px. */
+/* Подвал карточки: кто, когда и что изменил, кнопки правки. Белый, как
+   карточка, отделён только тонкой линией — не тянет внимание с текста
+   скрипта (цветные полосы перетягивали, решение владельца). Низкий. */
 .script-foot {
   display: flex;
   align-items: center;
@@ -1952,12 +1951,13 @@ button.ref:active {
   gap: 4px 12px;
   flex-wrap: wrap;
   min-height: 26px;
-  padding: 0 8px 0 20px;
-  background: var(--strip);
+  padding: 2px 8px 2px 20px;
+  background: var(--card);
+  border-top: 1px solid var(--edge);
   border-radius: 0 0 var(--r-md) var(--r-md);
   font-size: 11.5px;
   line-height: 1.3;
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 .script-history {
   display: flex;
@@ -1972,7 +1972,7 @@ button.ref:active {
   color: var(--ink-4);
 }
 .script-change {
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 .script-actions {
   display: flex;
@@ -1986,10 +1986,10 @@ button.ref:active {
   font-size: 11.5px;
 }
 .script-actions button.ghost {
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 .script-actions button.ghost:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--sunk);
   color: var(--ink);
 }
 
