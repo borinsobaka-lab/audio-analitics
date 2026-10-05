@@ -1,0 +1,5 @@
+# The `opus` crate builds libopus from source via CMake. Bundled libopus
+# declares cmake_minimum_required below 3.5, which CMake 4.x refuses to accept.
+# This restores the old policy behaviour so the build works on both CMake 3 and 4.
+[env]
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

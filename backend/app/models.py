@@ -1,0 +1,516 @@
+"""SQLAlchemy ORM models.
+
+Multi-tenancy: every business table carries org_id; enable RLS policies on
+Postgres side (see migrations/001_initial.sql) when serving multiple orgs.
+"""
+import uuid
+from datetime import date, datetime, timezone
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class UUIDMixin:
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+
+class Organization(UUIDMixin, Base):
+    __tablename__ = "organizations"
+
+    name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Location(UUIDMixin, Base):
+    """Точка продажи — одна студия с одним ресепшеном.
+
+    Приложение записи выбирает её один раз в настройках и больше не трогает:
+    компьютер стоит на конкретной стойке. Закрытая точка (active=False) не
+    показывается в выборе, но её смены остаются в отчётах.
+    """
+
+    __tablename__ = "locations"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    address: Mapped[str] = mapped_column(String(512), default="")
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Tbilisi")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Employee(UUIDMixin, Base):
+    """A sales manager. Deactivated employees stay in the database so past
+    reports keep their author; they just disappear from the app's picker.
+
+    Сотрудник и пользователь админки — одна и та же строка. Разделять их не
+    стали намеренно: вся идея доступа «вижу только свои записи» держится на
+    том, что вошедший — это тот самый менеджер, чьё имя стоит на смене.
+    Логин появляется только у тех, кому доступ выдали; остальные существуют
+    как имя в списке приложения и войти не могут.
+    """
+
+    __tablename__ = "employees"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
+    full_name: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(64), default="manager")
+    voiceprint_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # --- Доступ в админку ---
+    login: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Момент последней выдачи пароля. Лежит в сессионном токене: после сброса
+    # старые сессии сотрудника перестают подходить сами собой.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # own | all — чьи смены видно. Право редактировать раздел сотрудников
+    # выводится отсюда же: им обладают только те, кто видит все записи.
+    access_scope: Mapped[str] = mapped_column(String(16), default="own")
+
+
+class DayRecording(UUIDMixin, Base):
+    """One recording session: normally a whole working day of one location.
+
+    Deliberately NOT unique per (location, date): if the app crashes and the
+    manager starts again, that second session becomes its own recording and
+    its own report, rather than being merged into a half-broken first one.
+    """
+
+    __tablename__ = "day_recordings"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    date: Mapped[date] = mapped_column(Date, index=True)
+    # recording -> uploaded -> queued -> processing -> done -> error
+    status: Mapped[str] = mapped_column(String(32), default="recording")
+    status_detail: Mapped[str] = mapped_column(Text, default="")
+    # Когда статус (или пояснение к нему) менялся в последний раз. По этому
+    # времени админка отличает разбор, который идёт, от разбора, который умер
+    # вместе с воркером и завис в «обрабатывается» навсегда.
+    status_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=utcnow
+    )
+    raw_audio_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    total_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speech_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # Расход на обработку. Хранится вместе с итоговой суммой, потому что
+    # тарифы меняются: по минутам и токенам прошлую смену можно пересчитать,
+    # по одной сумме — уже нет.
+    asr_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    llm_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    segments: Mapped[list["AudioSegment"]] = relationship(back_populates="day_recording")
+
+    def set_status(self, status: str | None = None, detail: str | None = None) -> None:
+        """Сменить статус и/или пояснение, отметив момент изменения."""
+        if status is not None:
+            self.status = status
+        if detail is not None:
+            self.status_detail = detail
+        self.status_changed_at = utcnow()
+
+
+class AudioSegment(UUIDMixin, Base):
+    """A 5–10 minute chunk uploaded by the desktop client."""
+
+    __tablename__ = "segments"
+    __table_args__ = (UniqueConstraint("day_recording_id", "idx", name="uq_segment_idx"),)
+
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    idx: Mapped[int] = mapped_column(Integer)
+    audio_uri: Mapped[str] = mapped_column(String(512))
+    start_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    end_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    day_recording: Mapped[DayRecording] = relationship(back_populates="segments")
+
+
+class Transcript(UUIDMixin, Base):
+    __tablename__ = "transcripts"
+
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    asr_provider: Mapped[str] = mapped_column(String(64), default="elevenlabs")
+    language_hint: Mapped[str] = mapped_column(String(32), default="auto")
+    # Full ASR response (words, timestamps, speakers) stored in object storage;
+    # merged plain view stored inline for LLM input.
+    raw_json_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Dialog(UUIDMixin, Base):
+    __tablename__ = "dialogs"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    start_s: Mapped[float] = mapped_column(Float)
+    end_s: Mapped[float] = mapped_column(Float)
+    # sale | consultation | refusal | service | irrelevant
+    type: Mapped[str] = mapped_column(String(32))
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    brief: Mapped[str] = mapped_column(Text, default="")
+    manager_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    effectiveness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upsell_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Stage-2 LLM output verbatim (script evaluation, deviations, recommendations).
+    analysis_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    turns: Mapped[list["DialogTurn"]] = relationship(back_populates="dialog")
+
+
+class DialogTurn(UUIDMixin, Base):
+    __tablename__ = "dialog_turns"
+
+    dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
+    speaker_label: Mapped[str] = mapped_column(String(64))
+    is_manager: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    start_s: Mapped[float] = mapped_column(Float)
+    end_s: Mapped[float] = mapped_column(Float)
+    text: Mapped[str] = mapped_column(Text)
+
+    dialog: Mapped[Dialog] = relationship(back_populates="turns")
+
+
+class ScriptTemplate(UUIDMixin, Base):
+    """The sales script broken into stages; referenced by the stage-2 prompt."""
+
+    __tablename__ = "script_templates"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    name: Mapped[str] = mapped_column(String(255), default="Скрипт продаж")
+    # [{"key": "greeting", "title": "Приветствие", "description": "..."}, ...]
+    stages_json: Mapped[list] = mapped_column(JSONB, default=list)
+    body: Mapped[str] = mapped_column(Text, default="")  # full script text for the LLM
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PromptTemplate(UUIDMixin, Base):
+    """Editable LLM prompts. The pipeline always loads the active version by key.
+
+    Keys used by the pipeline:
+      - dialog_segmentation  (stage 1: split day transcript into dialogs)
+      - sale_analysis        (stage 2: per-dialog script evaluation)
+      - daily_summary        (reduce: aggregate day recommendations)
+    """
+
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        UniqueConstraint("org_id", "key", "version", name="uq_prompt_org_key_version"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)  # override default
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AnalysisMetric(UUIDMixin, Base):
+    """An owner-defined evaluation metric: name + free-form LLM instructions
+    + rating scale. Every active metric is applied to every dialog of a day."""
+
+    __tablename__ = "analysis_metrics"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text)
+    scale_max: Mapped[int] = mapped_column(Integer, default=10)  # 5 or 10
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MetricEvaluation(UUIDMixin, Base):
+    """Result of applying one metric to one dialog."""
+
+    __tablename__ = "metric_evaluations"
+    __table_args__ = (
+        UniqueConstraint("dialog_id", "metric_id", name="uq_metric_eval_dialog"),
+    )
+
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
+    metric_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_metrics.id"), index=True
+    )
+    applicable: Mapped[bool] = mapped_column(Boolean, default=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    good_json: Mapped[list] = mapped_column(JSONB, default=list)
+    bad_json: Mapped[list] = mapped_column(JSONB, default=list)
+    comment: Mapped[str] = mapped_column(Text, default="")
+
+
+class MetricsDaily(UUIDMixin, Base):
+    """Aggregated result of one recording session (see DayRecording)."""
+
+    __tablename__ = "metrics_daily"
+    __table_args__ = (
+        UniqueConstraint("day_recording_id", name="uq_metrics_day_recording"),
+    )
+
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    date: Mapped[date] = mapped_column(Date, index=True)
+    dialogs_total: Mapped[int] = mapped_column(Integer, default=0)
+    sales_count: Mapped[int] = mapped_column(Integer, default=0)
+    conversion: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upsell_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_script_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Reduce-stage output: top deviations + recommendations for the day.
+    summary_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class AppRelease(UUIDMixin, Base):
+    """Сборка приложения записи, выложенная владельцем.
+
+    Приложение стоит на компьютерах в студиях, куда никто не ходит. Раньше
+    обновление означало собрать, принести флешку и обойти точки; теперь оно
+    само видит новую версию и ставит её по нажатию кнопки.
+
+    Архив лежит в объектном хранилище рядом с записями, а подпись — здесь:
+    приложение проверяет её своим вшитым публичным ключом и не установит
+    ничего, что подписано не нашим приватным ключом. Без этого «автообновление»
+    означало бы «кто угодно, подменивший ответ сервера, ставит нам свой код».
+    """
+
+    __tablename__ = "app_releases"
+    __table_args__ = (
+        UniqueConstraint("platform", "version", name="uq_release_platform_version"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    # darwin | windows — то, что присылает апдейтер в {{target}}.
+    platform: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    archive_uri: Mapped[str] = mapped_column(String(512))
+    signature: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    # Снятая с публикации сборка остаётся в истории, но приложениям не отдаётся.
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by_name: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DialogFeedback(UUIDMixin, Base):
+    """«Согласен / не согласен» с разбором одного разговора.
+
+    Смысл двойной. Сотруднику это способ ответить машине, а не молча принять
+    её оценку. Владельцу — обратная связь на промпт: если метрика собирает
+    несогласия на разных сменах у разных людей, дело не в людях, а в
+    формулировке промпта, и её надо править.
+
+    Возражают всегда конкретной оценке: metric_id обязателен. Голоса «за
+    разбор целиком» больше нет — несогласие «вообще» нечем починить, а править
+    можно только промпт метрики, к которой оно относится. Имена автора и
+    менеджера сохраняются строкой рядом со ссылками: сотрудника могут
+    переименовать, а запись о том, кто возразил, должна остаться читаемой.
+    """
+
+    __tablename__ = "dialog_feedback"
+    __table_args__ = (
+        # Один голос от одного человека на одну оценку — повторное нажатие
+        # меняет мнение, а не добавляет второй голос.
+        Index("uq_feedback_dialog_metric", "dialog_id", "metric_id", "author_key", unique=True),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dialogs.id"), index=True)
+    metric_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_metrics.id"), index=True
+    )
+    # «emp:<uuid>» для сотрудника, «owner» для входа по ADMIN_API_TOKEN.
+    author_key: Mapped[str] = mapped_column(String(64), index=True)
+    author_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    # Менеджер, чью смену разбирали: несогласия смотрят и по людям тоже.
+    subject_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
+    subject_name: Mapped[str] = mapped_column(String(255), default="")
+    agree: Mapped[bool] = mapped_column(Boolean)
+    comment: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Agreement(UUIDMixin, Base):
+    """Договорённость по итогам разбора смены.
+
+    Разбор без договорённости — это разговор, который забыт к вечеру. Здесь
+    фиксируется, о чём условились после конкретной смены (и, если нужно, по
+    какому именно разговору), а в следующей смене того же менеджера
+    договорённость показывается сверху с вопросом «сделано?». Так проверка
+    сама всплывает в нужный день, а не живёт в чьей-то памяти.
+
+    Статусы: open — ждёт следующей смены; done — выполнено; missed — не
+    выполнено; cancelled — снято как неактуальное.
+    """
+
+    __tablename__ = "agreements"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
+    employee_name: Mapped[str] = mapped_column(String(255), default="")
+    # Смена, по итогам которой договорились.
+    day_recording_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("day_recordings.id"), index=True
+    )
+    day_date: Mapped[date] = mapped_column(Date, index=True)
+    # Разговор, из которого выросла договорённость (необязательно).
+    dialog_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dialogs.id"), nullable=True
+    )
+    dialog_start_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    created_by_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    created_by_name: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Чем закончилось и на какой смене это отметили.
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by_name: Mapped[str] = mapped_column(String(255), default="")
+    resolved_day_recording_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("day_recordings.id"), nullable=True
+    )
+    resolution_note: Mapped[str] = mapped_column(Text, default="")
+
+
+class PlaybookSection(UUIDMixin, Base):
+    """Раздел скриптов: «Запись на пробное», «Возражения», «Частые вопросы».
+
+    Скрипты — второй продукт админки, отдельный от речевой аналитики: то, что
+    администратор отправляет клиенту в чат или говорит по телефону. Раньше
+    это был Google-документ, где нужный ответ искали прокруткой.
+    """
+
+    __tablename__ = "playbook_sections"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    # Ключ иконки в боковом меню; набор иконок живёт в админке, здесь только
+    # имя. Пустая строка — иконка по умолчанию.
+    icon: Mapped[str] = mapped_column(String(40), default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlaybookItem(UUIDMixin, Base):
+    """Один скрипт: что отправить, при каких условиях и что сделать потом.
+
+    variants — тексты целиком, одним JSON:
+        [{"label": "Ваке", "messages": [{"label": "", "ru": "…", "en": "…", "ka": "…"}]}]
+
+    Вариантов больше одного, только когда текст зависит от студии (адрес,
+    как пройти, ссылка на отзывы). Сообщений больше одного, когда скрипт
+    ветвится («если выбирают…») или отправляется в несколько приёмов
+    («следующим сообщением…»). Каждое сообщение копируется отдельно.
+    """
+
+    __tablename__ = "playbook_items"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("playbook_sections.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    # chat — сообщение в переписку, call — звонок, task — задача в CRM,
+    # info — справка (реквизиты и т. п.).
+    kind: Mapped[str] = mapped_column(String(16), default="chat")
+    # Слова, по которым скрипт должен находиться, хотя в тексте их нет:
+    # «цена» для «Сколько стоит абонемент?».
+    keywords: Mapped[str] = mapped_column(Text, default="")
+    # Пояснение для администратора до текста и что сделать после отправки.
+    note: Mapped[str] = mapped_column(Text, default="")
+    follow_up: Mapped[str] = mapped_column(Text, default="")
+    variants: Mapped[list] = mapped_column(JSONB, default=list)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+
+
+class PlaybookState(Base):
+    """Отметка, что стартовый набор скриптов уже загружен в организацию.
+
+    Отдельная таблица, а не колонка в organizations: если код выкатят раньше
+    миграции, сломается только раздел скриптов, а не каждый запрос, который
+    читает организацию.
+    """
+
+    __tablename__ = "playbook_state"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), primary_key=True
+    )
+    seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
