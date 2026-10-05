@@ -16,7 +16,7 @@ import ScriptsPage from "./pages/ScriptsPage";
 import ScriptsSettingsPage from "./pages/ScriptsSettingsPage";
 import { totalScripts } from "./scripts/logic";
 import { PlaybookProvider, usePlaybook } from "./scripts/store";
-import { SessionContext, StudioContext, useSession } from "./session";
+import { SessionContext, StudioContext } from "./session";
 
 const STUDIO_KEY = "aa_studios";
 /** Прежний ключ хранил одну студию строкой — переносим выбор молча. */
@@ -146,7 +146,6 @@ function ProductSwitch({
 /** Разделы скриптов в боковом меню — оглавление, которое было у документа,
  *  только всегда на виду. */
 function ScriptsNav() {
-  const me = useSession();
   const { playbook, unread } = usePlaybook();
   const sections = playbook?.sections ?? [];
   return (
@@ -163,21 +162,20 @@ function ScriptsNav() {
           <span className="nav-count num">{s.items.length}</span>
         </NavLink>
       ))}
-      {/* Настройки подстановки ({админ}, {студия}, переменные) — тем, кто
-          правит скрипты: читателю в них делать нечего. */}
-      {me.can_edit_scripts && (
-        <NavLink to="/scripts/settings" className="nav-link wrap nav-settings">
-          <NavIcon icon={NavIcons.settings} />
-          <span className="grow">Настройки</span>
-          {/* Новые предложения сотрудников — у каждого администратора свой
-              счётчик, гаснет, когда он сам их открыл. */}
-          {unread > 0 && (
-            <span className="nav-badge num" title="Новые предложения сотрудников">
-              {unread}
-            </span>
-          )}
-        </NavLink>
-      )}
+      {/* Настройки — всем: хронология, предложения и статистика нужны и тем,
+          кто скрипты только читает. Править в них может только тот, у кого
+          «Скрипты: правка», — остальным всё показывается для просмотра. */}
+      <NavLink to="/scripts/settings" className="nav-link wrap nav-settings">
+        <NavIcon icon={NavIcons.settings} />
+        <span className="grow">Настройки</span>
+        {/* Новые предложения сотрудников — у каждого администратора свой
+            счётчик, гаснет, когда он сам их открыл. */}
+        {unread > 0 && (
+          <span className="nav-badge num" title="Новые предложения сотрудников">
+            {unread}
+          </span>
+        )}
+      </NavLink>
     </div>
   );
 }
@@ -278,7 +276,7 @@ export default function App() {
   return (
     <SessionContext.Provider value={me}>
       <StudioContext.Provider value={studio}>
-        <PlaybookProvider enabled={product === "scripts"} watchSuggestions={me.can_edit_scripts && product === "scripts"}>
+        <PlaybookProvider enabled={product === "scripts"} watchSuggestions={product === "scripts"}>
           <div className="layout">
             <nav className="sidebar">
               {/* Логотип ведёт на главную — в скрипты, как после входа. */}
@@ -340,7 +338,8 @@ export default function App() {
                 {/* Сотрудники — общие для всех продуктов: один вход на всё, а
                     права у каждого продукта свои. Поэтому раздел живёт не в
                     меню продукта, а здесь, рядом с тем, кто вошёл. */}
-                {me.can_manage && (
+                {/* Сотрудников — их входы и права — заводит только владелец. */}
+                {me.is_owner && (
                   <NavLink to="/users" className="nav-link foot-link">
                     <NavIcon icon={NavIcons.people} />
                     Сотрудники
@@ -379,7 +378,7 @@ export default function App() {
                 <Route path="/days" element={<DaysPage />} />
                 <Route path="/days/:id" element={<DayReportPage />} />
                 {me.can_manage && <Route path="/metrics" element={<MetricsPage />} />}
-                {me.can_manage && <Route path="/users" element={<EmployeesPage />} />}
+                {me.is_owner && <Route path="/users" element={<EmployeesPage />} />}
                 {/* Прежний адрес раздела — из закладок и старых ссылок. */}
                 <Route path="/employees" element={<Navigate to="/users" replace />} />
                 {me.can_manage && <Route path="/locations" element={<LocationsPage />} />}

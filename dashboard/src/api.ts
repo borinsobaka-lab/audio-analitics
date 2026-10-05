@@ -445,6 +445,51 @@ export interface ScriptSuggestion {
   unread: boolean;
 }
 
+export interface LangCounts {
+  total: number;
+  ru: number;
+  en: number;
+  ka: number;
+}
+
+export interface CopyStatItem extends LangCounts {
+  item_id: string | null;
+  title: string;
+  section: string;
+  deleted: boolean;
+}
+
+export interface CopyStatUser extends LangCounts {
+  user_key: string;
+  name: string;
+}
+
+export interface CopyStats {
+  totals: LangCounts;
+  items: CopyStatItem[];
+  users: CopyStatUser[];
+}
+
+export interface AiPrompt {
+  prompt: string;
+  default_prompt: string;
+  is_default: boolean;
+  /** Модель, которой ИИ отвечает сейчас. */
+  model: string;
+  /** Заданная в админке; пусто — берётся model_default с сервера. */
+  model_saved: string;
+  model_default: string;
+  /** На сервере задан OPENAI_API_KEY. */
+  configured: boolean;
+}
+
+export interface AssistResult {
+  language: ScriptLang;
+  matches: { item_id: string; title: string; section: string; why: string }[];
+  reply: string;
+  comment: string;
+}
+
 export interface Page<T> {
   items: T[];
   next_cursor: string;
@@ -690,6 +735,20 @@ export const api = {
   unreadSuggestions: () => request<{ count: number }>("/api/playbook/suggestions/unread"),
   markSuggestionsSeen: () =>
     request<{ count: number }>("/api/playbook/suggestions/seen", { method: "POST" }),
+  /** Отметка копирования — для статистики; ответа не ждём. */
+  logCopy: (body: { item_id: string; lang: ScriptLang; studio: string; source?: "card" | "assist" }) =>
+    request<void>("/api/playbook/copies", { method: "POST", body: JSON.stringify(body) }),
+  copyStats: (q: { from?: string; to?: string; user?: string; lang?: string }) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) params.set(k, v);
+    const qs = params.toString();
+    return request<CopyStats>(`/api/playbook/stats${qs ? `?${qs}` : ""}`);
+  },
+  aiPrompt: () => request<AiPrompt>("/api/playbook/ai"),
+  saveAiPrompt: (body: { prompt: string; model: string }) =>
+    request<AiPrompt>("/api/playbook/ai", { method: "PUT", body: JSON.stringify(body) }),
+  assist: (body: { message: string; lang: ScriptLang; studio: string }) =>
+    request<AssistResult>("/api/playbook/assist", { method: "POST", body: JSON.stringify(body) }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

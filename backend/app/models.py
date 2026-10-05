@@ -595,3 +595,23 @@ class PlaybookSeen(Base):
     suggestions_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
+
+
+class PlaybookCopy(UUIDMixin, Base):
+    """Одно копирование текста скрипта — для статистики: какие скрипты
+    в ходу, у кого и на каком языке."""
+
+    __tablename__ = "playbook_copies"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    item_title: Mapped[str] = mapped_column(String(255), default="")
+    user_key: Mapped[str] = mapped_column(String(64))
+    user_name: Mapped[str] = mapped_column(String(255), default="")
+    # Язык текста, который реально скопировали (ru | en | ka).
+    lang: Mapped[str] = mapped_column(String(2))
+    # Студия-вариант текста, если у скрипта их несколько.
+    studio: Mapped[str] = mapped_column(String(120), default="")
+    # Откуда: карточка скрипта или окно ИИ-помощника.
+    source: Mapped[str] = mapped_column(String(16), default="card")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

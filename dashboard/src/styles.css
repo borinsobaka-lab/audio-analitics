@@ -4389,3 +4389,431 @@ button.change-title:hover {
     display: none;
   }
 }
+
+/* --- ИИ-помощник ---------------------------------------------------------- */
+
+/* Кнопка в панели — вторичная, как «+ Скрипт», но со значком-искрой
+   акцентного цвета: заметна, не споря с поиском. */
+.assist-btn {
+  flex: none;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 14px;
+  gap: 7px;
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.assist-btn svg {
+  color: var(--accent-ink);
+}
+.modal-wide {
+  width: min(780px, calc(100vw - 32px));
+}
+.assist-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.assist-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+.assist-ask {
+  padding-top: 18px;
+}
+.assist-ask textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 15px;
+}
+.assist-ask-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.assist-ask-foot .muted {
+  font-size: 12.5px;
+}
+.assist-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 6px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+  font-size: 14px;
+}
+.assist-spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid rgba(168, 27, 173, 0.25);
+  border-top-color: var(--accent-ink);
+  animation: assist-spin 800ms linear infinite;
+}
+@keyframes assist-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.modal-body > .note {
+  margin-top: 14px;
+}
+.assist-result {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 0 24px;
+}
+.assist-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assist-lang {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--sunk);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.assist-comment {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.assist-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.assist-section-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.assist-match {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: var(--r-md);
+  box-shadow: 0 0 0 1px var(--edge), var(--sh-1);
+}
+.assist-match-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.assist-match-title {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.assist-match-title:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.assist-match-section {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.assist-why {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--green-tint);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.assist-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.assist-msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.assist-msg-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.assist-reply {
+  width: 100%;
+  resize: vertical;
+  font-size: 14.5px;
+  line-height: 1.6;
+  background: #f0f2ef;
+  border-color: transparent;
+  box-shadow:
+    inset 0 0 0 1px rgba(11, 13, 22, 0.05),
+    inset 0 0 8px rgba(11, 13, 22, 0.11);
+}
+.assist-note {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+/* --- Настройки: только просмотр, ИИ-помощник ------------------------------ */
+
+.bare-fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+.bare-fieldset:disabled input,
+.bare-fieldset:disabled textarea {
+  background: var(--card-2);
+  color: var(--ink-2);
+}
+.ai-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 980px;
+}
+.ai-how {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.ai-how strong {
+  color: var(--ink);
+}
+.ai-model input {
+  max-width: 420px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+}
+.ai-model-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.ai-prompt {
+  width: 100%;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ai-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ai-foot .actions {
+  margin: 0;
+}
+
+/* --- Статистика копирований ------------------------------------------------ */
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1080px;
+}
+.stats-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.stats-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stats-user {
+  min-height: 40px;
+  width: auto;
+  min-width: 190px;
+  background: var(--card);
+}
+.stats-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: opacity 150ms ease;
+}
+.stats-body.loading {
+  opacity: 0.55;
+}
+.stats-tiles {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 1fr);
+  gap: 10px;
+}
+.stats-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+.stats-tile.main {
+  background: var(--nav-active);
+  color: var(--nav-ink-hi);
+}
+.stats-tile.dim {
+  opacity: 0.45;
+}
+.stats-tile-label {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.stats-tile.main .stats-tile-label {
+  color: var(--nav-ink-2);
+}
+.stats-tile-value {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.stats-card {
+  padding: 16px 16px 8px;
+  overflow-x: auto;
+}
+.stats-title {
+  margin: 0 4px 10px;
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.stats-title .muted {
+  font-size: 13px;
+  font-weight: 400;
+}
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.stats-table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--edge);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-align: left;
+  white-space: nowrap;
+}
+.stats-table th.num,
+.stats-table td.num {
+  text-align: right;
+}
+.stats-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--edge-soft);
+  vertical-align: middle;
+}
+.stats-table tr:last-child td {
+  border-bottom: none;
+}
+.stats-script {
+  min-width: 220px;
+}
+.stats-link {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.stats-link:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.stats-gone {
+  font-weight: 600;
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+.stats-section {
+  display: block;
+  font-size: 12.5px;
+}
+.stats-bar-col {
+  width: 28%;
+}
+.stats-bar {
+  display: block;
+  height: 8px;
+  min-width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.stats-total {
+  font-weight: 650;
+}
+.stats-lang.dim {
+  color: var(--ink-4);
+}
+.stats-row-link {
+  cursor: pointer;
+}
+.stats-row-link:hover td {
+  background: var(--card-2);
+}
+
+@media (max-width: 900px) {
+  .assist-btn {
+    flex: 1;
+  }
+  .stats-tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .stats-bar-col {
+    display: none;
+  }
+}
+/* Подписи полей в окнах и шапки таблиц статистики — обычным текстом, не
+   капсом (решение владельца для подсказок). */
+.assist-ask .field > .label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stats-table th {
+  text-transform: none;
+  letter-spacing: 0;
+}

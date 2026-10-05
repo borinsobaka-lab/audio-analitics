@@ -17,3 +17,4 @@ PyJWT>=2.8
 onnxruntime>=1.18
 numpy>=1.26
 soundfile>=0.12
+openai>=1.40

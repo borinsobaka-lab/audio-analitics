@@ -160,6 +160,8 @@
    | `S3_BUCKET` | `audio-analytics` |
    | `ELEVENLABS_API_KEY` | из Шага 2 |
    | `ANTHROPIC_API_KEY` | из Шага 1 |
+   | `OPENAI_API_KEY` | ключ OpenAI — для ИИ-помощника в «Скриптах» (необязательно) |
+   | `OPENAI_MODEL` | модель OpenAI для ИИ-помощника; меняется и в админке |
    | `ADMIN_API_TOKEN` | сгенерируй в Шаге 8 (пока не добавляй) |
    | `APP_KEY` | сгенерируй в Шаге 8 (пока не добавляй) |
    | `CORS_ORIGINS` | заполним в Шаге 9 (пока не добавляй) |

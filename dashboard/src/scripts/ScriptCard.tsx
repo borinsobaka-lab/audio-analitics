@@ -9,7 +9,7 @@
  *  меняется у всех сразу, и у стойки должно быть видно, почему текст другой.
  */
 import { useEffect, useRef, useState } from "react";
-import { fmtWhen, ScriptItem, ScriptLang, ScriptMessage, ScriptSection } from "../api";
+import { api, fmtWhen, ScriptItem, ScriptLang, ScriptMessage, ScriptSection } from "../api";
 import {
   copyText,
   KIND_LABELS,
@@ -59,7 +59,16 @@ const IconCheck = () => (
 /** «Копировать» с ответом прямо на кнопке: всплывашка вдали от пальца
  *  остаётся незамеченной, а сомнение «скопировалось ли» гонит копировать
  *  второй раз. */
-export function CopyButton({ text, label = "Копировать" }: { text: string; label?: string }) {
+export function CopyButton({
+  text,
+  label = "Копировать",
+  onCopied,
+}: {
+  text: string;
+  label?: string;
+  /** Скопировалось — для статистики копирований. */
+  onCopied?: () => void;
+}) {
   const [state, setState] = useState<"idle" | "done" | "fail">("idle");
   const timer = useRef<number>();
 
@@ -68,6 +77,7 @@ export function CopyButton({ text, label = "Копировать" }: { text: str
   async function copy() {
     const ok = await copyText(text);
     setState(ok ? "done" : "fail");
+    if (ok) onCopied?.();
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setState("idle"), 1600);
   }
@@ -124,6 +134,7 @@ function MessageBlock({
   terms,
   resolveVar,
   linkUrl,
+  onCopied,
 }: {
   message: ScriptMessage;
   index: number;
@@ -133,6 +144,8 @@ function MessageBlock({
   resolveVar: VarResolver;
   /** Ссылка на скрипт — только у первого сообщения: одна на карточку. */
   linkUrl?: string;
+  /** Скопировали текст — на каком языке он был на самом деле. */
+  onCopied?: (lang: ScriptLang) => void;
 }) {
   const shown = messageText(message, lang);
   return (
@@ -143,7 +156,8 @@ function MessageBlock({
         </span>
         <span className="script-msg-actions">
           {linkUrl && <LinkButton url={linkUrl} />}
-          <CopyButton text={resolveText(shown.text, resolveVar)} />
+          <CopyButton text={resolveText(shown.text, resolveVar)}
+            onCopied={() => onCopied?.(shown.lang)} />
         </span>
       </div>
       {shown.fallback && (
@@ -263,6 +277,12 @@ export default function ScriptCard({
             terms={terms}
             resolveVar={resolveVar}
             linkUrl={i === 0 ? scriptUrl(section.id, item.id) : undefined}
+            onCopied={(copiedLang) =>
+              // Статистика — не ждём и не мешаем копированию, если не дошла.
+              api
+                .logCopy({ item_id: item.id, lang: copiedLang, studio: variant.label || studio })
+                .catch(() => {})
+            }
           />
         ))}
 

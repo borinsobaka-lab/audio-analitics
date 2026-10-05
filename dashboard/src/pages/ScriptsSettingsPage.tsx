@@ -23,8 +23,10 @@ import {
   ScriptVariable,
   StudioNames,
 } from "../api";
-import { Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
+import { Note, PageHead, Section, Skeleton } from "../components/ui";
 import { Slider } from "../components/Slider";
+import AiPromptView from "../scripts/AiPromptView";
+import CopyStatsView from "../scripts/CopyStats";
 import History from "../scripts/History";
 import Suggestions from "../scripts/Suggestions";
 import { BUILTIN_VARIABLES, dateAfter, dateAfterLabel, LANGS } from "../scripts/logic";
@@ -197,7 +199,7 @@ function GridHead({ first }: { first: string }) {
 }
 
 /** Имена, студии и переменные — одна форма, одна кнопка «Сохранить». */
-function Substitution() {
+function Substitution({ canEdit }: { canEdit: boolean }) {
   const { setSettings } = usePlaybook();
   const [saved, setSaved] = useState<PlaybookSettings | null>(null);
   const [studios, setStudios] = useState<StudioNames[]>([]);
@@ -284,7 +286,9 @@ function Substitution() {
       {!saved && !error && <Skeleton count={3} height={120} />}
 
       {saved && (
-        <>
+        // Без права правки — те же настройки, но только для просмотра:
+        // fieldset отключает разом все поля и кнопки внутри.
+        <fieldset className="bare-fieldset" disabled={!canEdit}>
           <Section title="Студии" hint="{студия} — студия, выбранная вверху страницы скриптов">
             <div className="sheet sheet-pad names-grid">
               <GridHead first="Точка продажи" />
@@ -451,7 +455,7 @@ function Substitution() {
             </div>
           </Section>
 
-          <div className="settings-bar">
+          {canEdit && <div className="settings-bar">
             <span className="muted">
               {problem
                 ? problem
@@ -466,44 +470,44 @@ function Substitution() {
             <button type="button" onClick={save} disabled={saving || Boolean(problem) || !dirty}>
               {saving ? "Сохраняем…" : "Сохранить настройки"}
             </button>
-          </div>
-        </>
+          </div>}
+        </fieldset>
       )}
     </div>
   );
 }
 
-type Tab = "history" | "suggestions" | "vars";
+type Tab = "history" | "suggestions" | "stats" | "vars" | "ai";
+const TABS: Tab[] = ["history", "suggestions", "stats", "vars", "ai"];
 
 export default function ScriptsSettingsPage() {
   const me = useSession();
+  const canEdit = me.can_edit_scripts;
   const { unread } = usePlaybook();
   const [params, setParams] = useSearchParams();
-  const asked = params.get("tab");
+  const asked = params.get("tab") as Tab | null;
   // Пришли по значку новых предложений — сразу к ним, иначе — хронология.
   const [initial] = useState<Tab>(unread > 0 ? "suggestions" : "history");
-  const tab: Tab = asked === "history" || asked === "suggestions" || asked === "vars" ? asked : initial;
-
-  if (!me.can_edit_scripts) {
-    return (
-      <>
-        <PageHead title="Настройки скриптов" />
-        <Empty title="Нет доступа">
-          Настройки меняют те, кому выдано «Скрипты: чтение и правка».
-        </Empty>
-      </>
-    );
-  }
+  const tab: Tab = asked && TABS.includes(asked) ? asked : initial;
 
   const tabs: { key: Tab; label: string; badge?: number }[] = [
     { key: "history", label: "Хронология" },
     { key: "suggestions", label: "Предложения", badge: unread },
+    { key: "stats", label: "Статистика" },
     { key: "vars", label: "Подстановка" },
+    { key: "ai", label: "ИИ-помощник" },
   ];
 
   return (
     <div className="settings-page">
-      <PageHead title="Настройки скриптов" />
+      <PageHead
+        title="Настройки скриптов"
+        hint={
+          canEdit
+            ? undefined
+            : "Только просмотр: менять настройки могут те, кому выдано «Скрипты: правка»."
+        }
+      />
       <Slider className="tabs" active={tab} role="tablist" aria-label="Настройки скриптов">
         {tabs.map((t) => (
           <button
@@ -520,8 +524,10 @@ export default function ScriptsSettingsPage() {
         ))}
       </Slider>
       {tab === "history" && <History />}
-      {tab === "suggestions" && <Suggestions />}
-      {tab === "vars" && <Substitution />}
+      {tab === "suggestions" && <Suggestions canEdit={canEdit} />}
+      {tab === "stats" && <CopyStatsView />}
+      {tab === "vars" && <Substitution canEdit={canEdit} />}
+      {tab === "ai" && <AiPromptView canEdit={canEdit} />}
     </div>
   );
 }

@@ -14,9 +14,11 @@ import { usePlaybook } from "./store";
 
 function SuggestionCard({
   item,
+  canEdit,
   onChange,
 }: {
   item: ScriptSuggestion;
+  canEdit: boolean;
   onChange: (next: ScriptSuggestion) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -57,10 +59,13 @@ function SuggestionCard({
             {item.resolved_at ? ` · ${fmtWhen(item.resolved_at)}` : ""}
           </span>
         )}
-        <button type="button" className={done ? "ghost small" : "secondary small"}
-          disabled={busy} onClick={toggle}>
-          {done ? "Вернуть" : "Сделано"}
-        </button>
+        {/* Отмечают сделанным те, кто правит скрипты: они и вносят правку. */}
+        {canEdit && (
+          <button type="button" className={done ? "ghost small" : "secondary small"}
+            disabled={busy} onClick={toggle}>
+            {done ? "Вернуть" : "Сделано"}
+          </button>
+        )}
       </header>
       {item.item_title && (
         <div className="suggestion-script">
@@ -84,7 +89,7 @@ function SuggestionCard({
   );
 }
 
-export default function Suggestions() {
+export default function Suggestions({ canEdit }: { canEdit: boolean }) {
   const { setUnread } = usePlaybook();
   const { items, setItems, loading, error, done, more, sentinel } = usePaged(
     api.scriptSuggestions
@@ -114,6 +119,7 @@ export default function Suggestions() {
         <SuggestionCard
           key={s.id}
           item={s}
+          canEdit={canEdit}
           onChange={(next) => setItems((list) => list.map((x) => (x.id === next.id ? next : x)))}
         />
       ))}

@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import UserContext, require_manage, require_user
+from ..auth import UserContext, require_owner, require_user
 from ..db import get_db
 from ..models import (
     Agreement,
@@ -104,7 +104,7 @@ async def list_employees(
 @router.post("", response_model=EmployeeCredentialsOut, status_code=201)
 async def create_employee(
     body: EmployeeCreate,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
     # Точка нужна только чтобы заполнить обязательную колонку в базе: берём
@@ -146,7 +146,7 @@ async def create_employee(
 async def update_employee(
     employee_id: uuid.UUID,
     body: EmployeeUpdate,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
     employee = await db.get(Employee, employee_id)
@@ -194,7 +194,7 @@ async def update_employee(
 @router.post("/{employee_id}/reset-password", response_model=EmployeeCredentialsOut)
 async def reset_password(
     employee_id: uuid.UUID,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
     """Выдать новый пароль взамен забытого. Все прежние сессии сотрудника
@@ -213,7 +213,7 @@ async def reset_password(
 @router.delete("/{employee_id}", status_code=204)
 async def delete_employee(
     employee_id: uuid.UUID,
-    user: UserContext = Depends(require_manage),
+    user: UserContext = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
     """Удалить сотрудника целиком — только пока за ним нет ни одной смены.

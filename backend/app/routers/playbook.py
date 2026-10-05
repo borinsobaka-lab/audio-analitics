@@ -562,7 +562,11 @@ async def save_settings(
     def clean(texts) -> dict:
         return {lang: getattr(texts, lang).strip() for lang in ("ru", "en", "ka")}
 
+    row = await db.get(PlaybookSettings, org.id)
+    # Остальное в настройках (промпт ИИ-помощника) правится на своей вкладке
+    # и здесь не теряется.
     data = {
+        **dict((row.data if row else None) or {}),
         "studios": {str(k): clean(v) for k, v in body.studios.items()},
         "admins": {str(k): clean(v) for k, v in body.admins.items()},
         "variables": [
@@ -579,7 +583,6 @@ async def save_settings(
             for v in body.variables
         ],
     }
-    row = await db.get(PlaybookSettings, org.id)
     if row:
         row.data = data
         row.updated_at = utcnow()
@@ -599,7 +602,9 @@ PAGE = 20
 async def list_changes(
     cursor: str = "",
     limit: int = PAGE,
-    user: UserContext = Depends(require_scripts_edit),
+    # Хронологию видят все: «почему текст стал другим» — вопрос и того, кто
+    # скрипты только читает.
+    user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Порциями, от новых к старым. Курсор — время и id последней записи
@@ -666,7 +671,7 @@ async def create_suggestion(
 async def list_suggestions(
     cursor: str = "",
     limit: int = PAGE,
-    user: UserContext = Depends(require_scripts_edit),
+    user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     org = await current_org(db)
@@ -721,10 +726,8 @@ async def unread_suggestions(
     user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Сколько новых предложений этот администратор ещё не видел. Свои не
-    считаются; у тех, кто скрипты только читает, — всегда ноль."""
-    if not user.can_edit_scripts:
-        return UnreadOut(count=0)
+    """Сколько новых предложений этот сотрудник ещё не видел. Свои не
+    считаются. Настройки скриптов открыты всем — и значок у всех свой."""
     org = await current_org(db)
     seen = await seen_at(db, user)
     q = select(func.count()).select_from(PlaybookSuggestion).where(
@@ -738,7 +741,7 @@ async def unread_suggestions(
 
 @router.post("/suggestions/seen", response_model=UnreadOut)
 async def mark_suggestions_seen(
-    user: UserContext = Depends(require_scripts_edit),
+    user: UserContext = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     # Одним запросом: два открытия вкладки подряд (две вкладки браузера)

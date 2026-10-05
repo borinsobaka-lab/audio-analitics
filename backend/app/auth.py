@@ -213,6 +213,14 @@ async def require_manage(user: UserContext = Depends(require_user)) -> UserConte
     return user
 
 
+async def require_owner(user: UserContext = Depends(require_user)) -> UserContext:
+    """Сотрудников заводит, правит и удаляет только владелец: это доступы ко
+    всей системе, их не раздают через «доступ ко всем сменам»."""
+    if not user.is_owner:
+        raise HTTPException(403, "Недостаточно прав: сотрудниками управляет владелец")
+    return user
+
+
 async def any_login_exists(db: AsyncSession) -> bool:
     """Заведён ли хоть один вход. Пока нет — админка подсказывает войти
     владельческим токеном, иначе форма логина выглядит тупиком."""

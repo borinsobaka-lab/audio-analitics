@@ -9,13 +9,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, plural, ScriptItem, ScriptItemDraft, ScriptSection } from "../api";
+import { api, plural, ScriptItem, ScriptItemDraft, ScriptLang, ScriptSection } from "../api";
 import { Empty, Note, PageHead, Skeleton } from "../components/ui";
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import { Slider } from "../components/Slider";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
 import SuggestDialog from "../scripts/SuggestDialog";
+import AssistDialog, { IconSparkle } from "../scripts/AssistDialog";
 import {
   BUILTIN_VARIABLES,
   findByTitle,
@@ -54,6 +55,7 @@ export default function ScriptsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [assisting, setAssisting] = useState(false);
   const [suggesting, setSuggesting] = useState<{ id: string; title: string; section: string } | null>(null);
   /** Форма раздела: новый или правка названия и иконки конкретного. */
   const [sectionForm, setSectionForm] = useState<"new" | { edit: string } | null>(null);
@@ -94,6 +96,11 @@ export default function ScriptsPage() {
   const resolveVar = useMemo(
     () => makeResolver({ settings, me, lang, studio: activeStudio, locations }),
     [settings, me, lang, activeStudio, locations]
+  );
+  // ИИ-помощник отвечает на языке клиента — подстановка на этом языке.
+  const resolverFor = useCallback(
+    (l: ScriptLang) => makeResolver({ settings, me, lang: l, studio: activeStudio, locations }),
+    [settings, me, activeStudio, locations]
   );
   const insertable = useMemo(
     () => [
@@ -414,6 +421,11 @@ export default function ScriptsPage() {
             </Slider>
           )}
         </div>
+        {/* ИИ-помощник — всем, кто отвечает клиентам. */}
+        <button type="button" className="secondary assist-btn" onClick={() => setAssisting(true)}
+          title="Вставьте сообщение клиента — ИИ подберёт скрипт или напишет ответ">
+          <IconSparkle /> ИИ-помощник
+        </button>
         {canEdit && (
           <button type="button" className="secondary add-script-btn" onClick={startNewScript}
             title="Новый скрипт">
@@ -424,6 +436,19 @@ export default function ScriptsPage() {
       {/* Предложить может любой, кто видит скрипты: прав на правку у
           администраторов у стойки нет, а неудачный текст замечают они. */}
       {suggesting && <SuggestDialog item={suggesting} onClose={() => setSuggesting(null)} />}
+      {assisting && (
+        <AssistDialog
+          sections={sections}
+          lang={lang}
+          studio={activeStudio}
+          resolverFor={resolverFor}
+          onOpen={(item, sec) => {
+            setAssisting(false);
+            openScript({ item, section: sec });
+          }}
+          onClose={() => setAssisting(false)}
+        />
+      )}
 
       {/* На телефоне боковое меню — узкая полоса, и разделы в ней не
           поместятся: там они живут здесь, лентой над списком. */}
@@ -436,11 +461,9 @@ export default function ScriptsPage() {
             {s.title}
           </NavLink>
         ))}
-        {canEdit && (
-          <NavLink to="/scripts/settings" className="chip">
-            Настройки
-          </NavLink>
-        )}
+        <NavLink to="/scripts/settings" className="chip">
+          Настройки
+        </NavLink>
       </nav>
 
       <PageHead

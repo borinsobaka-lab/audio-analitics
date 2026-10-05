@@ -719,3 +719,85 @@ class PlaybookSuggestionPatch(BaseModel):
 
 class UnreadOut(BaseModel):
     count: int = 0
+
+
+# --- Статистика копирований ---
+
+ScriptLangCode = Literal["ru", "en", "ka"]
+
+
+class PlaybookCopyIn(BaseModel):
+    item_id: uuid.UUID
+    lang: ScriptLangCode
+    studio: str = Field(default="", max_length=120)
+    source: Literal["card", "assist"] = "card"
+
+
+class LangCounts(BaseModel):
+    total: int = 0
+    ru: int = 0
+    en: int = 0
+    ka: int = 0
+
+
+class CopyStatItem(LangCounts):
+    item_id: uuid.UUID | None = None
+    title: str = ""
+    section: str = ""
+    # Скрипт удалён — в статистике остаётся под последним названием.
+    deleted: bool = False
+
+
+class CopyStatUser(LangCounts):
+    user_key: str
+    name: str = ""
+
+
+class CopyStatsOut(BaseModel):
+    totals: LangCounts
+    items: list[CopyStatItem] = []
+    users: list[CopyStatUser] = []
+
+
+# --- ИИ-помощник ---
+
+class AssistIn(BaseModel):
+    message: str = Field(min_length=2, max_length=4000)
+    # Язык, выбранный вверху скриптов, и студия — подсказка ИИ; язык
+    # ответа он определяет по сообщению клиента.
+    lang: ScriptLangCode = "ru"
+    studio: str = Field(default="", max_length=120)
+
+
+class AssistMatch(BaseModel):
+    item_id: uuid.UUID
+    title: str
+    section: str = ""
+    why: str = ""
+
+
+class AssistOut(BaseModel):
+    language: ScriptLangCode
+    matches: list[AssistMatch] = []
+    reply: str = ""
+    comment: str = ""
+
+
+class AiPromptOut(BaseModel):
+    prompt: str
+    default_prompt: str
+    is_default: bool
+    # Модель, которой ИИ-помощник отвечает сейчас: заданная в админке или,
+    # если там пусто, OPENAI_MODEL с сервера.
+    model: str
+    model_saved: str = ""
+    model_default: str = ""
+    # На сервере задан OPENAI_API_KEY.
+    configured: bool
+
+
+class AiPromptIn(BaseModel):
+    # Пусто — вернуть стандартный.
+    prompt: str = Field(default="", max_length=20000)
+    # Пусто — модель с сервера (OPENAI_MODEL).
+    model: str = Field(default="", max_length=120)
