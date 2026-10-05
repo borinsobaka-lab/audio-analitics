@@ -435,9 +435,13 @@ button {
     border-color 130ms var(--ease), color 130ms var(--ease),
     transform 90ms var(--ease);
 }
-button:hover {
-  background: var(--accent-hot);
-  box-shadow: var(--sh-2);
+/* Наведение — только там, где есть курсор: на телефоне «наведение» залипает
+   после касания и перекрашивает кнопку до следующего нажатия где-то ещё. */
+@media (hover: hover) {
+  button:hover {
+    background: var(--accent-hot);
+    box-shadow: var(--sh-2);
+  }
 }
 button:active {
   transform: scale(0.975);
@@ -3004,6 +3008,48 @@ button.fmt-btn:hover {
   }
   .mb-current.on {
     background: var(--nav-fill-2);
+  }
+  /* Нижняя панель и гамбургер — тёмные в любом состоянии: никаких розовых
+     «нажатых» и «наведённых» вариантов общей кнопки. */
+  .mb-current:hover,
+  .mb-current:active,
+  .mb-current:focus,
+  .menu-toggle:hover,
+  .menu-toggle:active,
+  .menu-toggle:focus {
+    background: var(--nav-fill);
+    box-shadow: none;
+  }
+  .mb-current.on:hover,
+  .mb-current.on:active,
+  .mb-current.on:focus,
+  .menu-toggle[aria-expanded="true"]:hover,
+  .menu-toggle[aria-expanded="true"]:focus {
+    background: var(--nav-fill-2);
+  }
+  .mb-assist:hover,
+  .mb-assist:active,
+  .mb-assist:focus {
+    background:
+      linear-gradient(var(--nav), var(--nav)) padding-box,
+      var(--ai-grad) border-box;
+    box-shadow: 0 0 14px -4px var(--ai-glow);
+  }
+  .mb-current:focus-visible,
+  .menu-toggle:focus-visible,
+  .mb-assist:focus-visible {
+    box-shadow: var(--ring);
+  }
+  .mb-current,
+  .mb-assist,
+  .menu-toggle {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Прокрутка до конца не «пружинит» и не растягивает экран вместе с
+     нижней панелью (эффект Android). */
+  html,
+  body {
+    overscroll-behavior-y: none;
   }
   .mb-current-title {
     flex: 1;
