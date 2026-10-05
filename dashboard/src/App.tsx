@@ -15,7 +15,6 @@ import ScriptsPage from "./pages/ScriptsPage";
 const pageLoaders = {
   dashboard: () => import("./pages/DashboardPage"),
   days: () => import("./pages/DaysPage"),
-  calls: () => import("./pages/CallsPage"),
   dayReport: () => import("./pages/DayReportPage"),
   employees: () => import("./pages/EmployeesPage"),
   app: () => import("./pages/AppPage"),
@@ -25,7 +24,6 @@ const pageLoaders = {
 };
 const DashboardPage = lazy(pageLoaders.dashboard);
 const DaysPage = lazy(pageLoaders.days);
-const CallsPage = lazy(pageLoaders.calls);
 const DayReportPage = lazy(pageLoaders.dayReport);
 const EmployeesPage = lazy(pageLoaders.employees);
 const AppPage = lazy(pageLoaders.app);
@@ -467,10 +465,6 @@ export default function App() {
                     <NavIcon icon={NavIcons.days} />
                     {me.can_view_all ? "Смены" : "Мои смены"}
                   </NavLink>
-                  <NavLink to="/calls" className="nav-link">
-                    <NavIcon icon={NavIcons.calls} />
-                    {me.can_view_all ? "Звонки" : "Мои звонки"}
-                  </NavLink>
                   {/* Настройки системы видит только тот, кому открыты все записи:
                       показывать раздел, который ответит «недостаточно прав», хуже,
                       чем не показывать его вовсе. */}
@@ -549,7 +543,6 @@ export default function App() {
                 <Route path="/analytics" element={<DashboardPage />} />
                 <Route path="/days" element={<DaysPage />} />
                 <Route path="/days/:id" element={<DayReportPage />} />
-                <Route path="/calls" element={<CallsPage />} />
                 {me.can_manage && <Route path="/metrics" element={<MetricsPage />} />}
                 {me.is_owner && <Route path="/users" element={<EmployeesPage />} />}
                 {/* Прежний адрес раздела — из закладок и старых ссылок. */}

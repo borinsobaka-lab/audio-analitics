@@ -28,6 +28,7 @@ import { Slider } from "../components/Slider";
 import AiPromptView from "../scripts/AiPromptView";
 import { IconSparkle } from "../scripts/AssistDialog";
 import CopyStatsView from "../scripts/CopyStats";
+import CallStatsView from "../scripts/CallStats";
 import History from "../scripts/History";
 import Suggestions from "../scripts/Suggestions";
 import { BUILTIN_VARIABLES, dateAfter, dateAfterLabel, LANGS } from "../scripts/logic";
@@ -478,8 +479,8 @@ function Substitution({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-type Tab = "history" | "suggestions" | "stats" | "vars" | "ai";
-const TABS: Tab[] = ["history", "suggestions", "stats", "vars", "ai"];
+type Tab = "history" | "suggestions" | "stats" | "calls" | "vars" | "ai";
+const TABS: Tab[] = ["history", "suggestions", "stats", "calls", "vars", "ai"];
 
 export default function ScriptsSettingsPage() {
   const me = useSession();
@@ -495,6 +496,7 @@ export default function ScriptsSettingsPage() {
     { key: "history", label: "Хронология" },
     { key: "suggestions", label: "Предложения", badge: unread },
     { key: "stats", label: "Статистика" },
+    { key: "calls", label: "Звонки" },
     { key: "vars", label: "Подстановка" },
     { key: "ai", label: "ИИ-помощник" },
   ];
@@ -528,6 +530,7 @@ export default function ScriptsSettingsPage() {
       {tab === "history" && <History />}
       {tab === "suggestions" && <Suggestions canEdit={canEdit} />}
       {tab === "stats" && <CopyStatsView />}
+      {tab === "calls" && <CallStatsView />}
       {tab === "vars" && <Substitution canEdit={canEdit} />}
       {tab === "ai" && <AiPromptView canEdit={canEdit} />}
     </div>

@@ -1,4 +1,5 @@
-/** Звонки: докуда разговор доходит по сценарию и где заканчивается.
+/** Статистика звонков («Настройки скриптов» → «Звонки»): докуда разговор
+ *  доходит по сценарию и где заканчивается.
  *
  *  Каждый звонок, который администратор ведёт по разделу-звонку в
  *  «Скриптах», тихо пишет свой путь по блокам. Здесь он складывается в две
@@ -12,7 +13,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { addDays, api, CallStats, plural, toApiDate } from "../api";
-import { DateField, Empty, Note, PageHead, Section, Skeleton, Stat } from "../components/ui";
+import { DateField, Empty, Note, Section, Skeleton, Stat } from "../components/ui";
+import { Slider } from "../components/Slider";
 
 const today = () => new Date();
 const PRESETS = [
@@ -37,7 +39,7 @@ function pct(part: number, whole: number): string {
   return `${v < 10 && v > 0 ? v.toFixed(1).replace(".", ",") : Math.round(v)}%`;
 }
 
-export default function CallsPage() {
+export default function CallStatsView() {
   const [preset, setPreset] = useState<string>("30");
   const [range, setRange] = useState<[string, string]>(() => {
     const [a, b] = PRESETS[1].range();
@@ -84,42 +86,36 @@ export default function CallsPage() {
 
   return (
     <div className="calls">
-      <PageHead
-        title="Звонки"
-        hint="Как звонки проходят сценарий: до какого этапа доходит разговор и на каком блоке заканчивается — чтобы видеть, где сценарий теряет клиентов, и править его."
-      />
-
-      <div className="filters">
-        <div className="seg" role="group" aria-label="Период">
+      <div className="stats-filters">
+        <Slider className="seg" active={preset} role="group" aria-label="Период">
           {PRESETS.map((p) => (
-            <button key={p.key} type="button" className={`seg-btn ${preset === p.key ? "on" : ""}`}
+            <button key={p.key} type="button" className={`seg-btn${preset === p.key ? " on" : ""}`}
               onClick={() => applyPreset(p.key)}>
               {p.label}
             </button>
           ))}
-        </div>
-        <div className="filter">
-          <span className="label">период</span>
-          <div className="range">
-            <DateField value={range[0]} max={range[1]} onChange={(v) => setCustom(0, v)} aria-label="Начало периода" />
-            <span className="range-dash">—</span>
-            <DateField value={range[1]} min={range[0]} onChange={(v) => setCustom(1, v)} aria-label="Конец периода" />
-          </div>
-        </div>
+        </Slider>
+        <span className="stats-range">
+          <DateField value={range[0]} max={range[1]} onChange={(v) => setCustom(0, v)} aria-label="С даты" />
+          <span className="muted">—</span>
+          <DateField value={range[1]} min={range[0]} onChange={(v) => setCustom(1, v)} aria-label="По дату" />
+        </span>
         {data && data.sections.length > 1 && (
-          <label className="filter">
-            <span className="label">сценарий</span>
-            <select value={data.section_id ?? ""} onChange={(e) => setSection(e.target.value)}>
-              {data.sections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                  {s.deleted ? " (удалён)" : ""} · {s.runs}
-                </option>
-              ))}
-            </select>
-          </label>
+          <select className="stats-user" value={data.section_id ?? ""} aria-label="Сценарий"
+            onChange={(e) => setSection(e.target.value)}>
+            {data.sections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+                {s.deleted ? " (удалён)" : ""} · {s.runs}
+              </option>
+            ))}
+          </select>
         )}
       </div>
+      <p className="muted calls-hint">
+        Как звонки проходят сценарий: до какого этапа доходит разговор и на каком блоке заканчивается —
+        чтобы видеть, где сценарий теряет клиентов, и править его.
+      </p>
 
       {error && <Note kind="error">{error}</Note>}
       {!data && loading && <Skeleton count={3} height={110} />}

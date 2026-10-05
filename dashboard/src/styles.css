@@ -5845,6 +5845,13 @@ button.ai-primary:disabled {
 
 /* --- Аналитика сценария звонка: воронка и где заканчивались --------------- */
 
+.calls {
+  max-width: 1080px;
+}
+.calls-hint {
+  margin: 12px 0 18px;
+  font-size: 13.5px;
+}
 .calls-body {
   transition: opacity 150ms ease;
 }

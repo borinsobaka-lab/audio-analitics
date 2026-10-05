@@ -77,7 +77,7 @@ let prefetched: Prefetched = {};
  *  открывается не «Аналитика»: там они не нужны. */
 export function startPrefetch(path = window.location.pathname): void {
   if (!getToken()) return;
-  const scripts = !path.startsWith("/analytics") && !path.startsWith("/days") && !path.startsWith("/calls") &&
+  const scripts = !path.startsWith("/analytics") && !path.startsWith("/days") &&
     !path.startsWith("/metrics") && !path.startsWith("/locations") && !path.startsWith("/app");
   prefetched = {
     me: api.me(),
