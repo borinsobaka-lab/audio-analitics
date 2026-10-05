@@ -12,6 +12,7 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
   const [data, setData] = useState<AiPrompt | null>(null);
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
+  const [verifyText, setVerifyText] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -22,18 +23,20 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
       .then((res) => {
         setData(res);
         setText(res.prompt);
+        setVerifyText(res.verify_prompt);
         setModel(res.model_saved);
       })
       .catch((e) => setError((e as Error).message));
   }, []);
 
-  async function save(value: string) {
+  async function save(prompt: string, verify: string) {
     setSaving(true);
     setError("");
     try {
-      const res = await api.saveAiPrompt({ prompt: value, model: model.trim() });
+      const res = await api.saveAiPrompt({ prompt, verify_prompt: verify, model: model.trim() });
       setData(res);
       setText(res.prompt);
+      setVerifyText(res.verify_prompt);
       setModel(res.model_saved);
       setSavedAt(new Date().toISOString());
     } catch (e) {
@@ -45,17 +48,30 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
 
   if (!data) return error ? <Note kind="error">{error}</Note> : <Skeleton count={1} height={320} />;
 
-  const dirty = text.trim() !== data.prompt.trim() || model.trim() !== data.model_saved;
+  const dirty =
+    text.trim() !== data.prompt.trim() ||
+    verifyText.trim() !== data.verify_prompt.trim() ||
+    model.trim() !== data.model_saved;
 
   return (
     <div className="ai-settings">
       <div className="sheet sheet-pad ai-card">
         <div className="ai-how">
-          <strong>Как работает.</strong> Сотрудник нажимает «ИИ-помощник» над скриптами и
-          вставляет сообщение клиента. ИИ сначала ищет подходящие скрипты — и показывает их с
-          кнопкой «Копировать». Если подходящего нет — пишет ответ сам, на языке клиента.
-          Кроме промпта ниже ИИ всегда видит все скрипты, правила продаж из скрипта продаж
-          «Аналитики» и переменные из «Подстановки».
+          <strong>Как работает.</strong> Сотрудник нажимает «ИИ-помощник» и вставляет сообщение
+          клиента. ИИ видит всю базу: скрипты, правила продаж из скрипта продаж «Аналитики» и
+          переменные с их значениями из «Подстановки».
+          <ol>
+            <li>Есть подходящий скрипт — показывает его с «Копировать» на языке клиента.</li>
+            <li>
+              Нет — пишет ответ, и <strong>отдельный второй запрос</strong> сверяет каждый факт
+              ответа (цены, скидки, сроки, условия, обещания) с базой.
+            </li>
+            <li>Не прошёл проверку — ИИ переписывает с учётом замечаний, ещё одна проверка.</li>
+            <li>
+              Снова не прошёл или данных нет — ответ <strong>не показывается</strong>: сотрудник
+              видит «недостаточно информации» и чего именно не хватает.
+            </li>
+          </ol>
         </div>
         {!data.configured && (
           <Note kind="error">
@@ -82,15 +98,34 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
         </label>
         <label className="field">
           <span className="label">
-            Промпт {data.is_default && !dirty && <span className="muted">· стандартный</span>}
+            Промпт ответа{" "}
+            {data.is_default && text.trim() === data.prompt.trim() && (
+              <span className="muted">· стандартный</span>
+            )}
           </span>
           <textarea
             className="ai-prompt"
             value={text}
-            rows={18}
+            rows={16}
             readOnly={!canEdit}
             spellCheck={false}
             onChange={(e) => setText(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="label">
+            Промпт проверки{" "}
+            {data.verify_is_default && verifyText.trim() === data.verify_prompt.trim() && (
+              <span className="muted">· стандартный</span>
+            )}
+          </span>
+          <textarea
+            className="ai-prompt"
+            value={verifyText}
+            rows={12}
+            readOnly={!canEdit}
+            spellCheck={false}
+            onChange={(e) => setVerifyText(e.target.value)}
           />
         </label>
         {error && <Note kind="error">{error}</Note>}
@@ -100,14 +135,14 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
           </span>
           {canEdit && (
             <span className="actions">
-              {!data.is_default && !dirty && (
+              {(!data.is_default || !data.verify_is_default) && !dirty && (
                 <button type="button" className="ghost" disabled={saving}
-                  onClick={() => save("")}>
-                  Вернуть стандартный
+                  onClick={() => save("", "")}>
+                  Вернуть стандартные промпты
                 </button>
               )}
-              <button type="button" disabled={saving || !dirty || !text.trim()}
-                onClick={() => save(text)}>
+              <button type="button" disabled={saving || !dirty || !text.trim() || !verifyText.trim()}
+                onClick={() => save(text, verifyText)}>
                 {saving ? "Сохраняем…" : "Сохранить"}
               </button>
             </span>

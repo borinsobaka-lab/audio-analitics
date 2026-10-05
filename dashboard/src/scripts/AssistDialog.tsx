@@ -1,6 +1,10 @@
 /** ИИ-помощник: администратор вставляет сообщение клиента, ИИ подбирает
  *  подходящие скрипты — или, если подходящего нет, пишет ответ сам.
  *
+ *  Написанный ответ показывается, только если его отдельно проверили по
+ *  базе: каждый факт подтверждён скриптами, правилами или переменными.
+ *  Не прошёл проверку — вместо ответа «недостаточно информации» и почему.
+ *
  *  Найденные скрипты показываются здесь же, текстами на языке клиента и с
  *  «Копировать» — открывать скрипт не нужно. Написанный ИИ ответ можно
  *  поправить прямо в поле перед копированием.
@@ -205,7 +209,7 @@ export default function AssistDialog({
         {busy && (
           <div className="assist-busy" role="status">
             <span className="assist-spinner" aria-hidden="true" />
-            Смотрю скрипты и сообщение клиента — обычно 5–20 секунд.
+            Подбираю скрипт или пишу ответ и сверяю его с базой — обычно 10–40 секунд.
           </div>
         )}
         {error && <Note kind="error">{error}</Note>}
@@ -240,11 +244,43 @@ export default function AssistDialog({
               </section>
             )}
 
+            {(result.status === "needs_clarification" || result.status === "unverified") && (
+              <div className="assist-warn" role="alert">
+                <strong>
+                  ⚠️{" "}
+                  {result.status === "unverified"
+                    ? "Недостаточно информации в базе знаний для безопасного ответа"
+                    : "В базе знаний не хватает данных для ответа"}
+                </strong>
+                {result.missing_information && <p>{result.missing_information}</p>}
+                {result.issues.length > 0 && (
+                  <ul className="assist-issues">
+                    {result.issues.map((i, k) => (
+                      <li key={k}>
+                        {i.claim && <span className="assist-claim">«{i.claim}»</span>}
+                        {i.claim && i.reason ? " — " : ""}
+                        {i.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="muted">
+                  Ответьте по скриптам вручную или добавьте недостающее в скрипты и переменные —
+                  тогда ИИ сможет на это опираться.
+                </p>
+              </div>
+            )}
+
             {result.reply && (
               <section className="assist-section">
                 <div className="assist-msg-head">
                   <h3 className="assist-section-title">
                     {matches.length ? "Ответ ИИ" : "Подходящего скрипта нет — ответ ИИ"}
+                    {result.verified && (
+                      <span className="assist-verified" title="Каждый факт в ответе сверен с базой отдельной проверкой">
+                        ✓ проверен по базе{result.attempts > 1 ? " со второй попытки" : ""}
+                      </span>
+                    )}
                   </h3>
                   <CopyButton text={reply} />
                 </div>
@@ -258,10 +294,39 @@ export default function AssistDialog({
                 <p className="muted assist-note">
                   Проверьте перед отправкой: места в [скобках] заполните сами.
                 </p>
+                {result.sources.length > 0 && (
+                  <details className="assist-sources">
+                    <summary>Использованные источники · {result.sources.length}</summary>
+                    <ul>
+                      {result.sources.map((src, k) => {
+                        const target = src.item_id
+                          ? sections
+                              .map((sec) => ({ sec, item: sec.items.find((i) => i.id === src.item_id) }))
+                              .find((x) => x.item)
+                          : undefined;
+                        return (
+                          <li key={k}>
+                            {target ? (
+                              <button type="button" className="assist-source-link" onClick={() => {
+                                ref.current?.close();
+                                onOpen(target.item!, target.sec);
+                              }}>
+                                {src.title}
+                              </button>
+                            ) : (
+                              src.title
+                            )}
+                            {src.section && <span className="muted"> · {src.section}</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                )}
               </section>
             )}
 
-            {!matches.length && !result.reply && (
+            {result.status === "ready" && !matches.length && !result.reply && (
               <Note kind="info">ИИ не нашёл подходящего скрипта и не предложил ответа.</Note>
             )}
           </div>

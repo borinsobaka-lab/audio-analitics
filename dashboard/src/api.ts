@@ -474,6 +474,9 @@ export interface AiPrompt {
   prompt: string;
   default_prompt: string;
   is_default: boolean;
+  verify_prompt: string;
+  default_verify_prompt: string;
+  verify_is_default: boolean;
   /** Модель, которой ИИ отвечает сейчас. */
   model: string;
   /** Заданная в админке; пусто — берётся model_default с сервера. */
@@ -484,9 +487,18 @@ export interface AiPrompt {
 }
 
 export interface AssistResult {
+  /** ready — показываем; needs_clarification — данных в базе нет;
+   *  unverified — ответ не прошёл проверку и не показывается. */
+  status: "ready" | "needs_clarification" | "unverified";
   language: ScriptLang;
   matches: { item_id: string; title: string; section: string; why: string }[];
+  /** Только проверенный ответ. */
   reply: string;
+  verified: boolean;
+  attempts: number;
+  sources: { item_id: string | null; title: string; section: string }[];
+  missing_information: string;
+  issues: { claim: string; reason: string }[];
   comment: string;
 }
 
@@ -745,7 +757,7 @@ export const api = {
     return request<CopyStats>(`/api/playbook/stats${qs ? `?${qs}` : ""}`);
   },
   aiPrompt: () => request<AiPrompt>("/api/playbook/ai"),
-  saveAiPrompt: (body: { prompt: string; model: string }) =>
+  saveAiPrompt: (body: { prompt: string; verify_prompt: string; model: string }) =>
     request<AiPrompt>("/api/playbook/ai", { method: "PUT", body: JSON.stringify(body) }),
   assist: (body: { message: string; lang: ScriptLang; studio: string }) =>
     request<AssistResult>("/api/playbook/assist", { method: "POST", body: JSON.stringify(body) }),

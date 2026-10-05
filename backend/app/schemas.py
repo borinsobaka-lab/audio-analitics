@@ -776,10 +776,31 @@ class AssistMatch(BaseModel):
     why: str = ""
 
 
+class AssistIssue(BaseModel):
+    claim: str = ""
+    reason: str = ""
+
+
+class AssistSource(BaseModel):
+    # Скрипт — с id и названием; правила продаж и переменные — только меткой.
+    item_id: uuid.UUID | None = None
+    title: str
+    section: str = ""
+
+
 class AssistOut(BaseModel):
+    # ready — показываем; needs_clarification — данных в базе нет;
+    # unverified — ответ не прошёл проверку и не показывается.
+    status: Literal["ready", "needs_clarification", "unverified"]
     language: ScriptLangCode
     matches: list[AssistMatch] = []
+    # Только проверенный ответ: непроверенный сюда не попадает.
     reply: str = ""
+    verified: bool = False
+    attempts: int = 1
+    sources: list[AssistSource] = []
+    missing_information: str = ""
+    issues: list[AssistIssue] = []
     comment: str = ""
 
 
@@ -787,6 +808,10 @@ class AiPromptOut(BaseModel):
     prompt: str
     default_prompt: str
     is_default: bool
+    # Промпт проверяющего — второго, независимого вызова.
+    verify_prompt: str
+    default_verify_prompt: str
+    verify_is_default: bool
     # Модель, которой ИИ-помощник отвечает сейчас: заданная в админке или,
     # если там пусто, OPENAI_MODEL с сервера.
     model: str
@@ -799,5 +824,6 @@ class AiPromptOut(BaseModel):
 class AiPromptIn(BaseModel):
     # Пусто — вернуть стандартный.
     prompt: str = Field(default="", max_length=20000)
+    verify_prompt: str = Field(default="", max_length=20000)
     # Пусто — модель с сервера (OPENAI_MODEL).
     model: str = Field(default="", max_length=120)

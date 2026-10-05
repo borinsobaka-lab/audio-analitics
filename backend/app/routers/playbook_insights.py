@@ -27,7 +27,9 @@ from ..schemas import (
     AiPromptIn,
     AiPromptOut,
     AssistIn,
+    AssistIssue,
     AssistMatch,
+    AssistSource,
     AssistOut,
     CopyStatItem,
     CopyStatsOut,
@@ -191,11 +193,16 @@ def ai_model(data: dict) -> str:
 
 def ai_prompt_out(data: dict) -> AiPromptOut:
     saved = (data.get("ai_prompt") or "").strip()
+    saved_verify = (data.get("ai_verify_prompt") or "").strip()
     settings = get_settings()
     return AiPromptOut(
         prompt=saved or playbook_ai.DEFAULT_PROMPT,
         default_prompt=playbook_ai.DEFAULT_PROMPT,
         is_default=not saved or saved == playbook_ai.DEFAULT_PROMPT.strip(),
+        verify_prompt=saved_verify or playbook_ai.DEFAULT_VERIFY_PROMPT,
+        default_verify_prompt=playbook_ai.DEFAULT_VERIFY_PROMPT,
+        verify_is_default=not saved_verify
+        or saved_verify == playbook_ai.DEFAULT_VERIFY_PROMPT.strip(),
         model=ai_model(data),
         model_saved=(data.get("ai_model") or "").strip(),
         model_default=settings.openai_model.strip(),
@@ -229,6 +236,10 @@ async def save_ai_prompt(
     if prompt == playbook_ai.DEFAULT_PROMPT.strip():
         prompt = ""
     data["ai_prompt"] = prompt
+    verify = body.verify_prompt.strip()
+    if verify == playbook_ai.DEFAULT_VERIFY_PROMPT.strip():
+        verify = ""
+    data["ai_verify_prompt"] = verify
     data["ai_model"] = body.model.strip()
     if row:
         row.data = data
@@ -311,6 +322,8 @@ async def assist(
         result = await playbook_ai.ask(
             model=ai_model(data),
             prompt=(data.get("ai_prompt") or "").strip() or playbook_ai.DEFAULT_PROMPT,
+            verify_prompt=(data.get("ai_verify_prompt") or "").strip()
+            or playbook_ai.DEFAULT_VERIFY_PROMPT,
             catalog=playbook_ai.build_catalog(tree),
             sales_rules=playbook_ai.build_sales_rules(
                 {"stages": script.stages_json, "body": script.body} if script else None
@@ -339,10 +352,33 @@ async def assist(
         if len(matches) == 3:
             break
 
+    sources: list[AssistSource] = []
+    for raw in result.get("used_sources") or []:
+        key = str(raw).strip()
+        if key == "sales_rules":
+            sources.append(AssistSource(title="Правила продаж (скрипт продаж «Аналитики»)"))
+            continue
+        if key == "variables":
+            sources.append(AssistSource(title="Переменные из «Подстановки»"))
+            continue
+        try:
+            item_id = uuid.UUID(key)
+        except ValueError:
+            continue
+        if item_id in known and all(x.item_id != item_id for x in sources):
+            it, section = known[item_id]
+            sources.append(AssistSource(item_id=it.id, title=it.title, section=section))
+
     language = result.get("language") if result.get("language") in ("ru", "en", "ka") else body.lang
     return AssistOut(
+        status=result.get("status", "ready"),
         language=language,
         matches=matches,
         reply=str(result.get("reply") or "").strip(),
+        verified=bool(result.get("verified")),
+        attempts=int(result.get("attempts") or 1),
+        sources=sources if result.get("reply") else [],
+        missing_information=str(result.get("missing_information") or "").strip(),
+        issues=[AssistIssue(**i) for i in result.get("issues") or []],
         comment=str(result.get("comment") or "").strip(),
     )
