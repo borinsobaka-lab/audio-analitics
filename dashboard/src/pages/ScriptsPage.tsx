@@ -7,7 +7,7 @@
  *  - язык и студия выбираются один раз на все скрипты;
  *  - каждое сообщение копируется одной кнопкой, ровно то, что уйдёт в чат.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, fmtWhen, plural, ScriptItem, ScriptItemDraft, ScriptLang, ScriptSection } from "../api";
 import { Empty, Note, PageHead, Skeleton } from "../components/ui";
@@ -492,18 +492,27 @@ export default function ScriptsPage() {
               {title}
               {sectionMenu(section)}
             </span>
+          ) : canEdit && !searching && !sectionId ? (
+            <span className="title-with-menu">
+              {title}
+              <DotsMenu label="Все скрипты: действия" title="Новый раздел">
+                {(close) => (
+                  <button type="button" role="menuitem" onClick={() => {
+                    close();
+                    setEditing(null);
+                    setSectionForm("new");
+                  }}>
+                    + Новый раздел
+                  </button>
+                )}
+              </DotsMenu>
+            </span>
           ) : (
             title
           )
         }
         hint={hint}
-      >
-        {canEdit && !searching && !section && !sectionId && !sectionForm && (
-          <button type="button" className="secondary" onClick={() => setSectionForm("new")}>
-            Новый раздел
-          </button>
-        )}
-      </PageHead>
+      />
 
       {canEdit && !searching && sectionForm === "new" && !sectionId && (
         <SectionForm
@@ -608,7 +617,7 @@ export default function ScriptsPage() {
         ))
       ) : (
         <Empty title="Скриптов пока нет">
-          {canEdit ? "Создайте первый раздел кнопкой «Новый раздел»." : "Их добавит владелец."}
+          {canEdit ? "Создайте первый раздел: «⋯» рядом с заголовком → «Новый раздел»." : "Их добавит владелец."}
         </Empty>
       )}
     </div>
@@ -724,6 +733,61 @@ const IconDots = () => (
   </svg>
 );
 
+/** Кнопка «⋯» с выпадающим меню: закрывается кликом мимо и Escape.
+ *  children получает close — пункты сами решают, закрывать ли меню. */
+function DotsMenu({
+  label,
+  title,
+  onOpenChange,
+  children,
+}: {
+  label: string;
+  title: string;
+  onOpenChange?: (open: boolean) => void;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+    // onOpenChange — не зависимость: меню реагирует только на открытие.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <span className="section-menu" ref={ref}>
+      <button
+        type="button"
+        className={`section-menu-btn${open ? " on" : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={title}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <IconDots />
+      </button>
+      {open && (
+        <span className="menu" role="menu">
+          {children(() => setOpen(false))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** «⋯» справа от названия раздела: название и иконка, порядок в меню,
  *  удаление пустого раздела. Нужно редко — поэтому в меню, а не кнопками
  *  в шапке страницы, где они отвлекали от скриптов. */
@@ -742,43 +806,17 @@ function SectionMenu({
   onMove: (delta: -1 | 1) => Promise<boolean>;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setConfirmDelete(false);
-      return;
-    }
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   return (
-    <span className="section-menu" ref={ref}>
-      <button
-        type="button"
-        className={`section-menu-btn${open ? " on" : ""}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Раздел «${section.title}»: действия`}
-        title="Название, иконка, порядок"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <IconDots />
-      </button>
-      {open && (
-        <span className="menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onEdit(); }}>
+    <DotsMenu
+      label={`Раздел «${section.title}»: действия`}
+      title="Название, иконка, порядок"
+      onOpenChange={(open) => !open && setConfirmDelete(false)}
+    >
+      {(close) => (
+        <>
+          <button type="button" role="menuitem" onClick={() => { close(); onEdit(); }}>
             Название и иконка
           </button>
           {/* Порядок — меню не закрывается: раздел часто двигают на
@@ -794,7 +832,7 @@ function SectionMenu({
           {section.items.length === 0 &&
             (confirmDelete ? (
               <button type="button" role="menuitem" className="danger"
-                onClick={() => { setOpen(false); onDelete(); }}>
+                onClick={() => { close(); onDelete(); }}>
                 Точно удалить раздел
               </button>
             ) : (
@@ -803,8 +841,8 @@ function SectionMenu({
                 Удалить раздел…
               </button>
             ))}
-        </span>
+        </>
       )}
-    </span>
+    </DotsMenu>
   );
 }
