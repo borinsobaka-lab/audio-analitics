@@ -20,11 +20,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import UserContext, require_scripts_edit, require_user
 from ..db import get_db
 from ..models import (
+    PlaybookChange,
+    PlaybookSeen,
+    PlaybookSuggestion,
     Employee,
     Location,
     Organization,
@@ -42,7 +46,14 @@ from ..schemas import (
     PlaybookSectionIn,
     PlaybookSectionOut,
     PlaybookSectionPatch,
+    PlaybookChangeOut,
+    PlaybookChangesPage,
     PlaybookSettingsIn,
+    PlaybookSuggestionIn,
+    PlaybookSuggestionOut,
+    PlaybookSuggestionPatch,
+    PlaybookSuggestionsPage,
+    UnreadOut,
     PlaybookSettingsOut,
     AdminNamesOut,
     StudioNamesOut,
@@ -165,6 +176,57 @@ async def get_item(db: AsyncSession, item_id: uuid.UUID) -> PlaybookItem:
     if not item:
         raise HTTPException(404, "Скрипт не найден")
     return item
+
+
+async def snapshot(db: AsyncSession, item: PlaybookItem) -> dict:
+    """Версия скрипта для хронологии — всё, что видно в карточке."""
+    section = await db.get(PlaybookSection, item.section_id)
+    return {
+        "title": item.title,
+        "kind": item.kind,
+        "section": section.title if section else "",
+        "keywords": item.keywords,
+        "note": item.note,
+        "follow_up": item.follow_up,
+        "variants": item.variants,
+    }
+
+
+def record(
+    db: AsyncSession,
+    item: PlaybookItem,
+    action: str,
+    user: UserContext,
+    before: dict | None,
+    after: dict | None,
+    note: str,
+) -> None:
+    db.add(
+        PlaybookChange(
+            org_id=item.org_id,
+            item_id=item.id,
+            item_title=(after or before or {}).get("title", item.title),
+            action=action,
+            before=before,
+            after=after,
+            change_note=note,
+            author=author(user),
+        )
+    )
+
+
+def encode_cursor(created_at, row_id) -> str:
+    return f"{created_at.isoformat()}|{row_id}"
+
+
+def decode_cursor(cursor: str):
+    from datetime import datetime as dt
+
+    try:
+        at, row_id = cursor.split("|", 1)
+        return dt.fromisoformat(at), uuid.UUID(row_id)
+    except ValueError:
+        raise HTTPException(400, "Неверный курсор") from None
 
 
 async def next_position(db: AsyncSession, model, *where) -> int:
@@ -354,6 +416,8 @@ async def create_item(
         change_note=body.change_note.strip() or "Новый скрипт",
     )
     db.add(item)
+    await db.flush()
+    record(db, item, "created", user, None, await snapshot(db, item), item.change_note)
     await db.commit()
     await db.refresh(item)
     return item
@@ -372,6 +436,7 @@ async def update_item(
         # стойки увидит другой текст и не поймёт, ошибка это или так задумано.
         raise HTTPException(422, "Опишите, что изменили — это увидят все на карточке скрипта")
     item = await get_item(db, item_id)
+    before = await snapshot(db, item)
     if body.section_id != item.section_id:
         # Перенесённый скрипт встаёт в конец нового раздела — там его и ищут
         # глазами сразу после переноса.
@@ -389,6 +454,7 @@ async def update_item(
     item.updated_at = utcnow()
     item.updated_by = author(user)
     item.change_note = note
+    record(db, item, "updated", user, before, await snapshot(db, item), note)
     await db.commit()
     await db.refresh(item)
     return item
@@ -401,6 +467,7 @@ async def delete_item(
     db: AsyncSession = Depends(get_db),
 ):
     item = await get_item(db, item_id)
+    record(db, item, "deleted", user, await snapshot(db, item), None, "Скрипт удалён")
     await db.delete(item)
     await db.commit()
     return None
@@ -509,3 +576,161 @@ async def save_settings(
         db.add(PlaybookSettings(org_id=org.id, data=data, updated_by=author(user)))
     await db.commit()
     return await get_settings(user, db)
+
+
+# --- Хронология изменений ---
+
+PAGE = 20
+
+
+@router.get("/changes", response_model=PlaybookChangesPage)
+async def list_changes(
+    cursor: str = "",
+    limit: int = PAGE,
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    """Порциями, от новых к старым. Курсор — время и id последней записи
+    порции: в отличие от номера страницы, он не съезжает, когда между
+    порциями кто-то сохранил новую правку."""
+    org = await current_org(db)
+    limit = max(1, min(limit, 50))
+    q = select(PlaybookChange).where(PlaybookChange.org_id == org.id)
+    if cursor:
+        at, row_id = decode_cursor(cursor)
+        q = q.where(
+            (PlaybookChange.created_at < at)
+            | ((PlaybookChange.created_at == at) & (PlaybookChange.id < row_id))
+        )
+    rows = (
+        await db.scalars(
+            q.order_by(PlaybookChange.created_at.desc(), PlaybookChange.id.desc()).limit(limit + 1)
+        )
+    ).all()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return PlaybookChangesPage(
+        items=[PlaybookChangeOut.model_validate(r) for r in rows],
+        next_cursor=encode_cursor(rows[-1].created_at, rows[-1].id) if more and rows else "",
+    )
+
+
+# --- Предложения сотрудников ---
+
+async def seen_at(db: AsyncSession, user: UserContext):
+    row = await db.get(PlaybookSeen, user.author_key)
+    return row.suggestions_seen_at if row else None
+
+
+@router.post("/suggestions", response_model=PlaybookSuggestionOut, status_code=201)
+async def create_suggestion(
+    body: PlaybookSuggestionIn,
+    user: UserContext = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Предложить может любой, кто видит скрипты: замечают неудачный текст
+    чаще всего те, кто им пользуется у стойки."""
+    org = await current_org(db)
+    row = PlaybookSuggestion(
+        org_id=org.id,
+        author_key=user.author_key,
+        author_name=author(user),
+        text=body.text.strip(),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@router.get("/suggestions", response_model=PlaybookSuggestionsPage)
+async def list_suggestions(
+    cursor: str = "",
+    limit: int = PAGE,
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await current_org(db)
+    limit = max(1, min(limit, 50))
+    seen = await seen_at(db, user)
+    q = select(PlaybookSuggestion).where(PlaybookSuggestion.org_id == org.id)
+    if cursor:
+        at, row_id = decode_cursor(cursor)
+        q = q.where(
+            (PlaybookSuggestion.created_at < at)
+            | ((PlaybookSuggestion.created_at == at) & (PlaybookSuggestion.id < row_id))
+        )
+    rows = (
+        await db.scalars(
+            q.order_by(PlaybookSuggestion.created_at.desc(), PlaybookSuggestion.id.desc())
+            .limit(limit + 1)
+        )
+    ).all()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    items = []
+    for r in rows:
+        out = PlaybookSuggestionOut.model_validate(r)
+        out.unread = r.author_key != user.author_key and (seen is None or r.created_at > seen)
+        items.append(out)
+    return PlaybookSuggestionsPage(
+        items=items,
+        next_cursor=encode_cursor(rows[-1].created_at, rows[-1].id) if more and rows else "",
+    )
+
+
+@router.patch("/suggestions/{suggestion_id}", response_model=PlaybookSuggestionOut)
+async def update_suggestion(
+    suggestion_id: uuid.UUID,
+    body: PlaybookSuggestionPatch,
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await db.get(PlaybookSuggestion, suggestion_id)
+    if not row:
+        raise HTTPException(404, "Предложение не найдено")
+    row.status = body.status
+    row.resolved_at = utcnow() if body.status == "done" else None
+    row.resolved_by = author(user) if body.status == "done" else ""
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@router.get("/suggestions/unread", response_model=UnreadOut)
+async def unread_suggestions(
+    user: UserContext = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сколько новых предложений этот администратор ещё не видел. Свои не
+    считаются; у тех, кто скрипты только читает, — всегда ноль."""
+    if not user.can_edit_scripts:
+        return UnreadOut(count=0)
+    org = await current_org(db)
+    seen = await seen_at(db, user)
+    q = select(func.count()).select_from(PlaybookSuggestion).where(
+        PlaybookSuggestion.org_id == org.id,
+        PlaybookSuggestion.author_key != user.author_key,
+    )
+    if seen is not None:
+        q = q.where(PlaybookSuggestion.created_at > seen)
+    return UnreadOut(count=(await db.scalar(q)) or 0)
+
+
+@router.post("/suggestions/seen", response_model=UnreadOut)
+async def mark_suggestions_seen(
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    # Одним запросом: два открытия вкладки подряд (две вкладки браузера)
+    # иначе спорят за одну строку и второе падает на уникальном ключе.
+    now = utcnow()
+    await db.execute(
+        pg_insert(PlaybookSeen)
+        .values(user_key=user.author_key, suggestions_seen_at=now)
+        .on_conflict_do_update(
+            index_elements=[PlaybookSeen.user_key], set_={"suggestions_seen_at": now}
+        )
+    )
+    await db.commit()
+    return UnreadOut(count=0)

@@ -1,5 +1,9 @@
-/** Настройки скриптов: то, что подставляется в тексты само.
+/** Настройки скриптов — три вкладки:
+ *  - «Хронология»: каждая правка скриптов, было → стало;
+ *  - «Предложения»: что сотрудники просят поправить, со значком новых;
+ *  - «Подстановка»: то, что подставляется в тексты само.
  *
+ *  Подстановка:
  *  В скрипте пишут {админ}, {студия} или свою {переменную}, а администратор
  *  у стойки видит и копирует уже готовый текст: своё имя, свою студию,
  *  нужные значения — на языке переписки. Меньше мест, которые надо помнить
@@ -9,6 +13,7 @@
  *  три независимых списка.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AdminNames,
   api,
@@ -19,6 +24,8 @@ import {
   StudioNames,
 } from "../api";
 import { Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
+import History from "../scripts/History";
+import Suggestions from "../scripts/Suggestions";
 import { BUILTIN_VARIABLES, dateAfter, dateAfterLabel, LANGS } from "../scripts/logic";
 import { usePlaybook } from "../scripts/store";
 import { useSession } from "../session";
@@ -188,8 +195,8 @@ function GridHead({ first }: { first: string }) {
   );
 }
 
-export default function ScriptsSettingsPage() {
-  const me = useSession();
+/** Имена, студии и переменные — одна форма, одна кнопка «Сохранить». */
+function Substitution() {
   const { setSettings } = usePlaybook();
   const [saved, setSaved] = useState<PlaybookSettings | null>(null);
   const [studios, setStudios] = useState<StudioNames[]>([]);
@@ -264,23 +271,13 @@ export default function ScriptsSettingsPage() {
     }
   }
 
-  if (!me.can_edit_scripts) {
-    return (
-      <>
-        <PageHead title="Настройки скриптов" />
-        <Empty title="Нет доступа">
-          Настройки меняют те, кому выдано «Скрипты: чтение и правка».
-        </Empty>
-      </>
-    );
-  }
-
   return (
-    <div className="settings-page">
-      <PageHead
-        title="Настройки скриптов"
-        hint="В тексте скрипта пишут {админ}, {студия} или свою {переменную} — администратор видит и копирует уже готовый текст: своё имя, свою студию, нужные значения, на языке переписки."
-      />
+    <div className="settings-tab">
+      <p className="tab-hint muted">
+        В тексте скрипта пишут {"{админ}"}, {"{студия}"} или свою {"{переменную}"} — администратор
+        видит и копирует уже готовый текст: своё имя, свою студию, нужные значения, на языке
+        переписки.
+      </p>
 
       {error && <Note kind="error">{error}</Note>}
       {!saved && !error && <Skeleton count={3} height={120} />}
@@ -471,6 +468,59 @@ export default function ScriptsSettingsPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+type Tab = "history" | "suggestions" | "vars";
+
+export default function ScriptsSettingsPage() {
+  const me = useSession();
+  const { unread } = usePlaybook();
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab");
+  // Пришли по значку новых предложений — сразу к ним, иначе — хронология.
+  const [initial] = useState<Tab>(unread > 0 ? "suggestions" : "history");
+  const tab: Tab = asked === "history" || asked === "suggestions" || asked === "vars" ? asked : initial;
+
+  if (!me.can_edit_scripts) {
+    return (
+      <>
+        <PageHead title="Настройки скриптов" />
+        <Empty title="Нет доступа">
+          Настройки меняют те, кому выдано «Скрипты: чтение и правка».
+        </Empty>
+      </>
+    );
+  }
+
+  const tabs: { key: Tab; label: string; badge?: number }[] = [
+    { key: "history", label: "Хронология" },
+    { key: "suggestions", label: "Предложения", badge: unread },
+    { key: "vars", label: "Подстановка" },
+  ];
+
+  return (
+    <div className="settings-page">
+      <PageHead title="Настройки скриптов" />
+      <div className="tabs" role="tablist" aria-label="Настройки скриптов">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            className={`tab${tab === t.key ? " on" : ""}`}
+            onClick={() => setParams({ tab: t.key }, { replace: true })}
+          >
+            {t.label}
+            {t.badge ? <span className="nav-badge num">{t.badge}</span> : null}
+          </button>
+        ))}
+      </div>
+      {tab === "history" && <History />}
+      {tab === "suggestions" && <Suggestions />}
+      {tab === "vars" && <Substitution />}
     </div>
   );
 }

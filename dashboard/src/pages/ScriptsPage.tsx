@@ -14,6 +14,7 @@ import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
+import SuggestDialog from "../scripts/SuggestDialog";
 import {
   BUILTIN_VARIABLES,
   findByTitle,
@@ -52,6 +53,7 @@ export default function ScriptsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [sectionForm, setSectionForm] = useState<"new" | "edit" | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -95,7 +97,7 @@ export default function ScriptsPage() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement;
-      if (el.closest("input, textarea, select, [contenteditable]")) return;
+      if (el.closest("input, textarea, select, [contenteditable], dialog")) return;
       e.preventDefault();
       searchRef.current?.focus();
       searchRef.current?.select();
@@ -341,7 +343,13 @@ export default function ScriptsPage() {
             </div>
           )}
         </div>
+        {/* Предложить может любой, кто видит скрипты: прав на правку у
+            администраторов у стойки нет, а неудачный текст замечают они. */}
+        <button type="button" className="secondary suggest-btn" onClick={() => setSuggesting(true)}>
+          Предложить изменения
+        </button>
       </div>
+      {suggesting && <SuggestDialog onClose={() => setSuggesting(false)} />}
 
       {/* На телефоне боковое меню — узкая полоса, и разделы в ней не
           поместятся: там они живут здесь, лентой над списком. */}

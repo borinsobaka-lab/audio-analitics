@@ -147,7 +147,7 @@ function ProductSwitch({
  *  только всегда на виду. */
 function ScriptsNav() {
   const me = useSession();
-  const { playbook } = usePlaybook();
+  const { playbook, unread } = usePlaybook();
   const sections = playbook?.sections ?? [];
   return (
     <div className="nav-sections">
@@ -169,6 +169,13 @@ function ScriptsNav() {
         <NavLink to="/scripts/settings" className="nav-link wrap nav-settings">
           <NavIcon icon={NavIcons.settings} />
           <span className="grow">Настройки</span>
+          {/* Новые предложения сотрудников — у каждого администратора свой
+              счётчик, гаснет, когда он сам их открыл. */}
+          {unread > 0 && (
+            <span className="nav-badge num" title="Новые предложения сотрудников">
+              {unread}
+            </span>
+          )}
         </NavLink>
       )}
     </div>
@@ -271,7 +278,7 @@ export default function App() {
   return (
     <SessionContext.Provider value={me}>
       <StudioContext.Provider value={studio}>
-        <PlaybookProvider enabled={product === "scripts"}>
+        <PlaybookProvider enabled={product === "scripts"} watchSuggestions={me.can_edit_scripts && product === "scripts"}>
           <div className="layout">
             <nav className="sidebar">
               {/* Логотип ведёт на главную — в скрипты, как после входа. */}

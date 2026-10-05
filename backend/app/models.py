@@ -541,3 +541,52 @@ class PlaybookState(Base):
         ForeignKey("organizations.id"), primary_key=True
     )
     seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlaybookChange(UUIDMixin, Base):
+    """Запись хронологии: скрипт создан, изменён или удалён.
+
+    before/after — полные версии скрипта (название, тип, раздел, тексты,
+    подсказки), чтобы в настройках показать «было → стало» по каждому
+    полю. Ссылки на скрипт внешним ключом нет: удалённый скрипт остаётся в
+    журнале с последней версией.
+    """
+
+    __tablename__ = "playbook_changes"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    item_title: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(16))
+    before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    change_note: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlaybookSuggestion(UUIDMixin, Base):
+    """«Предложить изменения»: что сотрудник у стойки советует поправить."""
+
+    __tablename__ = "playbook_suggestions"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    author_key: Mapped[str] = mapped_column(String(64))
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by: Mapped[str] = mapped_column(String(255), default="")
+
+
+class PlaybookSeen(Base):
+    """Когда администратор последний раз открывал предложения — значок
+    непрочитанного у каждого свой."""
+
+    __tablename__ = "playbook_seen"
+
+    user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    suggestions_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )

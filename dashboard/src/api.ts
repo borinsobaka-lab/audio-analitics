@@ -408,6 +408,45 @@ export interface PlaybookSettings {
   updated_by: string;
 }
 
+/** Версия скрипта в хронологии — всё, что видно в карточке. */
+export interface ScriptSnapshot {
+  title: string;
+  kind: ScriptKind;
+  section: string;
+  keywords: string;
+  note: string;
+  follow_up: string;
+  variants: ScriptVariant[];
+}
+
+export interface ScriptChange {
+  id: string;
+  item_id: string | null;
+  item_title: string;
+  action: "created" | "updated" | "deleted";
+  before: ScriptSnapshot | null;
+  after: ScriptSnapshot | null;
+  change_note: string;
+  author: string;
+  created_at: string;
+}
+
+export interface ScriptSuggestion {
+  id: string;
+  author_name: string;
+  text: string;
+  status: "open" | "done";
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string;
+  unread: boolean;
+}
+
+export interface Page<T> {
+  items: T[];
+  next_cursor: string;
+}
+
 // --- Endpoints ---
 
 export const api = {
@@ -627,6 +666,27 @@ export const api = {
     }),
   deleteScript: (id: string) =>
     request<void>(`/api/playbook/items/${id}`, { method: "DELETE" }),
+  scriptChanges: (cursor = "") =>
+    request<Page<ScriptChange>>(
+      `/api/playbook/changes${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`
+    ),
+  suggestScript: (text: string) =>
+    request<ScriptSuggestion>("/api/playbook/suggestions", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  scriptSuggestions: (cursor = "") =>
+    request<Page<ScriptSuggestion>>(
+      `/api/playbook/suggestions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`
+    ),
+  setSuggestionStatus: (id: string, status: "open" | "done") =>
+    request<ScriptSuggestion>(`/api/playbook/suggestions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  unreadSuggestions: () => request<{ count: number }>("/api/playbook/suggestions/unread"),
+  markSuggestionsSeen: () =>
+    request<{ count: number }>("/api/playbook/suggestions/seen", { method: "POST" }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

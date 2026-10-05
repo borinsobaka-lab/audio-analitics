@@ -1766,6 +1766,49 @@ tbody tr:hover {
 .fmt u {
   text-underline-offset: 2px;
 }
+/* [[текст]] — копируемый кусок подсказки: на своей подложке и со значком
+   «Копировать» справа, чтобы было видно, что его не перепечатывают. */
+.copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 0 2px 0 7px;
+  border-radius: 6px;
+  background: rgba(11, 13, 22, 0.06);
+  vertical-align: baseline;
+}
+.copyable-text {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+.mini-copy {
+  flex: none;
+  width: 24px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-3);
+  box-shadow: none;
+  cursor: pointer;
+}
+.mini-copy:hover {
+  background: rgba(11, 13, 22, 0.08);
+  color: var(--ink);
+}
+.mini-copy.done {
+  color: var(--green-ink);
+}
+.mini-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
 /* Ссылка на удалённый скрипт — текст остаётся, но перехода нет. */
 .ref-broken {
   text-decoration: line-through;
@@ -3638,4 +3681,315 @@ input[type="file"]::file-selector-button:hover {
 }
 .prompt-preview {
   margin-top: 12px;
+}
+
+
+/* --- Счётчик новых предложений ---------------------------------------- */
+
+/* Розовый кружок с числом — в меню у «Настроек» и на вкладке
+   «Предложения». У каждого администратора свой. */
+.nav-badge {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 10px var(--glow-accent);
+}
+
+/* --- «Предложить изменения» -------------------------------------------- */
+
+.suggest-btn {
+  margin-left: auto;
+  min-height: 44px;
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+.modal-narrow {
+  width: min(520px, calc(100vw - 32px));
+}
+.suggest-field {
+  padding-top: 20px;
+}
+.suggest-field textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 15px;
+}
+.modal-body > .note {
+  margin-top: 12px;
+}
+.suggest-sent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 0;
+}
+
+/* --- Вкладки настроек скриптов ------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: var(--r-md);
+  background: var(--sunk);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+}
+.tab.on {
+  background: var(--nav-active);
+  color: var(--nav-ink-hi);
+  font-weight: 600;
+}
+.tab:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.tab-hint {
+  max-width: 760px;
+  margin: 0 0 20px;
+}
+.list-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+/* --- Хронология изменений ----------------------------------------------- */
+
+.change-list,
+.suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1080px;
+}
+.change {
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+  overflow: hidden;
+}
+.change-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 12px 16px;
+  background: var(--nav-active);
+  color: var(--nav-ink-hi);
+}
+.change-title {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: inherit;
+}
+button.change-title {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+button.change-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.change-action {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.change-action-created {
+  background: rgba(23, 214, 155, 0.2);
+  color: #7ff0c8;
+}
+.change-action-updated {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--nav-ink);
+}
+.change-action-deleted {
+  background: rgba(255, 91, 82, 0.2);
+  color: #ffaaa4;
+}
+.change-meta {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--nav-ink-2);
+}
+.change-note {
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--strip);
+  color: var(--ink);
+  font-size: 14px;
+}
+.change-same {
+  margin: 0;
+  padding: 12px 16px;
+}
+.change-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+.diff-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+/* Было → стало: две колонки со стрелкой между ними; на телефоне — одна
+   под другой. */
+.diff-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.diff-side {
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-before {
+  background: var(--card-2);
+  color: var(--ink-2);
+}
+.diff-after {
+  background: var(--card-2);
+  color: var(--ink);
+}
+.diff-arrow {
+  align-self: center;
+  color: var(--ink-3);
+  font-size: 18px;
+}
+.diff-del {
+  background: var(--red-tint);
+  color: var(--red-ink);
+  text-decoration: line-through;
+  text-decoration-color: rgba(196, 31, 21, 0.5);
+  border-radius: 3px;
+}
+.diff-ins {
+  background: var(--green-tint);
+  color: var(--green-ink);
+  border-radius: 3px;
+}
+.diff-empty {
+  color: var(--ink-4);
+  font-style: italic;
+}
+
+/* --- Предложения сотрудников -------------------------------------------- */
+
+.suggestion {
+  padding: 14px 16px;
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+  border-left: 3px solid transparent;
+}
+.suggestion.unread {
+  border-left-color: var(--accent);
+}
+.suggestion.done .suggestion-text {
+  color: var(--ink-3);
+}
+.suggestion-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+.suggestion-head .grow {
+  flex: 1;
+}
+.suggestion-new {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.suggestion-done-by {
+  font-size: 13px;
+  color: var(--green-ink);
+}
+.suggestion-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .suggest-btn {
+    width: 100%;
+    margin-left: 0;
+  }
+  .diff-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .diff-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+  .change-meta {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+/* Вопрос в окне — обычным текстом, не капсом подписи поля. */
+.suggest-field > .label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
 }

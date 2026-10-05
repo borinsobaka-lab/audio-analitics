@@ -64,13 +64,13 @@ function FormatBar({
     });
   }
 
-  function wrap(marker: string, placeholder: string) {
+  function wrap(open: string, placeholder: string, close = open) {
     const el = area();
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
     const inner = value.slice(start, end) || placeholder;
-    const next = value.slice(0, start) + marker + inner + marker + value.slice(end);
-    apply(next, start + marker.length, start + marker.length + inner.length);
+    const next = value.slice(0, start) + open + inner + close + value.slice(end);
+    apply(next, start + open.length, start + open.length + inner.length);
   }
 
   function toggleList() {
@@ -130,6 +130,12 @@ function FormatBar({
         <button type="button" className="fmt-btn wide" title="Выделите фразу и выберите скрипт — фраза станет ссылкой на него"
           onMouseDown={(e) => e.preventDefault()} onClick={openPicker}>
           ↗ Ссылка на скрипт
+        </button>
+        <button type="button" className="fmt-btn wide"
+          title="Выделите текст — в карточке рядом с ним появится кнопка «Копировать»: название следующего скрипта, текст задачи для CRM"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => wrap("[[", "текст для копирования", "]]")}>
+          ⧉ Добавить копирование
         </button>
       </div>
       {picking && (

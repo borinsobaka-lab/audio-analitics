@@ -25,6 +25,9 @@ interface PlaybookState {
   error: string | null;
   /** Перечитать дерево; старые данные остаются на экране, пока идёт запрос. */
   reload: () => Promise<void>;
+  /** Новые предложения сотрудников, которых этот администратор не видел. */
+  unread: number;
+  setUnread: (count: number) => void;
 }
 
 const PlaybookContext = createContext<PlaybookState>({
@@ -33,16 +36,26 @@ const PlaybookContext = createContext<PlaybookState>({
   setSettings: () => {},
   error: null,
   reload: async () => {},
+  unread: 0,
+  setUnread: () => {},
 });
+
+/** Как часто проверять новые предложения: раз в минуту хватает, чтобы
+ *  значок появился, пока администратор работает в скриптах. */
+const UNREAD_POLL_MS = 60_000;
 
 export function PlaybookProvider({
   enabled,
+  watchSuggestions,
   children,
 }: {
   /** Грузить, только когда раздел открыт: аналитике скрипты не нужны. */
   enabled: boolean;
+  /** Следить за новыми предложениями — только у тех, кто правит скрипты. */
+  watchSuggestions: boolean;
   children: ReactNode;
 }) {
+  const [unread, setUnread] = useState(0);
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [settings, setSettings] = useState<PlaybookSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,9 +84,25 @@ export function PlaybookProvider({
     loadSettings();
   }, [enabled, reload, loadSettings]);
 
+  useEffect(() => {
+    if (!watchSuggestions) return;
+    let alive = true;
+    const check = () =>
+      api
+        .unreadSuggestions()
+        .then((r) => alive && setUnread(r.count))
+        .catch(() => {});
+    check();
+    const timer = window.setInterval(check, UNREAD_POLL_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [watchSuggestions]);
+
   const value = useMemo(
-    () => ({ playbook, settings, setSettings, error, reload }),
-    [playbook, settings, error, reload]
+    () => ({ playbook, settings, setSettings, error, reload, unread, setUnread }),
+    [playbook, settings, error, reload, unread]
   );
   return <PlaybookContext.Provider value={value}>{children}</PlaybookContext.Provider>;
 }

@@ -662,3 +662,56 @@ class PlaybookSettingsOut(BaseModel):
     variables: list[PlaybookVariable] = []
     updated_at: datetime | None = None
     updated_by: str = ""
+
+
+# --- Хронология и предложения ---
+
+class PlaybookChangeOut(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID | None = None
+    item_title: str = ""
+    action: Literal["created", "updated", "deleted"]
+    before: dict | None = None
+    after: dict | None = None
+    change_note: str = ""
+    author: str = ""
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybookChangesPage(BaseModel):
+    items: list[PlaybookChangeOut] = []
+    # Курсор следующей порции; пусто — дальше ничего нет.
+    next_cursor: str = ""
+
+
+class PlaybookSuggestionIn(BaseModel):
+    text: str = Field(min_length=3, max_length=3000)
+
+
+class PlaybookSuggestionOut(BaseModel):
+    id: uuid.UUID
+    author_name: str = ""
+    text: str
+    status: Literal["open", "done"] = "open"
+    created_at: datetime
+    resolved_at: datetime | None = None
+    resolved_by: str = ""
+    # Новое для того, кто смотрит: пришло после его прошлого просмотра.
+    unread: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybookSuggestionsPage(BaseModel):
+    items: list[PlaybookSuggestionOut] = []
+    next_cursor: str = ""
+
+
+class PlaybookSuggestionPatch(BaseModel):
+    status: Literal["open", "done"]
+
+
+class UnreadOut(BaseModel):
+    count: int = 0
