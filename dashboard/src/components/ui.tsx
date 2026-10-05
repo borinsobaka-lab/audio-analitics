@@ -349,7 +349,11 @@ export function TableCard({
 
 /** Необратимое действие через второе нажатие. Нативный confirm() в этом
  *  проекте не используется: на macOS WebView он молча не показывается, и
- *  один раз это уже стоило нам неработающей кнопки. */
+ *  один раз это уже стоило нам неработающей кнопки.
+ *
+ *  У кнопок явный type="button": внутри формы кнопка без типа отправляет
+ *  форму. Так «Сбросить пароль» в окне доступа закрывало окно вместо того,
+ *  чтобы спросить подтверждение. */
 export function ConfirmAction({
   label,
   confirmLabel,
@@ -369,17 +373,17 @@ export function ConfirmAction({
   const size = small ? " small" : "";
   if (!armed) {
     return (
-      <button className={`ghost${size}`} title={title} onClick={() => setArmed(true)}>
+      <button type="button" className={`ghost${size}`} title={title} onClick={() => setArmed(true)}>
         {label}
       </button>
     );
   }
   return (
     <>
-      <button className={`danger${size}`} disabled={disabled} onClick={onConfirm}>
+      <button type="button" className={`danger${size}`} disabled={disabled} onClick={onConfirm}>
         {confirmLabel}
       </button>
-      <button className={`ghost${size}`} onClick={() => setArmed(false)}>
+      <button type="button" className={`ghost${size}`} onClick={() => setArmed(false)}>
         Отмена
       </button>
     </>
