@@ -8,7 +8,7 @@
  *  - каждое сообщение копируется одной кнопкой, ровно то, что уйдёт в чат.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { NavLink, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, plural, ScriptItem, ScriptItemDraft, ScriptLang, ScriptSection } from "../api";
 import { Empty, Note, PageHead, Skeleton } from "../components/ui";
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
@@ -47,6 +47,7 @@ export default function ScriptsPage() {
   const [params] = useSearchParams();
   const focusId = params.get("item");
   const navigate = useNavigate();
+  const location = useLocation();
   const { playbook, settings, error, reload } = usePlaybook();
   const { locations } = useStudio();
   const { lang, setLang, studio, setStudio } = useScriptPrefs();
@@ -140,20 +141,33 @@ export default function ScriptsPage() {
       navigate(scriptPath(home.id, focusId), { replace: true });
   }, [focusId, playbook, sectionId, navigate]);
 
-  // Ссылка на конкретный скрипт: докрутить и подсветить.
+  // Ссылка на конкретный скрипт: докрутить и подсветить — один раз на
+  // переход. Скрипты сначала показываются из сохранённого, а через миг
+  // приходят свежие: второй прокрутки и второй подсветки быть не должно.
+  // Если в сохранённом скрипта ещё нет — докрутим, когда придут свежие.
+  const focused = useRef("");
   useEffect(() => {
     if (!focusId || !playbook) return;
-    setFlash(focusId);
-    const frame = requestAnimationFrame(() =>
-      document.getElementById(`script-${focusId}`)?.scrollIntoView({ block: "start" })
-    );
-    const timer = window.setTimeout(() => setFlash(null), 2400);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-    };
+    const mark = `${location.key}|${focusId}`;
+    if (focused.current === mark) return;
+    const frame = requestAnimationFrame(() => {
+      const el = document.getElementById(`script-${focusId}`);
+      if (!el) return;
+      focused.current = mark;
+      el.scrollIntoView({ block: "start" });
+      setFlash(focusId);
+    });
+    return () => cancelAnimationFrame(frame);
     // sectionId — чтобы докрутить и после переадресации в настоящий раздел.
-  }, [focusId, playbook, sectionId]);
+  }, [focusId, playbook, sectionId, location.key]);
+
+  // Подсветка гаснет сама — отдельно от прокрутки, чтобы обновление данных
+  // посреди подсветки не оставило её гореть навсегда.
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
 
   const openScript = useCallback(
     (target: { item: ScriptItem; section: ScriptSection }) => {

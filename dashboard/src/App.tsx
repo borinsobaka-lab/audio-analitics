@@ -1,23 +1,45 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, getToken, Location, Me, onSessionExpired, plural, setToken } from "./api";
 import Logo from "./components/Logo";
 import { Skeleton } from "./components/ui";
 import { NavIcon, NavIcons, sectionIcon } from "./components/navIcons";
-import DashboardPage from "./pages/DashboardPage";
-import DaysPage from "./pages/DaysPage";
-import DayReportPage from "./pages/DayReportPage";
-import EmployeesPage from "./pages/EmployeesPage";
-import AppPage from "./pages/AppPage";
-import LocationsPage from "./pages/LocationsPage";
 import LoginPage from "./pages/LoginPage";
 import ErrorBoundary from "./components/ErrorBoundary";
-import MetricsPage from "./pages/MetricsPage";
 import ScriptsPage from "./pages/ScriptsPage";
-import ScriptsSettingsPage from "./pages/ScriptsSettingsPage";
+
+/* Скрипты — в основной сборке: их открывают первыми и чаще всего. Остальное
+ * («Аналитика», настройки, сотрудники) — отдельными кусками: первое открытие
+ * не ждёт кода, который сейчас не нужен. Куски догружаются в фоне сразу после
+ * показа страницы (preloadPages), так что переход в них всё равно мгновенный. */
+const pageLoaders = {
+  dashboard: () => import("./pages/DashboardPage"),
+  days: () => import("./pages/DaysPage"),
+  dayReport: () => import("./pages/DayReportPage"),
+  employees: () => import("./pages/EmployeesPage"),
+  app: () => import("./pages/AppPage"),
+  locations: () => import("./pages/LocationsPage"),
+  metrics: () => import("./pages/MetricsPage"),
+  scriptsSettings: () => import("./pages/ScriptsSettingsPage"),
+};
+const DashboardPage = lazy(pageLoaders.dashboard);
+const DaysPage = lazy(pageLoaders.days);
+const DayReportPage = lazy(pageLoaders.dayReport);
+const EmployeesPage = lazy(pageLoaders.employees);
+const AppPage = lazy(pageLoaders.app);
+const LocationsPage = lazy(pageLoaders.locations);
+const MetricsPage = lazy(pageLoaders.metrics);
+const ScriptsSettingsPage = lazy(pageLoaders.scriptsSettings);
+
+function preloadPages() {
+  const run = () => Object.values(pageLoaders).forEach((load) => load().catch(() => {}));
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
+  else setTimeout(run, 1500);
+}
 import { totalScripts } from "./scripts/logic";
 import { PlaybookProvider, usePlaybook } from "./scripts/store";
 import { SessionContext, StudioContext } from "./session";
+import { clearCache, readCache, take, writeCache } from "./boot";
 
 const STUDIO_KEY = "aa_studios";
 /** Прежний ключ хранил одну студию строкой — переносим выбор молча. */
@@ -182,27 +204,59 @@ function ScriptsNav() {
 }
 
 export default function App() {
-  // null — не вошли; undefined — ещё проверяем сохранённый токен.
-  const [me, setMe] = useState<Me | null | undefined>(
-    getToken() ? undefined : null
+  // null — не вошли; undefined — ещё проверяем сохранённый токен. С токеном
+  // и сохранённым «кто я» админка рисуется сразу, а проверка идёт в фоне.
+  const [me, setMeState] = useState<Me | null | undefined>(() =>
+    getToken() ? readCache<Me>("me") ?? undefined : null
   );
-  const [locations, setLocations] = useState<Location[]>([]);
+  const setMe = useCallback((value: Me | null) => {
+    if (value) writeCache("me", value);
+    setMeState(value);
+  }, []);
+  const [locations, setLocations] = useState<Location[]>(
+    () => readCache<Location[]>("locations") ?? []
+  );
   // Выбор студий переживает перезагрузку: владелец обычно смотрит один и тот
   // же срез сети несколько дней подряд.
   const [locationIds, setLocationIds] = useState<string[]>(loadStudios);
 
+  // Фоновая проверка входа — один раз при открытии. Отозванная сессия
+  // ответит 401 и покажет вход (onSessionExpired ниже); нет связи — остаёмся
+  // на сохранённом, если он есть.
   useEffect(() => {
-    if (me !== undefined) return;
-    api.me().then(setMe).catch(() => setMe(null));
-  }, [me]);
+    if (!getToken()) return;
+    take("me", api.me)
+      .then(setMe)
+      .catch(() => {
+        if (!getToken()) return;
+        setMeState((current) => current ?? null);
+      });
+  }, [setMe]);
 
+  const signedIn = Boolean(me);
   useEffect(() => {
-    if (!me) return;
-    api.listLocations().then(setLocations).catch(() => setLocations([]));
-  }, [me]);
+    if (signedIn) preloadPages();
+  }, [signedIn]);
+  useEffect(() => {
+    if (!signedIn) return;
+    api
+      .listLocations()
+      .then((list) => {
+        setLocations(list);
+        writeCache("locations", list);
+      })
+      .catch(() => {});
+  }, [signedIn]);
 
   // Сессию мог отозвать администратор — сбросом пароля или отключением.
-  useEffect(() => onSessionExpired(() => setMe(null)), []);
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        clearCache();
+        setMeState(null);
+      }),
+    []
+  );
 
   const remember = useCallback((ids: string[]) => {
     setLocationIds(ids);
@@ -258,8 +312,9 @@ export default function App() {
   );
 
   const signOut = useCallback(() => {
+    clearCache();
     setToken(null);
-    setMe(null);
+    setMeState(null);
   }, []);
 
   if (me === undefined) {
@@ -370,6 +425,7 @@ export default function App() {
 
             <main className="content">
               <ErrorBoundary resetKey={location.pathname + location.search}>
+              <Suspense fallback={<Skeleton count={4} height={90} />}>
               <Routes>
                 {/* После входа открываются скрипты: ими пользуются каждый час,
                     аналитику смотрят раз в день. */}
@@ -387,6 +443,7 @@ export default function App() {
                 {me.can_manage && <Route path="/app" element={<AppPage />} />}
                 <Route path="*" element={<Navigate to="/scripts" replace />} />
               </Routes>
+              </Suspense>
               </ErrorBoundary>
             </main>
           </div>

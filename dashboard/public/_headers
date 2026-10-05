@@ -1,0 +1,12 @@
+# Cloudflare Pages: как браузеру хранить файлы админки.
+# Файлы сборки неизменны (хэш в имени) — хранить год, не перепроверять.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# sw.js и index.html — всегда сверять с сервером: по ним приходит новая версия.
+/sw.js
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache

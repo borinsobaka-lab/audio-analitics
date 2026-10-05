@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { api, Playbook, PlaybookSettings, ScriptLang } from "../api";
+import { readCache, take, writeCache } from "../boot";
 
 interface PlaybookState {
   playbook: Playbook | null;
@@ -56,15 +57,24 @@ export function PlaybookProvider({
   children: ReactNode;
 }) {
   const [unread, setUnread] = useState(0);
-  const [playbook, setPlaybook] = useState<Playbook | null>(null);
-  const [settings, setSettings] = useState<PlaybookSettings | null>(null);
+  // Сохранённое с прошлого раза — сразу на экран; свежее придёт следом.
+  const [playbook, setPlaybook] = useState<Playbook | null>(() => readCache<Playbook>("playbook"));
+  const [settings, setSettingsState] = useState<PlaybookSettings | null>(() =>
+    readCache<PlaybookSettings>("settings")
+  );
+  const setSettings = useCallback((value: PlaybookSettings) => {
+    writeCache("settings", value);
+    setSettingsState(value);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
 
   const reload = useCallback(async () => {
     try {
-      const data = await api.playbook();
+      // Первый раз — ответ на запрос, начатый ещё до отрисовки (boot.ts).
+      const data = await take("playbook", api.playbook);
       setPlaybook(data);
+      writeCache("playbook", data);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -74,8 +84,10 @@ export function PlaybookProvider({
   // Настройки грузятся рядом, но отдельно: без них скрипты всё равно
   // читаются, просто {админ} и {студия} останутся неподставленными.
   const loadSettings = useCallback(() => {
-    api.playbookSettings().then(setSettings).catch(() => setSettings(null));
-  }, []);
+    take("settings", api.playbookSettings)
+      .then(setSettings)
+      .catch(() => {});
+  }, [setSettings]);
 
   useEffect(() => {
     if (!enabled || started.current) return;

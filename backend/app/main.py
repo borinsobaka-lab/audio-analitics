@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from .config import get_settings
 from .routers import (
@@ -33,7 +34,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Админка на другом домене, и каждый запрос с токеном браузер сначала
+    # «согласует» отдельным OPTIONS — лишний поход на сервер. Разрешение
+    # кэшируется на сутки (Chrome держит до 2 часов): дальше без задержки.
+    max_age=86400,
 )
+
+# Ответы сжимаются: дерево скриптов на трёх языках — ~110 КБ JSON, сжатое —
+# ~28 КБ. На мобильном интернете это заметная часть времени открытия.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.include_router(auth_router.router)
 app.include_router(app_releases.router)
