@@ -23,16 +23,16 @@ from .config import get_settings
 PBKDF2_ITERATIONS = 600_000
 SESSION_TTL_DAYS = 30
 
-# Без похожих друг на друга символов: пароль диктуют голосом и переписывают
-# от руки, а «l» против «1» и «O» против «0» — это звонок «не пускает».
-_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 
 
-def generate_password(groups: int = 4, size: int = 4) -> str:
-    """Пароль вида «kira-4m7p-x2q9-vb38»: 80 бит, но читается вслух."""
-    return "-".join(
-        "".join(secrets.choice(_ALPHABET) for _ in range(size)) for _ in range(groups)
-    )
+def generate_password() -> str:
+    """Пароль из четырёх цифр — так решил владелец: его диктуют и набирают
+    у стойки с телефона, длинный пароль там только мешал.
+
+    Четыре цифры — всего 10 000 вариантов, поэтому перебор закрыт не длиной
+    пароля, а блокировкой входа после нескольких неверных попыток подряд
+    (LoginGuard ниже)."""
+    return f"{secrets.randbelow(10_000):04d}"
 
 
 def hash_password(password: str) -> str:
@@ -116,3 +116,51 @@ def read_session(token: str) -> dict | None:
         return jwt.decode(token, secret, algorithms=["HS256"])
     except jwt.PyJWTError:
         return None
+
+
+class LoginGuard:
+    """Блокировка входа по логину после нескольких неверных паролей подряд.
+
+    Пароли короткие (четыре цифры), и без этой защиты их перебирают скриптом
+    за минуты. После MAX_FAILURES неудач подряд логин закрыт на LOCK_SECONDS;
+    верный пароль или выдача нового сбрасывают счётчик.
+
+    Счётчики живут в памяти процесса: API работает одним процессом, а
+    перезапуск, обнуляющий их, перебору не помогает — за время между
+    деплоями попыток всё равно единицы.
+    """
+
+    MAX_FAILURES = 5
+    LOCK_SECONDS = 15 * 60
+
+    def __init__(self, clock=None):
+        import time
+
+        self._clock = clock or time.monotonic
+        self._failures: dict[str, int] = {}
+        self._locked_until: dict[str, float] = {}
+
+    def seconds_locked(self, login: str) -> int:
+        """Сколько секунд ещё закрыт вход; 0 — открыт."""
+        until = self._locked_until.get(login)
+        if until is None:
+            return 0
+        left = until - self._clock()
+        if left <= 0:
+            self._locked_until.pop(login, None)
+            return 0
+        return int(left) + 1
+
+    def failed(self, login: str) -> None:
+        count = self._failures.get(login, 0) + 1
+        if count >= self.MAX_FAILURES:
+            self._locked_until[login] = self._clock() + self.LOCK_SECONDS
+            count = 0
+        self._failures[login] = count
+
+    def reset(self, login: str) -> None:
+        self._failures.pop(login, None)
+        self._locked_until.pop(login, None)
+
+
+login_guard = LoginGuard()

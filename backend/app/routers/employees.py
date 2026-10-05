@@ -39,7 +39,7 @@ from ..schemas import (
     EmployeeOut,
     EmployeeUpdate,
 )
-from ..security import generate_password, hash_password, normalize_login
+from ..security import generate_password, hash_password, login_guard, normalize_login
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
@@ -78,6 +78,10 @@ async def check_login_free(
 async def issue_password(db: AsyncSession, employee: Employee) -> str:
     """Выдать новый пароль. Возвращается открытым один раз — дальше только хеш."""
     password = generate_password()
+    # Новый пароль снимает блокировку входа: сотрудник, которого заперли
+    # перебором или собственными опечатками, входит сразу.
+    if employee.login:
+        login_guard.reset(normalize_login(employee.login))
     employee.password_hash = hash_password(password)
     employee.password_changed_at = utcnow()
     await db.commit()

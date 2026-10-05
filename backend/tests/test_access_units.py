@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.auth import UserContext
 from app.security import (
+    LoginGuard,
     generate_password,
     hash_password,
     issue_session,
@@ -38,11 +39,43 @@ def test_verify_rejects_garbage():
         assert not verify_password("whatever", stored)
 
 
-def test_generated_password_avoids_lookalikes():
-    """Пароль диктуют голосом: «l» против «1» и «O» против «0» — это звонок
-    «не пускает»."""
-    joined = "".join(generate_password() for _ in range(50))
-    assert not set(joined) & set("lo01ILO")
+def test_generated_password_is_four_digits():
+    """Пароль — четыре цифры, с ведущими нулями: «0042», а не «42»."""
+    for _ in range(200):
+        password = generate_password()
+        assert len(password) == 4 and password.isdigit()
+
+
+# --- блокировка перебора ---
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_login_locks_after_failures_and_unlocks_later():
+    clock = FakeClock()
+    guard = LoginGuard(clock=clock)
+    for _ in range(LoginGuard.MAX_FAILURES - 1):
+        guard.failed("anna")
+    assert guard.seconds_locked("anna") == 0
+    guard.failed("anna")
+    assert guard.seconds_locked("anna") > 0
+    assert guard.seconds_locked("maria") == 0  # чужой логин не задет
+    clock.now += LoginGuard.LOCK_SECONDS + 1
+    assert guard.seconds_locked("anna") == 0
+
+
+def test_success_or_new_password_resets_counter():
+    guard = LoginGuard(clock=FakeClock())
+    for _ in range(LoginGuard.MAX_FAILURES - 1):
+        guard.failed("anna")
+    guard.reset("anna")
+    guard.failed("anna")
+    assert guard.seconds_locked("anna") == 0
 
 
 # --- сессии ---
