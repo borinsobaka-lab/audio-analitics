@@ -4498,7 +4498,8 @@ button.ai-primary:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 0 6px;
+  /* Снизу — тот же воздух, что у результата: плашка не липнет к краю окна. */
+  margin: 0 0 24px;
   padding: 12px 14px;
   border: 1.5px solid transparent;
   border-radius: var(--r-sm);
@@ -5036,4 +5037,7 @@ button.ai-primary:disabled {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
+}
+.ai-modal .modal-body > .note:last-child {
+  margin-bottom: 24px;
 }
