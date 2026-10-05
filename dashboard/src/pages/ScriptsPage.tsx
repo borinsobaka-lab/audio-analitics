@@ -126,6 +126,16 @@ export default function ScriptsPage() {
     [navigate]
   );
 
+  const resolveId = useCallback(
+    (id: string) => {
+      for (const sec of sections)
+        for (const item of sec.items)
+          if (item.id === id) return { open: () => openScript({ item, section: sec }), title: item.title };
+      return null;
+    },
+    [sections, openScript]
+  );
+
   const resolveRef = useCallback(
     (title: string) => {
       const found = findByTitle(sections, title);
@@ -221,6 +231,7 @@ export default function ScriptsPage() {
         studio={activeStudio}
         onStudio={setStudio}
         resolveRef={resolveRef}
+        resolveId={resolveId}
         resolveVar={resolveVar}
         flash={flash === item.id}
         canEdit={canEdit}

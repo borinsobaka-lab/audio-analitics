@@ -14,7 +14,7 @@ import {
   ScriptVariant,
 } from "../api";
 import { Note } from "../components/ui";
-import { KIND_LABELS, LANGS } from "./logic";
+import { KIND_LABELS, LANGS, normalize } from "./logic";
 
 const emptyMessage = (): ScriptMessage => ({ label: "", ru: "", en: "", ka: "" });
 
@@ -28,6 +28,150 @@ export function emptyDraft(sectionId: string): ScriptItemDraft {
     follow_up: "",
     variants: [{ label: "", messages: [emptyMessage()] }],
   };
+}
+
+/** Панель форматирования над подсказкой: жирный, подчёркнутый, список и
+ *  ссылка на другой скрипт. Кнопки вставляют разметку прямо в текст
+ *  (**…**, __…__, «• », [фраза](script:id)) — её видно и можно поправить
+ *  руками, а в карточке она превращается в оформление. */
+function FormatBar({
+  targetId,
+  value,
+  onChange,
+  sections,
+}: {
+  targetId: string;
+  value: string;
+  onChange: (value: string) => void;
+  sections: ScriptSection[];
+}) {
+  const [picking, setPicking] = useState(false);
+  const [query, setQuery] = useState("");
+  // Выделение запоминается до открытия выбора скрипта: поиск забирает фокус.
+  const saved = useRef<[number, number]>([0, 0]);
+
+  function area(): HTMLTextAreaElement | null {
+    return document.getElementById(targetId) as HTMLTextAreaElement | null;
+  }
+
+  function apply(next: string, selStart: number, selEnd: number) {
+    onChange(next);
+    requestAnimationFrame(() => {
+      const el = area();
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(selStart, selEnd);
+    });
+  }
+
+  function wrap(marker: string, placeholder: string) {
+    const el = area();
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const inner = value.slice(start, end) || placeholder;
+    const next = value.slice(0, start) + marker + inner + marker + value.slice(end);
+    apply(next, start + marker.length, start + marker.length + inner.length);
+  }
+
+  function toggleList() {
+    const el = area();
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const nl = value.indexOf("\n", end);
+    const lineEnd = nl === -1 ? value.length : nl;
+    const lines = value.slice(lineStart, lineEnd).split("\n");
+    const marked = /^\s*[•\-–]\s+/;
+    const allMarked = lines.every((l) => !l.trim() || marked.test(l));
+    const changed = lines
+      .map((l) => (!l.trim() ? l : allMarked ? l.replace(marked, "") : marked.test(l) ? l : `• ${l}`))
+      .join("\n");
+    const block = changed || "• ";
+    apply(value.slice(0, lineStart) + block + value.slice(lineEnd), lineStart, lineStart + block.length);
+  }
+
+  function openPicker() {
+    const el = area();
+    saved.current = [el?.selectionStart ?? value.length, el?.selectionEnd ?? value.length];
+    setQuery("");
+    setPicking(true);
+  }
+
+  function link(id: string, title: string) {
+    const [start, end] = saved.current;
+    const text = value.slice(start, end).trim() || title;
+    const token = `[${text}](script:${id})`;
+    setPicking(false);
+    apply(value.slice(0, start) + token + value.slice(end), start + token.length, start + token.length);
+  }
+
+  const q = normalize(query.trim());
+  const options = sections
+    .flatMap((s) => s.items.map((i) => ({ id: i.id, title: i.title, section: s.title })))
+    .filter((o) => !q || normalize(`${o.title} ${o.section}`).includes(q))
+    .slice(0, 8);
+
+  return (
+    <div className="format-bar">
+      <div className="format-buttons" role="toolbar" aria-label="Оформление подсказки">
+        {/* mousedown не уводит фокус из текста — выделение остаётся. */}
+        <button type="button" className="fmt-btn" title="Жирный: выделите текст и нажмите"
+          onMouseDown={(e) => e.preventDefault()} onClick={() => wrap("**", "жирный текст")}>
+          <strong>Ж</strong>
+        </button>
+        <button type="button" className="fmt-btn" title="Подчёркнутый: выделите текст и нажмите"
+          onMouseDown={(e) => e.preventDefault()} onClick={() => wrap("__", "подчёркнутый текст")}>
+          <u>П</u>
+        </button>
+        <button type="button" className="fmt-btn wide" title="Пункты с новой строки: выделите строки и нажмите"
+          onMouseDown={(e) => e.preventDefault()} onClick={toggleList}>
+          • Список
+        </button>
+        <button type="button" className="fmt-btn wide" title="Выделите фразу и выберите скрипт — фраза станет ссылкой на него"
+          onMouseDown={(e) => e.preventDefault()} onClick={openPicker}>
+          ↗ Ссылка на скрипт
+        </button>
+      </div>
+      {picking && (
+        <div className="script-picker">
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            placeholder="Найти скрипт по названию или разделу"
+            aria-label="Найти скрипт для ссылки"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPicking(false);
+              if (e.key === "Enter" && options[0]) {
+                e.preventDefault();
+                link(options[0].id, options[0].title);
+              }
+            }}
+          />
+          <ul>
+            {options.map((o) => (
+              <li key={o.id}>
+                <button type="button" onClick={() => link(o.id, o.title)}>
+                  <span className="picker-title">{o.title}</span>
+                  <span className="picker-section">{o.section}</span>
+                </button>
+              </li>
+            ))}
+            {!options.length && <li className="muted picker-empty">Ничего не нашлось</li>}
+          </ul>
+          <p className="muted picker-hint">
+            {saved.current[0] !== saved.current[1]
+              ? "Выделенная фраза станет ссылкой на выбранный скрипт."
+              : "Ничего не выделено — вставим название скрипта ссылкой."}
+          </p>
+          <button type="button" className="ghost small" onClick={() => setPicking(false)}>
+            Отмена
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function rowsFor(value: string, min = 3): number {
@@ -245,8 +389,16 @@ export default function ScriptEditor({
           </label>
         </div>
 
-        <label className="field">
-          <span className="label">Как использовать — подсказка всем сотрудникам, клиенту не копируется</span>
+        <div className="field">
+          <label className="label" htmlFor="ed-note">
+            Как использовать — подсказка всем сотрудникам, клиенту не копируется
+          </label>
+          <FormatBar
+            targetId="ed-note"
+            value={draft.note}
+            onChange={(note) => patch({ note })}
+            sections={sections}
+          />
           <textarea
             {...focusProps("ed-note")}
             value={draft.note}
@@ -254,7 +406,7 @@ export default function ScriptEditor({
             placeholder="Когда отправлять, что проверить перед этим. Видят все, кто открывает скрипты. Необязательно."
             onChange={(e) => patch({ note: e.target.value })}
           />
-        </label>
+        </div>
 
         {draft.variants.map((variant, vi) => (
           <div className={byStudio ? "editor-variant" : "editor-plain"} key={vi}>
@@ -387,20 +539,28 @@ export default function ScriptEditor({
             {"{переменные}"} в фигурных скобках подставляются сами — имя вошедшего,
             студия, значения из настроек — на языке текста. [день], [время] в
             квадратных скобках — места, которые администратор заполняет руками.
-            «Название другого скрипта» в кавычках-ёлочках становится ссылкой.
+            Тексты сообщений не форматируются — они копируются клиенту в чат.
           </p>
         </div>
 
-        <label className="field">
-          <span className="label">Дальше — что сделать после отправки</span>
+        <div className="field">
+          <label className="label" htmlFor="ed-follow">
+            Дальше — что сделать после отправки
+          </label>
+          <FormatBar
+            targetId="ed-follow"
+            value={draft.follow_up}
+            onChange={(follow_up) => patch({ follow_up })}
+            sections={sections}
+          />
           <textarea
             {...focusProps("ed-follow")}
             value={draft.follow_up}
             rows={rowsFor(draft.follow_up, 2)}
-            placeholder="Например: через 2 дня поставить задачу «Заканчиваем запись»"
+            placeholder="Например: через 2 дня поставить задачу — выделите название и нажмите «Ссылка на скрипт»"
             onChange={(e) => patch({ follow_up: e.target.value })}
           />
-        </label>
+        </div>
 
         <label className="field">
           <span className="label">Слова для поиска</span>

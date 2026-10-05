@@ -75,8 +75,8 @@ export function searchScripts(sections: ScriptSection[], terms: string[]): Searc
       const body = normalize(
         [
           section.title,
-          item.note,
-          item.follow_up,
+          stripMarkup(item.note),
+          stripMarkup(item.follow_up),
           ...item.variants.flatMap((v) => [
             v.label,
             ...v.messages.flatMap((m) => [m.label, m.ru, m.en, m.ka]),
@@ -294,4 +294,13 @@ export function dateAfterLabel(days: number, from: Date = new Date()): string {
  *  видно и в чате, и на экране, где они подсвечены. */
 export function resolveText(text: string, resolve: VarResolver): string {
   return text.replace(VARIABLE_RE, (whole, key: string) => resolve(key)?.value ?? whole);
+}
+
+/** Текст подсказки без разметки (**жирный**, __подчёркнутый__, ссылки на
+ *  скрипты) — для поиска: «**дорого**» должно находиться по «дорого». */
+export function stripMarkup(text: string): string {
+  return text
+    .replace(/\[([^\]\n]+)\]\(script:[0-9a-fA-F-]{36}\)/g, "$1")
+    .replace(/\*\*([^*\n]+?)\*\*/g, "$1")
+    .replace(/__([^_\n]+?)__/g, "$1");
 }

@@ -19,6 +19,7 @@ import {
   resolveText,
   VarResolver,
 } from "./logic";
+import Formatted from "./Formatted";
 import RichText, { Highlight } from "./RichText";
 
 const IconCopy = () => (
@@ -115,6 +116,7 @@ export default function ScriptCard({
   studio,
   onStudio,
   resolveRef,
+  resolveId,
   resolveVar,
   flash,
   canEdit,
@@ -131,6 +133,8 @@ export default function ScriptCard({
   studio: string;
   onStudio: (label: string) => void;
   resolveRef: (title: string) => (() => void) | null;
+  /** Ссылка на скрипт по id — из форматированных подсказок. */
+  resolveId: (id: string) => { open: () => void; title: string } | null;
   resolveVar: VarResolver;
   flash: boolean;
   canEdit: boolean;
@@ -165,9 +169,8 @@ export default function ScriptCard({
         {item.note && (
           <div className="script-note">
             <span className="script-note-title">Как использовать</span>
-            <p>
-              <RichText text={item.note} terms={terms} resolveRef={resolveRef} resolveVar={resolveVar} />
-            </p>
+            <Formatted text={item.note} terms={terms} resolveRef={resolveRef}
+              resolveVar={resolveVar} resolveId={resolveId} />
           </div>
         )}
 
@@ -205,9 +208,8 @@ export default function ScriptCard({
         {item.follow_up && (
           <div className="script-after">
             <span className="script-after-title">❗ Дальше</span>
-            <p>
-              <RichText text={item.follow_up} terms={terms} resolveRef={resolveRef} resolveVar={resolveVar} />
-            </p>
+            <Formatted text={item.follow_up} terms={terms} resolveRef={resolveRef}
+              resolveVar={resolveVar} resolveId={resolveId} />
           </div>
         )}
       </div>

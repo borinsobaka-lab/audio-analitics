@@ -1737,13 +1737,40 @@ tbody tr:hover {
   font-weight: 600;
   color: var(--green-ink);
 }
-.script-note p,
-.script-after p {
-  margin: 4px 0 0;
+/* Форматированная подсказка: абзацы, списки, жирный, подчёркнутый. */
+.fmt {
+  margin-top: 4px;
   font-size: 13.5px;
   color: var(--ink-2);
-  white-space: pre-line;
   text-wrap: pretty;
+}
+.fmt p {
+  margin: 0;
+}
+.fmt p + p,
+.fmt p + ul,
+.fmt ul + p {
+  margin-top: 6px;
+}
+.fmt ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.fmt li + li {
+  margin-top: 2px;
+}
+.fmt strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.fmt u {
+  text-underline-offset: 2px;
+}
+/* Ссылка на удалённый скрипт — текст остаётся, но перехода нет. */
+.ref-broken {
+  text-decoration: line-through;
+  color: var(--ink-3);
+  cursor: help;
 }
 .script-variants {
   display: flex;
@@ -2378,6 +2405,79 @@ button.var-chip:hover {
   margin-right: auto;
   font-weight: 500;
   color: var(--red-ink);
+}
+
+/* Панель оформления над подсказкой в редакторе. */
+.format-bar {
+  margin-bottom: 6px;
+}
+.format-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+button.fmt-btn {
+  min-height: 30px;
+  min-width: 34px;
+  padding: 0 8px;
+  background: var(--card);
+  color: var(--ink-2);
+  border: 1px solid var(--edge-strong);
+  box-shadow: none;
+  font-size: 13px;
+}
+button.fmt-btn.wide {
+  padding: 0 10px;
+}
+button.fmt-btn:hover {
+  background: var(--card-2);
+  color: var(--ink);
+  box-shadow: none;
+}
+/* Выбор скрипта для ссылки — в потоке под кнопками, а не всплывающим
+   слоем: в форме правки ему некуда уезжать и нечем перекрываться. */
+.script-picker {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-2);
+  max-width: 520px;
+}
+.script-picker ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.script-picker li button {
+  width: 100%;
+  min-height: 36px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+  font-weight: 500;
+  text-align: left;
+}
+.script-picker li button:hover {
+  background: var(--card-2);
+  box-shadow: none;
+}
+.picker-section {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.picker-empty {
+  padding: 8px 10px;
+}
+.picker-hint {
+  margin: 0 0 6px;
+  font-size: 12.5px;
 }
 
 /* Шаг «что изменили» — отдельная плашка над кнопками: её нельзя
