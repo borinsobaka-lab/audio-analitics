@@ -158,6 +158,7 @@ export interface Location {
 }
 
 export type ScriptsAccess = "read" | "edit";
+export type CrmAccess = "own" | "all";
 
 export interface Employee {
   id: string;
@@ -173,6 +174,8 @@ export interface Employee {
   access_scope: "own" | "all";
   /** Скрипты: read — читает и копирует; edit — правит тексты и разделы. */
   scripts_access: ScriptsAccess;
+  /** CRM: own — видит разборы по своим сделкам; all — все сделки и настройки. */
+  crm_access: CrmAccess;
   has_password: boolean;
   last_login_at: string | null;
 }
@@ -192,6 +195,10 @@ export interface Me {
   can_view_all: boolean;
   can_manage: boolean;
   can_edit_scripts: boolean;
+  /** CRM: own — разборы своих сделок; all — все сделки и настройка продукта. */
+  crm_scope: "own" | "all";
+  can_view_all_crm: boolean;
+  can_manage_crm: boolean;
   is_owner: boolean;
 }
 
@@ -573,6 +580,279 @@ export interface Page<T> {
   next_cursor: string;
 }
 
+// --- CRM: разбор переписок и движения сделок ---
+
+export type CrmSeverity = "ok" | "warning" | "critical";
+export type CrmProblemKind = "chat" | "pipeline" | "speed";
+
+export interface CrmCriterion {
+  id: string;
+  name: string;
+  prompt: string;
+  scale_max: number;
+  active: boolean;
+  position: number;
+}
+
+export interface CrmManager {
+  key: string;
+  name: string;
+  deals: number;
+  employee_id: string | null;
+  /** Сопоставлен явно в настройках, а не по совпадению имени. */
+  mapped: boolean;
+}
+
+export interface CrmSettings {
+  prompt: string;
+  default_prompt: string;
+  is_default: boolean;
+  summary_prompt: string;
+  default_summary_prompt: string;
+  summary_is_default: boolean;
+  pipeline_rules: string;
+  default_pipeline_rules: string;
+  pipeline_is_default: boolean;
+  /** Модель, которой идёт разбор сейчас. */
+  model: string;
+  model_saved: string;
+  model_default: string;
+  timezone: string;
+  auto_run: boolean;
+  run_hour: number;
+  max_deals: number;
+  integration_key: string;
+  ingest_url: string;
+  manager_map: Record<string, string | null>;
+  known_managers: CrmManager[];
+  /** На сервере задан ANTHROPIC_API_KEY. */
+  configured: boolean;
+  updated_at: string | null;
+  updated_by: string;
+}
+
+export interface CrmSettingsIn {
+  prompt: string;
+  summary_prompt: string;
+  pipeline_rules: string;
+  model: string;
+  timezone: string;
+  auto_run: boolean;
+  run_hour: number;
+  max_deals: number;
+  manager_map: Record<string, string | null>;
+}
+
+export interface CrmDeal {
+  id: string;
+  external_id: string;
+  title: string;
+  contact_name: string;
+  contact_phone: string;
+  pipeline: string;
+  stage: string;
+  status: "open" | "won" | "lost" | string;
+  source: string;
+  manager_key: string;
+  manager_name: string;
+  employee_id: string | null;
+  url: string;
+  budget: number | null;
+  created_at_crm: string | null;
+  last_activity_at: string | null;
+}
+
+export interface CrmProblem {
+  kind: CrmProblemKind;
+  text: string;
+  quote: string;
+}
+
+export interface CrmScore {
+  criterion_id: string;
+  name: string;
+  scale_max: number;
+  applicable: boolean;
+  score: number | null;
+  comment: string;
+}
+
+export interface CrmReview {
+  id: string;
+  run_id: string;
+  date: string;
+  deal: CrmDeal;
+  employee_id: string | null;
+  employee_name: string;
+  manager_key: string;
+  manager_name: string;
+  category: string;
+  severity: CrmSeverity;
+  problem: boolean;
+  summary: string;
+  problems: CrmProblem[];
+  good: string[];
+  recommendations: string[];
+  scripts: { used: string[]; deviations: string[] };
+  pipeline: { ok: boolean; expected_stage: string; comment: string };
+  messages_in: number;
+  messages_out: number;
+  events_count: number;
+  first_reply_minutes: number | null;
+  max_reply_minutes: number | null;
+  unanswered: boolean;
+  scores: CrmScore[];
+}
+
+export interface CrmMessage {
+  id: string;
+  direction: "in" | "out";
+  channel: string;
+  author_name: string;
+  text: string;
+  at: string;
+  /** Внутри разбираемого дня; иначе — контекст до него. */
+  in_day: boolean;
+}
+
+export interface CrmEvent {
+  id: string;
+  kind: string;
+  from_value: string;
+  to_value: string;
+  text: string;
+  author_name: string;
+  at: string;
+  in_day: boolean;
+}
+
+export interface CrmReviewDetail extends CrmReview {
+  messages: CrmMessage[];
+  events: CrmEvent[];
+}
+
+export interface CrmRun {
+  id: string;
+  date: string;
+  status: "queued" | "processing" | "done" | "error" | string;
+  status_detail: string;
+  stale: boolean;
+  trigger: "manual" | "schedule" | string;
+  deals_total: number;
+  reviews_done: number;
+  problems_count: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  llm_calls: number;
+  cost_usd: number | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface CrmRuns {
+  runs: CrmRun[];
+  /** Дни с данными из CRM, которые ещё не разбирали. */
+  pending_dates: string[];
+  has_data: boolean;
+  today: string;
+}
+
+export interface CrmDaySummary {
+  top_problems?: string[];
+  by_manager?: { manager: string; note: string }[];
+  recommendations?: string[];
+  highlights?: string[];
+  error?: string;
+}
+
+export interface CrmDayStats {
+  deals: number;
+  problems: number;
+  critical: number;
+  unanswered: number;
+  by_category: Record<string, number>;
+  by_manager: Record<
+    string,
+    { deals: number; problems: number; critical: number; unanswered: number; avg_first_reply_minutes: number | null }
+  >;
+  avg_by_criterion: Record<string, number>;
+}
+
+export interface CrmRunReport {
+  run: CrmRun;
+  summary: CrmDaySummary | null;
+  stats: CrmDayStats | null;
+  reviews: CrmReview[];
+  criteria: CrmCriterion[];
+}
+
+export interface CrmTotals {
+  deals: number;
+  problems: number;
+  critical: number;
+  unanswered: number;
+  problem_share: number | null;
+  avg_first_reply_minutes: number | null;
+  runs: number;
+  cost_usd: number;
+}
+
+export interface CrmCriterionStat {
+  criterion_id: string;
+  name: string;
+  scale_max: number;
+  count: number;
+  avg_score: number | null;
+  prev_avg_score: number | null;
+}
+
+export interface CrmCategoryStat {
+  category: string;
+  count: number;
+  problems: number;
+}
+
+export interface CrmManagerStat {
+  employee_id: string | null;
+  manager_key: string;
+  name: string;
+  totals: CrmTotals;
+  previous: CrmTotals;
+  criteria: CrmCriterionStat[];
+  categories: CrmCategoryStat[];
+}
+
+export interface CrmTrendPoint {
+  date: string;
+  deals: number;
+  problems: number;
+  problem_share: number | null;
+  avg_scores: Record<string, number>;
+}
+
+export interface CrmStats {
+  date_from: string;
+  date_to: string;
+  prev_date_from: string;
+  prev_date_to: string;
+  totals: CrmTotals;
+  previous: CrmTotals;
+  criteria: CrmCriterionStat[];
+  managers: CrmManagerStat[];
+  categories: CrmCategoryStat[];
+  trend: CrmTrendPoint[];
+}
+
+export interface CrmIngestResult {
+  deals_created: number;
+  deals_updated: number;
+  deals_stubbed: number;
+  messages_added: number;
+  messages_skipped: number;
+  events_added: number;
+  events_skipped: number;
+}
+
 /* Ответы ИИ-помощника — с запасом на рассинхрон версий: админка
  * обновляется сама, а бэкенд — по Redeploy. Поле, которого старый сервер
  * не знает, получает значение по умолчанию, а не роняет страницу. */
@@ -709,6 +989,7 @@ export const api = {
     login?: string | null;
     access_scope?: "own" | "all";
     scripts_access?: ScriptsAccess;
+    crm_access?: CrmAccess;
   }) =>
     request<EmployeeCredentials>("/api/employees", {
       method: "POST",
@@ -722,6 +1003,7 @@ export const api = {
       login?: string | null;
       access_scope?: "own" | "all";
       scripts_access?: ScriptsAccess;
+      crm_access?: CrmAccess;
     }
   ) =>
     request<EmployeeCredentials>(`/api/employees/${id}`, {
@@ -887,6 +1169,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }).then(normalizeAssist),
+  // --- CRM ---
+  crmSettings: () => request<CrmSettings>("/api/crm/settings"),
+  saveCrmSettings: (body: CrmSettingsIn) =>
+    request<CrmSettings>("/api/crm/settings", { method: "PUT", body: JSON.stringify(body) }),
+  rotateCrmKey: () =>
+    request<CrmSettings>("/api/crm/settings/rotate-key", { method: "POST" }),
+  listCrmCriteria: () => request<CrmCriterion[]>("/api/crm/criteria"),
+  createCrmCriterion: (body: { name: string; prompt: string; scale_max: number }) =>
+    request<CrmCriterion>("/api/crm/criteria", { method: "POST", body: JSON.stringify(body) }),
+  updateCrmCriterion: (
+    id: string,
+    body: { name?: string; prompt?: string; scale_max?: number; active?: boolean; position?: number }
+  ) =>
+    request<CrmCriterion>(`/api/crm/criteria/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteCrmCriterion: (id: string) =>
+    request<void>(`/api/crm/criteria/${id}`, { method: "DELETE" }),
+  crmRuns: () => request<CrmRuns>("/api/crm/runs"),
+  /** Разобрать день (или заново): прошлый разбор заменяется. */
+  startCrmRun: (day: string) => request<CrmRun>(`/api/crm/runs/${day}`, { method: "POST" }),
+  deleteCrmRun: (day: string) => request<void>(`/api/crm/runs/${day}`, { method: "DELETE" }),
+  crmRunReport: (day: string) => request<CrmRunReport>(`/api/crm/runs/${day}`),
+  crmReview: (id: string) => request<CrmReviewDetail>(`/api/crm/reviews/${id}`),
+  crmStats: (params: { date_from: string; date_to: string; employee_id?: string }) =>
+    request<CrmStats>(`/api/crm/stats${query(params)}`),
+  /** Импорт файла выгрузки — тот же формат, что принимает интеграция. */
+  importCrm: (body: unknown) =>
+    request<CrmIngestResult>("/api/crm/import", { method: "POST", body: JSON.stringify(body) }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

@@ -61,6 +61,9 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             can_view_all=(employee.access_scope or "own") == "all",
             can_manage=(employee.access_scope or "own") == "all",
             can_edit_scripts=(employee.scripts_access or "read") == "edit",
+            crm_scope=employee.crm_access or "own",
+            can_view_all_crm=(employee.crm_access or "own") == "all",
+            can_manage_crm=(employee.crm_access or "own") == "all",
             is_owner=False,
         ),
     )
@@ -76,5 +79,8 @@ async def me(user: UserContext = Depends(require_user)):
         can_view_all=user.can_view_all,
         can_manage=user.can_manage,
         can_edit_scripts=user.can_edit_scripts,
+        crm_scope="all" if user.can_view_all_crm else "own",
+        can_view_all_crm=user.can_view_all_crm,
+        can_manage_crm=user.can_manage_crm,
         is_owner=user.is_owner,
     )

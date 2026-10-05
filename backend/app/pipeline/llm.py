@@ -366,8 +366,11 @@ class LlmClient:
         self.client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key)
         self.usage = LlmUsage()
 
-    def complete_json(self, prompt: str, model: str, system: str | None = None):
+    def complete_json(self, prompt: str, model: str, system: str | list | None = None):
         """One request → parsed JSON.
+
+        `system` — строка или список блоков: разбор CRM передаёт базу знаний
+        блоком с cache_control, чтобы за день платить за неё один раз.
 
         Deliberately passes no sampling parameters: `temperature`, `top_p` and
         `top_k` are rejected with a 400 by current Claude models (Sonnet 5,

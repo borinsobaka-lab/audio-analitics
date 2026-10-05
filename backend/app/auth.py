@@ -43,6 +43,8 @@ class UserContext:
     scope: «all» — видит смены всех менеджеров и правит настройки;
            «own» — видит только свои смены и ничего не настраивает.
     scripts_access: «edit» — правит скрипты; «read» — читает и копирует.
+    crm_access: «all» — видит разборы всех сделок и настраивает продукт «CRM»;
+                «own» — видит разборы по сделкам, которые вёл сам.
     """
 
     def __init__(
@@ -54,6 +56,7 @@ class UserContext:
         scope: str = "all",
         is_owner: bool = False,
         scripts_access: str = "edit",
+        crm_access: str = "all",
     ):
         self.user_id = user_id
         self.email = email
@@ -62,6 +65,7 @@ class UserContext:
         self.scope = scope
         self.is_owner = is_owner
         self.scripts_access = scripts_access
+        self.crm_access = crm_access
 
     @property
     def can_view_all(self) -> bool:
@@ -82,6 +86,17 @@ class UserContext:
         """Право в продукте «Скрипты» — своё, не из области видимости смен.
         Владелец правит всегда."""
         return self.is_owner or self.scripts_access == "edit"
+
+    @property
+    def can_view_all_crm(self) -> bool:
+        """Право в продукте «CRM»: все сделки. Владелец видит всё."""
+        return self.is_owner or self.crm_access == "all"
+
+    @property
+    def can_manage_crm(self) -> bool:
+        """Настройка продукта «CRM» — у тех же, кому открыты все сделки:
+        один переключатель, как в аналитике."""
+        return self.can_view_all_crm
 
     @property
     def author_key(self) -> str:
@@ -163,6 +178,7 @@ async def _employee_context(db: AsyncSession, token: str) -> UserContext | None:
         full_name=employee.full_name,
         scope=employee.access_scope or "own",
         scripts_access=employee.scripts_access or "read",
+        crm_access=employee.crm_access or "own",
     )
 
 
@@ -233,6 +249,14 @@ async def require_scripts_edit(user: UserContext = Depends(require_user)) -> Use
     """Правка скриптов и разделов — по праву «Скрипты: правка»."""
     if not user.can_edit_scripts:
         raise HTTPException(403, "Недостаточно прав: скрипты доступны только для чтения")
+    return user
+
+
+async def require_crm_manage(user: UserContext = Depends(require_user)) -> UserContext:
+    """Критерии, промпт, интеграция и запуск разбора в «CRM» — по праву
+    «CRM: все сделки»."""
+    if not user.can_manage_crm:
+        raise HTTPException(403, "Недостаточно прав: в CRM доступны только свои сделки")
     return user
 
 

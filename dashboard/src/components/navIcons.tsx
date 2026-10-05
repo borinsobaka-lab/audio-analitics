@@ -12,8 +12,10 @@ import { BellIcon } from "@solar-icons/react/bold-duotone/bell";
 import { CalendarIcon } from "@solar-icons/react/bold-duotone/calendar";
 import { CalendarAddIcon } from "@solar-icons/react/bold-duotone/calendar-add";
 import { Chart2Icon } from "@solar-icons/react/bold-duotone/chart-2";
+import { ChartSquareIcon } from "@solar-icons/react/bold-duotone/chart-square";
 import { ChatRoundDotsIcon } from "@solar-icons/react/bold-duotone/chat-round-dots";
 import { ChatRoundLineIcon } from "@solar-icons/react/bold-duotone/chat-round-line";
+import { ChatSquareCheckIcon } from "@solar-icons/react/bold-duotone/chat-square-check";
 import { ClipboardListIcon } from "@solar-icons/react/bold-duotone/clipboard-list";
 import { CupStarIcon } from "@solar-icons/react/bold-duotone/cup-star";
 import { DocumentTextIcon } from "@solar-icons/react/bold-duotone/document-text";
@@ -23,6 +25,7 @@ import { FireIcon } from "@solar-icons/react/bold-duotone/fire";
 import { GiftIcon } from "@solar-icons/react/bold-duotone/gift";
 import { HandHeartIcon } from "@solar-icons/react/bold-duotone/hand-heart";
 import { HashtagCircleIcon } from "@solar-icons/react/bold-duotone/hashtag-circle";
+import { InboxInIcon } from "@solar-icons/react/bold-duotone/inbox-in";
 import { LetterIcon } from "@solar-icons/react/bold-duotone/letter";
 import { MapPointIcon } from "@solar-icons/react/bold-duotone/map-point";
 import { PhoneCallingRoundedIcon } from "@solar-icons/react/bold-duotone/phone-calling-rounded";
@@ -49,6 +52,11 @@ export const NavIcons = {
   app: SmartphoneUpdateIcon,
   allScripts: DocumentsIcon,
   settings: SettingsIcon,
+  // Продукт «CRM»: разборы переписок, статистика по менеджерам, сам продукт
+  // (в карточке сотрудника).
+  crmReviews: ChatSquareCheckIcon,
+  crmStats: ChartSquareIcon,
+  crm: InboxInIcon,
 } satisfies Record<string, IconComponent>;
 
 /** Иконки, из которых владелец выбирает иконку раздела скриптов. Ключи
