@@ -608,11 +608,17 @@ class LangText(BaseModel):
 
 
 class PlaybookVariable(BaseModel):
+    """Своя переменная. text — значения на трёх языках; date — дата «через
+    N дней от сегодня», считается при показе и подставляется как ДД.ММ на
+    любом языке («есть свободные места на 12.06 и 13.06»)."""
+
     key: str = Field(pattern=VARIABLE_KEY)
+    type: Literal["text", "date"] = "text"
     description: str = Field(default="", max_length=300)
     ru: str = Field(default="", max_length=2000)
     en: str = Field(default="", max_length=2000)
     ka: str = Field(default="", max_length=2000)
+    offset_days: int = Field(default=0, ge=-365, le=365)
 
 
 class PlaybookSettingsIn(BaseModel):

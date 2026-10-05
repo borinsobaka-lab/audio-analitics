@@ -19,7 +19,7 @@ import {
   StudioNames,
 } from "../api";
 import { Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
-import { BUILTIN_VARIABLES, LANGS } from "../scripts/logic";
+import { BUILTIN_VARIABLES, dateAfter, dateAfterLabel, LANGS } from "../scripts/logic";
 import { usePlaybook } from "../scripts/store";
 import { useSession } from "../session";
 
@@ -65,6 +65,34 @@ function LangInputs({
   );
 }
 
+/** Дата «через N дней»: число дней и сразу значение на сегодня — видно,
+ *  что подставится в скрипт и не выпадает ли день на выходной. */
+function DateOffset({ days, onChange }: { days: number; onChange: (days: number) => void }) {
+  return (
+    <div className="var-date">
+      <label className="var-date-days">
+        <span>через</span>
+        <input
+          type="number"
+          min={-365}
+          max={365}
+          value={days}
+          aria-label="Через сколько дней от сегодня"
+          onChange={(e) => {
+            const n = Math.round(Number(e.target.value));
+            onChange(Number.isFinite(n) ? Math.max(-365, Math.min(365, n)) : 0);
+          }}
+        />
+        <span>{days === 0 ? "дней — сегодня" : "дн. от сегодня"}</span>
+      </label>
+      <span className="var-date-preview">
+        На сегодня: <strong>{dateAfterLabel(days)}</strong> — в скрипте будет{" "}
+        <span className="var">{dateAfter(days)}</span> на всех языках
+      </span>
+    </div>
+  );
+}
+
 function GridHead({ first }: { first: string }) {
   return (
     <div className="names-row names-head" aria-hidden="true">
@@ -90,10 +118,16 @@ export default function ScriptsSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   function take(data: PlaybookSettings) {
-    setSaved(data);
+    // Переменные, сохранённые до появления дат, приходят без типа — это текст.
+    const variables = data.variables.map((v) => ({
+      ...v,
+      type: v.type ?? "text",
+      offset_days: v.offset_days ?? 0,
+    }));
+    setSaved({ ...data, variables });
     setStudios(data.studios);
     setAdmins(data.admins);
-    setVariables(data.variables);
+    setVariables(variables);
   }
 
   useEffect(() => {
@@ -222,7 +256,10 @@ export default function ScriptsSettingsPage() {
             </div>
           </Section>
 
-          <Section title="Переменные" hint="свои значения на трёх языках — цены, ссылки, реквизиты">
+          <Section
+            title="Переменные"
+            hint="текст на трёх языках — цены, ссылки, реквизиты; дата — через сколько дней от сегодня"
+          >
             <div className="sheet sheet-pad vars-card">
               <div className="vars-builtin">
                 {BUILTIN_VARIABLES.map((b) => (
@@ -273,28 +310,61 @@ export default function ScriptsSettingsPage() {
                       Удалить
                     </button>
                   </span>
-                  <LangInputs
-                    multiline
-                    value={v}
-                    onChange={(val) =>
-                      setVariables((list) => list.map((x, j) => (j === i ? { ...x, ...val } : x)))
-                    }
-                  />
+                  {v.type === "date" ? (
+                    <DateOffset
+                      days={v.offset_days ?? 0}
+                      onChange={(days) =>
+                        setVariables((list) =>
+                          list.map((x, j) => (j === i ? { ...x, offset_days: days } : x))
+                        )
+                      }
+                    />
+                  ) : (
+                    <LangInputs
+                      multiline
+                      value={v}
+                      onChange={(val) =>
+                        setVariables((list) => list.map((x, j) => (j === i ? { ...x, ...val } : x)))
+                      }
+                    />
+                  )}
                 </div>
               ))}
 
-              <button
-                type="button"
-                className="secondary small"
-                onClick={() =>
-                  setVariables((list) => [
-                    ...list,
-                    { key: "", description: "", ru: "", en: "", ka: "" },
-                  ])
-                }
-              >
-                + Переменная
-              </button>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() =>
+                    setVariables((list) => [
+                      ...list,
+                      { key: "", type: "text", description: "", ru: "", en: "", ka: "", offset_days: 0 },
+                    ])
+                  }
+                >
+                  + Текст
+                </button>
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() =>
+                    setVariables((list) => [
+                      ...list,
+                      {
+                        key: "",
+                        type: "date",
+                        description: "",
+                        ru: "",
+                        en: "",
+                        ka: "",
+                        offset_days: 1,
+                      },
+                    ])
+                  }
+                >
+                  + Дата
+                </button>
+              </div>
             </div>
           </Section>
 

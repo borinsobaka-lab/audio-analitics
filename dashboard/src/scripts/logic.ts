@@ -202,8 +202,10 @@ export interface VarValue {
   why?: string;
 }
 
-/** Подстановщик для текущего языка, студии и вошедшего. undefined —
- *  такой переменной нет вовсе: текст в фигурных скобках остаётся текстом. */
+/** Подстановщик для текущего языка, студии и вошедшего. null в value —
+ *  подставлять нечего (переменной нет в настройках или нет значения на этом
+ *  языке): она подсвечивается оранжевым. undefined — настройки ещё не
+ *  загружены, и текст в фигурных скобках пока остаётся текстом. */
 export type VarResolver = (key: string) => VarValue | undefined;
 
 function pick(texts: LangText | undefined, lang: ScriptLang): string | null {
@@ -256,10 +258,35 @@ export function makeResolver({
         : { value: null, why: `Нет названия студии на ${inLang} — задайте в настройках` };
     }
     const custom = settings?.variables.find((v) => v.key.toLowerCase() === key);
-    if (!custom) return undefined;
+    if (!custom) {
+      // Пока настройки не пришли, неизвестное не красим: это ещё не ошибка.
+      if (!settings) return undefined;
+      return {
+        value: null,
+        why: `Переменной {${rawKey}} нет в настройках — добавьте её в «Скрипты» → «Настройки»`,
+      };
+    }
+    if (custom.type === "date") return { value: dateAfter(custom.offset_days ?? 0) };
     const value = pick(custom, lang);
     return value ? { value } : { value: null, why: `Нет значения на ${inLang} — задайте в настройках` };
   };
+}
+
+/** Дата через N дней от сегодня — только день и месяц, «12.06»: так пишут в
+ *  чате о свободных местах, и так одинаково на всех трёх языках. Считается
+ *  по часам компьютера администратора — то есть по тбилисскому времени. */
+export function dateAfter(days: number, from: Date = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+
+/** Подпись к дате в настройках: «ср, 07.10» — чтобы сразу видеть, не
+ *  выпадает ли слот на выходной. */
+export function dateAfterLabel(days: number, from: Date = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
+  return `${WEEKDAYS[d.getDay()]}, ${dateAfter(days, from)}`;
 }
 
 /** Текст с подставленными переменными — то, что уйдёт в чат по кнопке

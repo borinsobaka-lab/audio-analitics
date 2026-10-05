@@ -489,10 +489,13 @@ async def save_settings(
         "variables": [
             {
                 "key": v.key.strip(),
+                "type": v.type,
                 "description": v.description.strip(),
-                "ru": v.ru.strip(),
-                "en": v.en.strip(),
-                "ka": v.ka.strip(),
+                # У даты текстов нет — значение считается от сегодняшнего дня.
+                "ru": v.ru.strip() if v.type == "text" else "",
+                "en": v.en.strip() if v.type == "text" else "",
+                "ka": v.ka.strip() if v.type == "text" else "",
+                "offset_days": v.offset_days if v.type == "date" else 0,
             }
             for v in body.variables
         ],

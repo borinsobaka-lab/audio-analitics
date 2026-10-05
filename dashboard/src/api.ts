@@ -379,7 +379,11 @@ export interface LangText {
 
 export interface ScriptVariable extends LangText {
   key: string;
+  /** text — значения на языках; date — «через N дней от сегодня», ДД.ММ.
+   *  Сохранённые до появления дат приходят без поля — это text. */
+  type?: "text" | "date";
   description: string;
+  offset_days?: number;
 }
 
 export interface StudioNames extends LangText {

@@ -151,3 +151,16 @@ def test_settings_reject_builtin_and_duplicate_variables():
         PlaybookSettingsIn(variables=[{"key": "с пробелом", "ru": "x"}])
     ok = PlaybookSettingsIn(variables=[{"key": "цена_пробного", "ru": "14 лари", "en": "14 GEL"}])
     assert ok.variables[0].key == "цена_пробного"
+
+
+def test_date_variable_takes_offset_and_old_entries_default_to_text():
+    s = PlaybookSettingsIn(
+        variables=[
+            {"key": "слот1", "type": "date", "offset_days": 2},
+            {"key": "цена", "ru": "14 лари"},  # сохранено до появления дат
+        ]
+    )
+    assert s.variables[0].type == "date" and s.variables[0].offset_days == 2
+    assert s.variables[1].type == "text"
+    with pytest.raises(ValidationError):
+        PlaybookSettingsIn(variables=[{"key": "x", "type": "date", "offset_days": 1000}])

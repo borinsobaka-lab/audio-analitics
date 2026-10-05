@@ -1786,13 +1786,18 @@ tbody tr:hover {
   color: var(--data-ink);
 }
 
-/* Переменная, подставленная сама: {админ}, {студия}, свои. Зелёная
-   подложка — «уже заполнено за вас»; синяя у [день] — «заполните сами».
-   Без значения — янтарная, с подсказкой, где его задать. */
+/* Переменная из настроек, подставленная сама: {админ}, {студия}, свои, даты
+   — синяя подложка. Подставлять нечего (переменной нет в настройках или нет
+   значения на этом языке) — оранжевая, с подсказкой, что довнести. Так по
+   скриптам сразу видно, где настройки неполные. */
 .var {
-  background: var(--green-tint);
+  background: var(--data-tint);
   border-radius: 4px;
   padding: 0 2px;
+}
+/* На синей плашке «Дальше» подложка переменной иначе слилась бы с фоном. */
+.script-after .var {
+  background: rgba(42, 120, 214, 0.2);
 }
 .var.missing {
   background: var(--amber-tint);
@@ -1801,10 +1806,11 @@ tbody tr:hover {
   cursor: help;
 }
 
-/* Место, которое надо заполнить перед отправкой: [день], [время]. */
+/* Место, которое администратор заполняет руками: [имя], [время]. Нейтральное
+   — синий и оранжевый заняты переменными. */
 .ph {
-  background: var(--data-tint);
-  color: var(--data-ink);
+  background: var(--sunk);
+  color: var(--ink);
   border-radius: 4px;
   padding: 0 2px;
   font-weight: 500;
@@ -2313,15 +2319,15 @@ button.var-chip,
   padding: 0 10px;
   border: none;
   border-radius: 999px;
-  background: var(--green-tint);
-  color: var(--green-ink);
+  background: var(--data-tint);
+  color: var(--data-ink);
   box-shadow: none;
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
 }
 button.var-chip:hover {
-  background: var(--green);
+  background: var(--data-ink);
   color: #fff;
   box-shadow: none;
 }
@@ -2394,15 +2400,57 @@ button.var-chip:hover {
   align-items: center;
   gap: 2px;
   width: 100%;
-  color: var(--green-ink);
+  color: var(--data-ink);
   font-weight: 600;
 }
 .var-key-input input[type="text"] {
-  color: var(--green-ink);
+  color: var(--data-ink);
   font-weight: 600;
 }
 .var-desc {
   font-size: 13px;
+}
+/* Дата занимает место трёх языковых полей: у неё одно значение на всех. */
+.var-date {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+  min-height: var(--control-h);
+}
+.var-date-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.var-date-days input[type="number"] {
+  width: 76px;
+  min-height: var(--control-h);
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.var-date-days input[type="number"]:focus {
+  outline: none;
+  background: var(--card);
+  border-color: var(--accent-ink);
+  box-shadow: var(--ring);
+}
+.var-date-preview {
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.var-date-preview strong {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .var-row textarea {
   min-height: var(--control-h);
@@ -2557,6 +2605,9 @@ button.var-chip:hover {
   }
   .names-row {
     grid-template-columns: 1fr;
+  }
+  .var-date {
+    grid-column: auto;
   }
   .names-head {
     display: none;
