@@ -300,7 +300,11 @@ export default function ScriptsPage() {
               ✕
             </button>
           ) : (
-            <kbd className="search-kbd" aria-hidden="true">/</kbd>
+            // Подсказка, что поиск открывается с клавиатуры: одна клавиша «/»
+            // быстрее, чем дотянуться до поля мышью.
+            <span className="search-hint" aria-hidden="true">
+              быстрый поиск <kbd className="search-kbd">/</kbd>
+            </span>
           )}
         </label>
         <div className="script-prefs">
