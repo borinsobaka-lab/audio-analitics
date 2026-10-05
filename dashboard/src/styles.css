@@ -5252,3 +5252,593 @@ button.ai-primary:disabled {
     transform: translateY(8px) scale(0.98);
   }
 }
+
+/* --- Звонок по сценарию ---------------------------------------------------- */
+
+.call {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.call-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.call-bar .grow {
+  flex: 1;
+}
+.call-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.call-name input {
+  width: 240px;
+  min-height: 36px;
+  border: none;
+  background: var(--card-2);
+  font-size: 15px;
+}
+.call-keys {
+  font-size: 12.5px;
+}
+/* Три колонки: путь — реплика — переходы. */
+.call-grid {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) 250px;
+  gap: 16px;
+  align-items: start;
+}
+.call-side-title {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink-3);
+}
+.call-path,
+.call-jump {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+.call-path ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.call-path li button {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 10px;
+  border: none;
+  border-left: 2px solid var(--edge-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-2);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.call-path li button:not(:disabled):hover {
+  background: var(--card);
+  color: var(--ink);
+}
+.call-path li.on button {
+  border-left-color: var(--accent);
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  opacity: 1;
+  cursor: default;
+}
+.call-path-answer {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ink);
+}
+.call-card {
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-2);
+  overflow: hidden;
+  scroll-margin-top: 90px;
+}
+.call-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 16px 22px;
+  background: var(--nav-active);
+  color: var(--nav-ink-hi);
+}
+.call-card.objection .call-card-head {
+  background: #3a2a40;
+}
+.call-card-step {
+  font-size: 12px;
+  color: var(--nav-ink-2);
+}
+.call-card-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.call-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(252, 95, 255, 0.22);
+  color: #ffb8ff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.call-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px 6px;
+}
+/* Реплика — крупно: её читают вслух, не отрываясь от разговора. */
+.call-say {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.call-say .fmt strong {
+  font-weight: 650;
+}
+.call-hint {
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--green-tint);
+  font-size: 14px;
+}
+.call-hint-title {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--green-ink);
+}
+.call-client {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.call-client span {
+  font-weight: 650;
+  color: var(--amber-ink);
+}
+.call-answers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 16px 22px 18px;
+}
+.call-answer {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--edge-strong);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  color: var(--ink);
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+@media (hover: hover) {
+  .call-answer:hover {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+    box-shadow: var(--sh-2);
+  }
+}
+.call-answer-key {
+  grid-row: span 2;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--nav-active);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.call-answer-to {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.call-end {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+}
+.call-card-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--edge);
+}
+.call-noanswer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.call-noanswer input {
+  flex: 1;
+  min-height: 34px;
+}
+.call-noanswer-sent {
+  font-size: 13px;
+  color: var(--green-ink);
+}
+.call-jump-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.call-jump-btn {
+  min-height: 34px;
+  justify-content: flex-start;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  color: var(--ink);
+  text-align: left;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.call-jump-btn.objection {
+  border-left: 3px solid var(--accent);
+}
+.call-jump-btn.visited {
+  color: var(--ink-3);
+}
+.call-jump-btn.on {
+  background: var(--nav-active);
+  color: #fff;
+}
+@media (hover: hover) {
+  .call-jump-btn:hover {
+    background: var(--accent-tint);
+    color: var(--ink);
+    box-shadow: var(--sh-1);
+  }
+  .call-jump-btn.on:hover {
+    background: var(--nav-active);
+    color: #fff;
+  }
+}
+
+/* Карточка звонка в «Все скрипты». */
+.call-teaser {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  color: var(--ink);
+  text-decoration: none;
+}
+.call-teaser:hover {
+  box-shadow: var(--sh-2);
+}
+.call-teaser-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--nav-active);
+  color: #fff;
+  font-size: 20px;
+}
+.call-teaser-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.call-teaser-go {
+  font-weight: 600;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+.nav-call {
+  font-size: 13px;
+}
+
+/* Выбор типа раздела. */
+.kind-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.kind-option {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--edge-strong);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: none;
+  color: var(--ink);
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.kind-option .muted {
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.kind-option.on {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+@media (hover: hover) {
+  .kind-option:hover {
+    background: var(--accent-tint);
+    box-shadow: none;
+  }
+}
+
+/* --- Редактор сценария ----------------------------------------------------- */
+
+.call-editor {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.ce-list {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ce-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ce-node {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  box-shadow: none;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.ce-node.on {
+  background: var(--nav-active);
+  color: #fff;
+}
+@media (hover: hover) {
+  .ce-node:hover {
+    background: var(--accent-tint);
+    color: var(--ink);
+    box-shadow: none;
+  }
+  .ce-node.on:hover {
+    background: var(--nav-active);
+    color: #fff;
+  }
+}
+.ce-node-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ce-start {
+  color: var(--green-ink);
+  font-size: 11px;
+}
+.ce-node.on .ce-start {
+  color: #7ff0c8;
+}
+.ce-orphan {
+  font-size: 11px;
+  color: var(--amber-ink);
+}
+.ce-count {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.ce-node.on .ce-count {
+  color: var(--nav-ink-2);
+}
+.ce-add {
+  align-self: flex-start;
+}
+.ce-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ce-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ce-row .grow {
+  flex: 1;
+  min-width: 220px;
+}
+.ce-row-actions {
+  align-items: center;
+}
+.ce-row-actions .grow {
+  min-width: 0;
+}
+.ce-start-note {
+  font-size: 13px;
+  color: var(--green-ink);
+  font-weight: 600;
+}
+.ce-delete {
+  color: var(--red-ink);
+}
+.ce-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+.ce-langs {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.ce-answer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ce-arrow {
+  color: var(--ink-3);
+}
+.ce-add-answer {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.ce-empty {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.ce-foot {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--edge);
+}
+.ce-foot .grow {
+  flex: 1;
+}
+
+@media (max-width: 1180px) {
+  .call-grid {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .call-jump {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+  }
+  .call-jump-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 900px) {
+  .call-keys {
+    display: none;
+  }
+  .call-name {
+    width: 100%;
+  }
+  .call-name input {
+    flex: 1;
+    width: auto;
+  }
+  .call-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .call-path {
+    order: 2;
+    position: static;
+    max-height: none;
+  }
+  .call-main {
+    order: 1;
+  }
+  .call-jump {
+    order: 3;
+  }
+  .call-say {
+    font-size: 17px;
+  }
+  .call-answers {
+    grid-template-columns: 1fr;
+  }
+  .call-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ce-list {
+    position: static;
+    max-height: none;
+  }
+  .ce-answer {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .ce-answer .ce-arrow {
+    display: none;
+  }
+  .ce-answer select {
+    grid-column: 2 / 4;
+  }
+  .kind-choice {
+    grid-template-columns: 1fr;
+  }
+}
+/* Подписи полей редактора сценария и формы раздела — обычным текстом. */
+.ce-form .field > .label,
+.section-form .field > .label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}

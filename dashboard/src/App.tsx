@@ -183,7 +183,11 @@ function ScriptsNav() {
         <NavLink key={s.id} to={`/scripts/${s.id}`} className="nav-link wrap">
           <NavIcon icon={sectionIcon(s.icon)} />
           <span className="grow">{s.title}</span>
-          <span className="nav-count num">{s.items.length}</span>
+          {s.kind === "call" ? (
+            <span className="nav-count nav-call" title="Сценарий звонка" aria-label="звонок">☎</span>
+          ) : (
+            <span className="nav-count num">{s.items.length}</span>
+          )}
         </NavLink>
       ))}
       {/* Настройки — всем: хронология, предложения и статистика нужны и тем,

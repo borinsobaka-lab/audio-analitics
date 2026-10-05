@@ -34,7 +34,7 @@ export function emptyDraft(sectionId: string): ScriptItemDraft {
  *  ссылка на другой скрипт. Кнопки вставляют разметку прямо в текст
  *  (**…**, __…__, «• », [фраза](script:id)) — её видно и можно поправить
  *  руками, а в карточке она превращается в оформление. */
-function FormatBar({
+export function FormatBar({
   targetId,
   value,
   onChange,

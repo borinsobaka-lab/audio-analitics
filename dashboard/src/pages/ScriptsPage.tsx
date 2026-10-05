@@ -9,13 +9,15 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, plural, ScriptItem, ScriptItemDraft, ScriptLang, ScriptSection } from "../api";
+import { api, fmtWhen, plural, ScriptItem, ScriptItemDraft, ScriptLang, ScriptSection } from "../api";
 import { Empty, Note, PageHead, Skeleton } from "../components/ui";
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
 import { Slider } from "../components/Slider";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
 import SuggestDialog from "../scripts/SuggestDialog";
+import CallRunner from "../scripts/CallRunner";
+import CallEditor from "../scripts/CallEditor";
 import AssistDialog, { IconSparkle } from "../scripts/AssistDialog";
 import {
   BUILTIN_VARIABLES,
@@ -57,6 +59,8 @@ export default function ScriptsPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [assisting, setAssisting] = useState(false);
+  // Правка сценария звонка открытого раздела.
+  const [editingFlow, setEditingFlow] = useState(false);
   const [suggesting, setSuggesting] = useState<{ id: string; title: string; section: string } | null>(null);
   /** Форма раздела: новый или правка названия и иконки конкретного. */
   const [sectionForm, setSectionForm] = useState<"new" | { edit: string } | null>(null);
@@ -82,6 +86,9 @@ export default function ScriptsPage() {
   const terms = useMemo(() => searchTerms(query), [query]);
   const hits = useMemo(() => searchScripts(sections, terms), [sections, terms]);
   const section = sectionId ? sections.find((s) => s.id === sectionId) : undefined;
+  const isCall = section?.kind === "call";
+  // Текстовые скрипты живут только в текстовых разделах: звонок — один сценарий.
+  const textSections = useMemo(() => sections.filter((s) => s.kind !== "call"), [sections]);
 
   // Студии — и те, под которые у скриптов есть свои варианты текста, и
   // работающие точки продаж: от выбранной зависит и вариант текста, и
@@ -123,6 +130,7 @@ export default function ScriptsPage() {
     setQuery("");
     setEditing(null);
     setSectionForm(null);
+    setEditingFlow(false);
   }, [sectionId]);
 
   // «/» — к поиску из любого места страницы, кроме полей ввода.
@@ -262,7 +270,7 @@ export default function ScriptsPage() {
         submitLabel="Сохранить"
         initialTitle={sec.title}
         initialIcon={sec.icon || DEFAULT_SECTION_ICON}
-        onSubmit={(body) => run(() => api.updateScriptSection(sec.id, body))}
+        onSubmit={({ title, icon }) => run(() => api.updateScriptSection(sec.id, { title, icon }))}
         onDone={() => setSectionForm(null)}
       />
     );
@@ -317,7 +325,7 @@ export default function ScriptsPage() {
         <ScriptEditor
           key={item.id}
           initial={item}
-          sections={sections}
+          sections={textSections}
           studios={editorStudios}
           variables={insertable}
           isNew={false}
@@ -375,7 +383,11 @@ export default function ScriptsPage() {
     ? hits.length
       ? `${hits.length} ${plural(hits.length, "скрипт", "скрипта", "скриптов")} по запросу «${query.trim()}»`
       : undefined
-    : section
+    : section && isCall
+      ? section.flow_updated_at
+        ? `Сценарий звонка · обновлён ${fmtWhen(section.flow_updated_at)}${section.flow_updated_by ? ` · ${section.flow_updated_by}` : ""}${section.flow_change_note ? ` — ${section.flow_change_note}` : ""}`
+        : "Сценарий звонка"
+      : section
       ? `${section.items.length} ${plural(section.items.length, "скрипт", "скрипта", "скриптов")}`
       : `${total} ${plural(total, "скрипт", "скрипта", "скриптов")} в ${sections.length} ${plural(sections.length, "разделе", "разделах", "разделах")}`;
 
@@ -447,7 +459,7 @@ export default function ScriptsPage() {
           title="Вставьте сообщение клиента — ИИ подберёт скрипт или напишет ответ">
           <IconSparkle /> ИИ-помощник
         </button>
-        {canEdit && (
+        {canEdit && !isCall && textSections.length > 0 && (
           <button type="button" className="secondary add-script-btn" onClick={startNewScript}
             title="Новый скрипт">
             <span aria-hidden="true">+</span> Скрипт
@@ -499,6 +511,7 @@ export default function ScriptsPage() {
           submitLabel="Создать"
           initialTitle=""
           initialIcon={DEFAULT_SECTION_ICON}
+          withKind
           onSubmit={(body) => run(() => api.createScriptSection(body))}
           onDone={() => setSectionForm(null)}
         />
@@ -507,11 +520,11 @@ export default function ScriptsPage() {
 
       {actionError && <Note kind="error">{actionError}</Note>}
 
-      {canEdit && editing === "new" && sections.length > 0 && (
+      {canEdit && editing === "new" && textSections.length > 0 && (
         <div className="new-script">
           <ScriptEditor
-            initial={emptyDraft(section?.id ?? sections[0].id)}
-            sections={sections}
+            initial={emptyDraft(section && !isCall ? section.id : textSections[0].id)}
+            sections={textSections}
             studios={editorStudios}
             variables={insertable}
             isNew
@@ -534,6 +547,30 @@ export default function ScriptsPage() {
             другое слово или начало слова: «шпагат», «оплат».
           </Empty>
         )
+      ) : section && isCall && section.flow ? (
+        canEdit && editingFlow ? (
+          <CallEditor
+            section={section}
+            sections={sections}
+            variables={insertable}
+            onSaved={async () => {
+              await reload();
+              setEditingFlow(false);
+            }}
+            onCancel={() => setEditingFlow(false)}
+          />
+        ) : (
+          <CallRunner
+            key={section.id}
+            section={section}
+            lang={lang}
+            resolveVar={resolveVar}
+            resolveRef={resolveRef}
+            resolveId={resolveId}
+            canEdit={canEdit}
+            onEdit={() => setEditingFlow(true)}
+          />
+        )
       ) : section ? (
         renderSection(section)
       ) : sectionId ? (
@@ -551,7 +588,22 @@ export default function ScriptsPage() {
               {sectionMenu(sec)}
             </div>
             {sectionEditForm(sec)}
-            {renderSection(sec)}
+            {sec.kind === "call" && sec.flow ? (
+              <NavLink to={`/scripts/${sec.id}`} className="call-teaser">
+                <span className="call-teaser-icon" aria-hidden="true">☎</span>
+                <span className="call-teaser-text">
+                  <strong>Сценарий звонка</strong>
+                  <span className="muted">
+                    {sec.flow.nodes.filter((n) => n.group === "main").length} этапов ·{" "}
+                    {sec.flow.nodes.filter((n) => n.group === "objection").length} возражений — читайте
+                    с экрана и кликайте ответы клиента
+                  </span>
+                </span>
+                <span className="call-teaser-go">Начать звонок →</span>
+              </NavLink>
+            ) : (
+              renderSection(sec)
+            )}
           </div>
         ))
       ) : (
@@ -570,6 +622,7 @@ function SectionForm({
   submitLabel,
   initialTitle,
   initialIcon,
+  withKind = false,
   onSubmit,
   onDone,
 }: {
@@ -577,11 +630,14 @@ function SectionForm({
   submitLabel: string;
   initialTitle: string;
   initialIcon: string;
-  onSubmit: (body: { title: string; icon: string }) => Promise<boolean>;
+  /** Выбор типа — только при создании: тип у готового раздела не меняется. */
+  withKind?: boolean;
+  onSubmit: (body: { title: string; icon: string; kind: "text" | "call" }) => Promise<boolean>;
   onDone: () => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [icon, setIcon] = useState(initialIcon);
+  const [kind, setKind] = useState<"text" | "call">("text");
   const [saving, setSaving] = useState(false);
 
   return (
@@ -591,13 +647,34 @@ function SectionForm({
         e.preventDefault();
         if (!title.trim() || saving) return;
         setSaving(true);
-        onSubmit({ title: title.trim(), icon }).then((ok) => {
+        onSubmit({ title: title.trim(), icon, kind }).then((ok) => {
           setSaving(false);
           if (ok) onDone();
         });
       }}
     >
       <h3>{heading}</h3>
+      {withKind && (
+        <div className="field">
+          <span className="label" id="section-kind-label">Тип раздела</span>
+          <div className="kind-choice" role="radiogroup" aria-labelledby="section-kind-label">
+            {([
+              ["text", "Текстовые скрипты", "Сообщения для чата и звонков: копируются одной кнопкой."],
+              ["call", "Звонок", "Один сценарий звонка: читать с экрана и кликать ответы клиента."],
+            ] as const).map(([key, label, hint]) => (
+              <button key={key} type="button" role="radio" aria-checked={kind === key}
+                className={`kind-option${kind === key ? " on" : ""}`}
+                onClick={() => {
+                  setKind(key);
+                  if (key === "call" && icon === DEFAULT_SECTION_ICON) setIcon("phone-calling-rounded");
+                }}>
+                <strong>{label}</strong>
+                <span className="muted">{hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <label className="field">
         <span className="label">Название</span>
         <input

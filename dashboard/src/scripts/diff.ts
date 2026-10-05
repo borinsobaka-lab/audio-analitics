@@ -17,8 +17,28 @@ function flatten(s: ScriptSnapshot | null): Map<string, { label: string; text: s
   const out = new Map<string, { label: string; text: string }>();
   if (!s) return out;
   const put = (key: string, label: string, text: string) => out.set(key, { label, text });
+  if (s.flow) {
+    // Сценарий звонка — по блокам: текст, подсказка, чего ждать от клиента,
+    // ответы с переходами.
+    const titles = new Map(s.flow.nodes.map((n) => [n.id, n.title]));
+    put("call:start", "Звонок начинается с блока", titles.get(s.flow.start) ?? "");
+    for (const n of s.flow.nodes) {
+      const name = `Блок «${n.title}»`;
+      put(`n:${n.id}:title`, `${name} · название`, n.title);
+      put(`n:${n.id}:group`, `${name} · где`, n.group === "objection" ? "Возражение" : "Этап звонка");
+      for (const l of LANGS) put(`n:${n.id}:text:${l.key}`, `${name} · текст ${l.label}`, n.text[l.key] ?? "");
+      put(`n:${n.id}:hint`, `${name} · подсказка`, n.hint ?? "");
+      put(`n:${n.id}:client`, `${name} · клиент`, n.client ?? "");
+      put(
+        `n:${n.id}:answers`,
+        `${name} · ответы`,
+        n.answers.map((a) => `${a.label} → ${titles.get(a.to) ?? "?"}`).join("\n")
+      );
+    }
+    return out;
+  }
   put("title", "Название", s.title ?? "");
-  put("kind", "Тип", KIND_LABELS[s.kind] ?? s.kind ?? "");
+  put("kind", "Тип", KIND_LABELS[s.kind as keyof typeof KIND_LABELS] ?? s.kind ?? "");
   put("section", "Раздел", s.section ?? "");
   put("note", "Как использовать", s.note ?? "");
   const variants = s.variants ?? [];

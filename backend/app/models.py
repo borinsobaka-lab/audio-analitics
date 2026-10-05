@@ -615,3 +615,27 @@ class PlaybookCopy(UUIDMixin, Base):
     # Откуда: карточка скрипта или окно ИИ-помощника.
     source: Mapped[str] = mapped_column(String(16), default="card")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlaybookCallFlow(Base):
+    """Сценарий звонка — у раздела-звонка он один.
+
+    Раздел скриптов бывает двух типов: текстовые скрипты (как раньше) и
+    звонок. У звонка нет списка скриптов — есть сценарий: блоки с текстом,
+    который администратор читает с экрана, и кнопки ответов клиента, ведущие
+    к следующему блоку. Отдельной таблицей, а не колонками раздела: так до
+    миграции 016 текстовые скрипты работают как раньше.
+    """
+
+    __tablename__ = "playbook_call_flows"
+
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("playbook_sections.id", ondelete="CASCADE"), primary_key=True
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    # {"start": "<id блока>", "nodes": [{"id", "title", "group": "main"|"objection",
+    #   "text": {ru, en, ka}, "hint", "client", "answers": [{"label", "to"}]}]}
+    flow: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+    change_note: Mapped[str] = mapped_column(Text, default="")

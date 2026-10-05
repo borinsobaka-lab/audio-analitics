@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import model_validator, BaseModel, Field, field_validator
 
 
 # --- Recordings / segments ---
@@ -568,9 +568,62 @@ class PlaybookItemOut(BaseModel):
 ICON_KEY = r"^[a-z0-9-]{0,40}$"
 
 
+class CallText(BaseModel):
+    """Реплика администратора на трёх языках; пустой язык — показывается
+    русский с пометкой."""
+
+    ru: str = Field(default="", max_length=6000)
+    en: str = Field(default="", max_length=6000)
+    ka: str = Field(default="", max_length=6000)
+
+
+class CallAnswer(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    # id блока, куда ведёт ответ.
+    to: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
+
+
+class CallNode(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
+    title: str = Field(min_length=1, max_length=120)
+    # main — этап разговора; objection — возражение или вопрос клиента:
+    # они всегда под рукой справа, к ним прыгают из любого места.
+    group: Literal["main", "objection"] = "main"
+    text: CallText = CallText()
+    hint: str = Field(default="", max_length=2000)
+    client: str = Field(default="", max_length=300)
+    answers: list[CallAnswer] = Field(default=[], max_length=12)
+
+
+class CallFlow(BaseModel):
+    start: str
+    nodes: list[CallNode] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def links_are_valid(self) -> "CallFlow":
+        ids = [n.id for n in self.nodes]
+        if len(set(ids)) != len(ids):
+            raise ValueError("У двух блоков одинаковый id")
+        known = set(ids)
+        if self.start not in known:
+            raise ValueError("Первый блок звонка не найден")
+        for n in self.nodes:
+            for a in n.answers:
+                if a.to not in known:
+                    raise ValueError(f"Ответ «{a.label}» в блоке «{n.title}» ведёт в удалённый блок")
+        return self
+
+
+class CallFlowIn(BaseModel):
+    flow: CallFlow
+    change_note: str = Field(default="", max_length=500)
+
+
 class PlaybookSectionIn(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     icon: str = Field(default="", pattern=ICON_KEY)
+    # text — раздел текстовых скриптов; call — раздел-звонок с одним сценарием.
+    kind: Literal["text", "call"] = "text"
 
 
 class PlaybookSectionPatch(BaseModel):
@@ -583,7 +636,13 @@ class PlaybookSectionOut(BaseModel):
     title: str
     icon: str = ""
     position: int = 0
+    kind: Literal["text", "call"] = "text"
     items: list[PlaybookItemOut] = []
+    # Только у звонка.
+    flow: CallFlow | None = None
+    flow_updated_at: datetime | None = None
+    flow_updated_by: str = ""
+    flow_change_note: str = ""
 
 
 class PlaybookOut(BaseModel):

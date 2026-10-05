@@ -41,7 +41,10 @@ function ChangeEntry({ change }: { change: ScriptChange }) {
   const fields = fieldChanges(change);
 
   // Скрипт ещё жив — название ведёт к нему.
-  const section = playbook?.sections.find((s) => s.items.some((i) => i.id === change.item_id));
+  // Скрипт — по разделу, где он лежит; сценарий звонка — это сам раздел.
+  const section = playbook?.sections.find(
+    (s) => s.id === change.item_id || s.items.some((i) => i.id === change.item_id)
+  );
   const title = change.item_title || "Без названия";
 
   return (
@@ -52,7 +55,9 @@ function ChangeEntry({ change }: { change: ScriptChange }) {
             type="button"
             className="change-title link"
             title="Открыть скрипт"
-            onClick={() => navigate(scriptPath(section.id, change.item_id!))}
+            onClick={() =>
+              navigate(section.id === change.item_id ? scriptPath(section.id) : scriptPath(section.id, change.item_id!))
+            }
           >
             {title}
           </button>

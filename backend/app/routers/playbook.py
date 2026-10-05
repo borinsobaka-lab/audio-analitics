@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import UserContext, require_scripts_edit, require_user
 from ..db import get_db
 from ..models import (
+    PlaybookCallFlow,
     PlaybookChange,
     PlaybookSeen,
     PlaybookSuggestion,
@@ -40,6 +41,8 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    CallFlow,
+    CallFlowIn,
     PlaybookItemIn,
     PlaybookItemOut,
     PlaybookOrder,
@@ -64,6 +67,59 @@ router = APIRouter(prefix="/api/playbook", tags=["playbook"])
 log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "playbook_default.json"
+CALL_DEFAULT_PATH = Path(__file__).resolve().parents[1] / "playbook_call_default.json"
+
+
+@lru_cache
+def default_call_section() -> dict:
+    """Стартовый раздел-звонок (холодный звонок: запись на пробное) — та же
+    проверка схемой, что у правок из админки."""
+    raw = json.loads(CALL_DEFAULT_PATH.read_text(encoding="utf-8"))
+    return {
+        "title": raw["title"],
+        "icon": raw.get("icon", ""),
+        "flow": CallFlow.model_validate(raw["flow"]).model_dump(),
+    }
+
+
+def blank_flow() -> dict:
+    """Новый раздел-звонок начинается с одного блока — дальше его строят в
+    редакторе сценария."""
+    return CallFlow.model_validate(
+        {
+            "start": "start",
+            "nodes": [
+                {
+                    "id": "start",
+                    "title": "Приветствие",
+                    "group": "main",
+                    "text": {"ru": "{имя}, добрый день! Меня зовут {админ}, студия растяжки Lady Stretch."},
+                    "answers": [],
+                }
+            ],
+        }
+    ).model_dump()
+
+
+async def load_flows(db: AsyncSession, org_id) -> dict:
+    """Сценарии звонков по разделам. Таблицы ещё нет (миграция 016 не
+    выполнена) — звонков просто нет, текстовые скрипты работают."""
+    try:
+        async with db.begin_nested():
+            rows = (
+                await db.scalars(select(PlaybookCallFlow).where(PlaybookCallFlow.org_id == org_id))
+            ).all()
+        return {r.section_id: r for r in rows}
+    except ProgrammingError:
+        return {}
+
+
+async def get_flow(db: AsyncSession, section_id) -> PlaybookCallFlow | None:
+    try:
+        async with db.begin_nested():
+            return await db.get(PlaybookCallFlow, section_id)
+    except ProgrammingError:
+        return None
 SEED_NOTE = "Перенесено из документа «Скрипты LS Tbilisi»"
 
 
@@ -157,6 +213,24 @@ async def ensure_seeded(db: AsyncSession, org: Organization) -> None:
                         change_note=SEED_NOTE,
                     )
                 )
+        call = default_call_section()
+        call_section = PlaybookSection(
+            org_id=org.id,
+            title=call["title"],
+            icon=call["icon"],
+            position=len(default_playbook()),
+        )
+        db.add(call_section)
+        await db.flush()
+        db.add(
+            PlaybookCallFlow(
+                section_id=call_section.id,
+                org_id=org.id,
+                flow=call["flow"],
+                updated_by="перенесено из документа",
+                change_note="Перенесено из документа «Скрипт — ЗВОНОК»",
+            )
+        )
     db.add(PlaybookState(org_id=org.id))
     try:
         await db.commit()
@@ -275,15 +349,10 @@ async def get_playbook(
         by_section.setdefault(item.section_id, []).append(
             PlaybookItemOut.model_validate(item)
         )
+    flows = await load_flows(db, org.id)
     return PlaybookOut(
         sections=[
-            PlaybookSectionOut(
-                id=s.id,
-                title=s.title,
-                icon=s.icon or "",
-                position=s.position,
-                items=by_section.get(s.id, []),
-            )
+            section_out(s, flows.get(s.id), by_section.get(s.id, []))
             for s in sections
         ]
     )
@@ -310,14 +379,45 @@ async def create_section(
         ),
     )
     db.add(section)
-    await db.commit()
+    flow = None
+    if body.kind == "call":
+        # Раздел-звонок: сразу со сценарием из одного блока.
+        await db.flush()
+        flow = PlaybookCallFlow(
+            section_id=section.id,
+            org_id=org.id,
+            flow=blank_flow(),
+            updated_by=author(user),
+            change_note="Новый сценарий звонка",
+        )
+        db.add(flow)
+    try:
+        await db.commit()
+    except ProgrammingError as exc:
+        await db.rollback()
+        raise HTTPException(
+            503, "Разделы-звонки ещё не включены: выполните миграцию 016_call_scripts.sql"
+        ) from exc
     await db.refresh(section)
-    return section_out(section)
+    return section_out(section, flow)
 
 
-def section_out(section: PlaybookSection) -> PlaybookSectionOut:
+def section_out(
+    section: PlaybookSection,
+    flow: PlaybookCallFlow | None = None,
+    items: list[PlaybookItemOut] | None = None,
+) -> PlaybookSectionOut:
     return PlaybookSectionOut(
-        id=section.id, title=section.title, icon=section.icon or "", position=section.position
+        id=section.id,
+        title=section.title,
+        icon=section.icon or "",
+        position=section.position,
+        kind="call" if flow else "text",
+        items=items or [],
+        flow=CallFlow.model_validate(flow.flow) if flow else None,
+        flow_updated_at=flow.updated_at if flow else None,
+        flow_updated_by=flow.updated_by if flow else "",
+        flow_change_note=flow.change_note if flow else "",
     )
 
 
@@ -338,7 +438,7 @@ async def update_section(
     if body.icon is not None:
         section.icon = body.icon
     await db.commit()
-    return section_out(section)
+    return section_out(section, await get_flow(db, section.id))
 
 
 @router.delete("/sections/{section_id}", status_code=204)
@@ -360,6 +460,48 @@ async def delete_section(
     await db.delete(section)
     await db.commit()
     return None
+
+
+@router.put("/sections/{section_id}/flow", response_model=PlaybookSectionOut)
+async def save_flow(
+    section_id: uuid.UUID,
+    body: CallFlowIn,
+    user: UserContext = Depends(require_scripts_edit),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сохранить сценарий звонка целиком: блоки, тексты, ответы и переходы.
+    Как и у текстовых скриптов — с «что изменили» и записью в хронологию."""
+    section = await get_section(db, section_id)
+    flow = await get_flow(db, section.id)
+    if not flow:
+        raise HTTPException(409, "Это раздел текстовых скриптов, а не звонок")
+    note = body.change_note.strip()
+    if not note:
+        raise HTTPException(422, "Опишите, что изменили — это увидят в хронологии")
+    data = body.flow.model_dump()
+    before = {"title": section.title, "kind": "call", "section": section.title, "flow": flow.flow}
+    flow.flow = data
+    flow.updated_at = utcnow()
+    flow.updated_by = author(user)
+    flow.change_note = note
+    try:
+        async with db.begin_nested():
+            db.add(
+                PlaybookChange(
+                    org_id=section.org_id,
+                    item_id=section.id,
+                    item_title=section.title,
+                    action="updated",
+                    before=before,
+                    after={"title": section.title, "kind": "call", "section": section.title, "flow": data},
+                    change_note=note,
+                    author=author(user),
+                )
+            )
+    except ProgrammingError:
+        log.warning("Хронология звонка не записана: нет таблицы playbook_changes (миграция 013)")
+    await db.commit()
+    return section_out(section, flow)
 
 
 @router.put("/sections/order", status_code=204)
@@ -412,6 +554,8 @@ async def create_item(
     db: AsyncSession = Depends(get_db),
 ):
     section = await get_section(db, body.section_id)
+    if await get_flow(db, section.id):
+        raise HTTPException(409, "В разделе-звонке один сценарий — текстовые скрипты сюда не добавляются")
     item = PlaybookItem(
         org_id=section.org_id,
         section_id=section.id,
@@ -453,6 +597,8 @@ async def update_item(
         # Перенесённый скрипт встаёт в конец нового раздела — там его и ищут
         # глазами сразу после переноса.
         section = await get_section(db, body.section_id)
+        if await get_flow(db, section.id):
+            raise HTTPException(409, "В раздел-звонок текстовый скрипт не переносится")
         item.section_id = section.id
         item.position = await next_position(
             db, PlaybookItem, PlaybookItem.section_id == section.id

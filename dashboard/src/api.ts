@@ -353,13 +353,47 @@ export interface ScriptItem {
   change_note: string;
 }
 
+/** Ответ клиента в сценарии звонка — кнопка, ведущая к следующему блоку. */
+export interface CallAnswer {
+  label: string;
+  /** id блока, куда ведёт ответ. */
+  to: string;
+}
+
+/** Блок сценария звонка: что говорит администратор и куда дальше. */
+export interface CallNode {
+  id: string;
+  title: string;
+  /** main — этап разговора; objection — возражение или вопрос клиента. */
+  group: "main" | "objection";
+  /** Реплика администратора на трёх языках. */
+  text: LangText;
+  /** Подсказка администратору — клиенту не говорится. */
+  hint: string;
+  /** Чего ждать от клиента. */
+  client: string;
+  answers: CallAnswer[];
+}
+
+export interface CallFlow {
+  start: string;
+  nodes: CallNode[];
+}
+
 export interface ScriptSection {
   id: string;
   title: string;
   /** Ключ иконки в меню из набора navIcons; пусто — иконка по умолчанию. */
   icon: string;
   position: number;
+  /** text — текстовые скрипты; call — звонок с одним сценарием. Старый
+   *  сервер поля не присылает — это текстовый раздел. */
+  kind?: "text" | "call";
   items: ScriptItem[];
+  flow?: CallFlow | null;
+  flow_updated_at?: string | null;
+  flow_updated_by?: string;
+  flow_change_note?: string;
 }
 
 export interface Playbook {
@@ -411,7 +445,9 @@ export interface PlaybookSettings {
 /** Версия скрипта в хронологии — всё, что видно в карточке. */
 export interface ScriptSnapshot {
   title: string;
-  kind: ScriptKind;
+  /** У сценария звонка — "call", дальше вместо текстов — flow. */
+  kind: ScriptKind | "call";
+  flow?: CallFlow;
   section: string;
   keywords: string;
   note: string;
@@ -728,7 +764,7 @@ export const api = {
     request<ScriptTemplate>("/api/script", { method: "PUT", body: JSON.stringify(body) }),
 
   playbook: () => request<Playbook>("/api/playbook"),
-  createScriptSection: (body: { title: string; icon: string }) =>
+  createScriptSection: (body: { title: string; icon: string; kind?: "text" | "call" }) =>
     request<ScriptSection>("/api/playbook/sections", {
       method: "POST",
       body: JSON.stringify(body),
@@ -737,6 +773,11 @@ export const api = {
     request<ScriptSection>(`/api/playbook/sections/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }),
+  saveCallFlow: (sectionId: string, flow: CallFlow, changeNote: string) =>
+    request<ScriptSection>(`/api/playbook/sections/${sectionId}/flow`, {
+      method: "PUT",
+      body: JSON.stringify({ flow, change_note: changeNote }),
     }),
   deleteScriptSection: (id: string) =>
     request<void>(`/api/playbook/sections/${id}`, { method: "DELETE" }),
@@ -763,7 +804,7 @@ export const api = {
     request<Page<ScriptChange>>(
       `/api/playbook/changes${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`
     ),
-  suggestScript: (text: string, itemId: string) =>
+  suggestScript: (text: string, itemId: string | null) =>
     request<ScriptSuggestion>("/api/playbook/suggestions", {
       method: "POST",
       body: JSON.stringify({ text, item_id: itemId }),
