@@ -390,21 +390,3 @@ def test_complete_json_accumulates_usage_across_calls():
     assert llm.usage.calls == 2
     assert llm.usage.input_tokens == 200
     assert llm.usage.output_tokens == 40
-
-
-def test_call_runs_match_dialog_window_and_render():
-    from app.pipeline.tasks import match_call_runs, render_call_runs
-
-    runs = [
-        {"id": "a", "title": "Звонок", "outcome": "booked", "start_s": 100, "end_s": 300,
-         "path": [{"title": "Приветствие", "answer": "Здравствуйте"},
-                  {"title": "Цель", "gap": "хочу на йогу"}]},
-        {"id": "b", "title": "Звонок", "outcome": "", "start_s": 5000, "end_s": 5100, "path": []},
-    ]
-    # Диалог 350–600: звонок «a» кончился в 300 — в пределах минуты запаса.
-    assert [r["id"] for r in match_call_runs(runs, 350, 600)] == ["a"]
-    assert match_call_runs(runs, 1000, 2000) == []
-    text = render_call_runs(match_call_runs(runs, 350, 600))
-    assert "1. Приветствие → ответ клиента: «Здравствуйте»" in text
-    assert "клиент сказал: «хочу на йогу»" in text
-    assert "Итог, отмеченный администратором: записан." in text

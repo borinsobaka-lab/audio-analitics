@@ -7,7 +7,7 @@
  *  разом, с «Что изменили?» — как у текстовых скриптов.
  */
 import { useMemo, useState } from "react";
-import { api, CallAnswer, CallFlow, CallNode, CallOutcomeTag, ScriptSection } from "../api";
+import { api, CallAnswer, CallFlow, CallNode, ScriptSection } from "../api";
 import { Note } from "../components/ui";
 import { LANGS } from "./logic";
 import { FormatBar } from "./ScriptEditor";
@@ -212,16 +212,6 @@ export default function CallEditor({
               onChange={(e) => patchNode(node.id, { group: e.target.value as CallNode["group"] })}>
               <option value="main">Этап звонка</option>
               <option value="objection">Возражение / вопрос</option>
-            </select>
-          </label>
-          <label className="field" title="Дошли до этого блока — звонок засчитывается с этим итогом в «Аналитике»">
-            <span className="label">Итог звонка</span>
-            <select value={node.outcome ?? ""}
-              onChange={(e) => patchNode(node.id, { outcome: e.target.value as CallOutcomeTag })}>
-              <option value="">— не ставит итог</option>
-              <option value="booked">Записан</option>
-              <option value="callback">Перезвонить</option>
-              <option value="refused">Отказ</option>
             </select>
           </label>
         </div>

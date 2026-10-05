@@ -253,8 +253,7 @@
             "label": "Дальше",
             "to": "whatsapp"
           }
-        ],
-        "outcome": "booked"
+        ]
       },
       {
         "id": "whatsapp",
@@ -372,8 +371,7 @@
         },
         "hint": "Поставьте задачу на перезвон в CRM.",
         "client": "",
-        "answers": [],
-        "outcome": "callback"
+        "answers": []
       },
       {
         "id": "obj_no_time",

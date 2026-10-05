@@ -373,168 +373,36 @@ export interface CallNode {
   /** Чего ждать от клиента. */
   client: string;
   answers: CallAnswer[];
-  /** Итог звонка, если разговор дошёл до этого блока. */
-  outcome?: CallOutcomeTag;
 }
 
-/** Итог, который ставит сам блок сценария («Запись» — записан). */
-export type CallOutcomeTag = "" | "booked" | "callback" | "refused";
-/** Итог звонка: из блока или отмеченный администратором. */
-export type CallOutcome = CallOutcomeTag | "no_answer";
-
-export const OUTCOME_LABELS: Record<Exclude<CallOutcome, "">, string> = {
-  booked: "Записан",
-  callback: "Перезвонить",
-  refused: "Отказ",
-  no_answer: "Не дозвонились",
-};
-
+/** Шаг звонка по сценарию — для аналитики. */
 export interface CallRunStep {
   id: string;
   title: string;
   group: "main" | "objection";
   answer: string;
   at: string;
-  /** «Нет нужного ответа» на этом шаге — что сказал клиент. */
-  gap?: string;
 }
 
 export interface CallRunIn {
   section_id: string;
-  studio: string;
-  lang: ScriptLang;
-  flow_version: string | null;
   path: CallRunStep[];
+  /** Дошли до конца сценария или нажали «Новый звонок». */
   finished: boolean;
-  outcome: CallOutcome;
-  client_name: string;
-  client_phone: string;
-  callback_at: string | null;
-  callback_note: string;
-  callback_of: string | null;
-}
-
-export interface CallStatTotals {
-  runs: number;
-  live: number;
-  booked: number;
-  callback: number;
-  refused: number;
-  no_answer: number;
-  no_outcome: number;
-  conversion: number | null;
-  avg_seconds: number | null;
-  avg_steps: number | null;
-}
-
-export interface CallFunnelStep {
-  node_id: string;
-  title: string;
-  reached: number;
-  ended_here: number;
-  median_seconds: number | null;
-  answers: { label: string; count: number }[];
-  gaps: number;
-}
-
-export interface CallSlice {
-  key: string;
-  runs: number;
-  booked: number;
-  conversion: number | null;
-}
-
-export interface CallVersion {
-  version: string | null;
-  note: string;
-  runs: number;
-  booked: number;
-  conversion: number | null;
-  avg_steps: number | null;
-  avg_seconds: number | null;
-}
-
-export interface CallEndStat {
-  node_id: string;
-  title: string;
-  group: string;
-  count: number;
-  callback: number;
-  refused: number;
-  no_outcome: number;
-}
-
-export interface CallUserStat extends Omit<CallStatTotals, "live"> {
-  user_key: string;
-  name: string;
-  top_drop: CallEndStat | null;
-  reach: Record<string, number>;
 }
 
 export interface CallStats {
   sections: { id: string; title: string; runs: number; deleted: boolean }[];
   section_id: string | null;
-  flow_changed_at: string | null;
-  totals: CallStatTotals;
-  funnel: CallFunnelStep[];
-  objections: { node_id: string; title: string; runs: number; booked: number; ended_here: number }[];
-  ends: CallEndStat[];
-  users: CallUserStat[];
-  gaps: { node_id: string; title: string; count: number; examples: string[] }[];
-  versions: CallVersion[];
-  studios: CallSlice[];
-  hours: CallSlice[];
-  weekdays: CallSlice[];
-  target: number | null;
-  callbacks_open: number;
-}
-
-export interface CallRun {
-  id: string;
-  section_title: string;
-  user_name: string;
-  studio: string;
-  lang: string;
-  started_at: string;
-  seconds: number | null;
-  steps: number;
-  last_node_title: string;
-  outcome: CallOutcome;
-  status: "live" | "ended" | "dropped";
-  path: { title: string; group: string; answer: string; gap: string }[];
-  client_name: string;
-  client_phone: string;
-  callback_at: string | null;
-  callback_note: string;
-  callback_done_at: string | null;
-  recording_id: string | null;
-  recording_offset_s: number | null;
-}
-
-/** Открытый перезвон: звонок с итогом «Перезвонить». */
-export interface Callback {
-  id: string;
-  section_id: string;
-  section_title: string;
-  user_name: string;
-  client_name: string;
-  client_phone: string;
-  callback_at: string | null;
-  callback_note: string;
-  started_at: string;
-  last_node_title: string;
-  attempts: number;
+  totals: { runs: number; completed: number; avg_steps: number | null };
+  funnel: { node_id: string; title: string; reached: number; ended_here: number }[];
+  ends: { node_id: string; title: string; group: string; script_end: boolean; count: number }[];
 }
 
 export interface CallStatsQuery {
   from?: string;
   to?: string;
   section?: string;
-  user?: string;
-  studio?: string;
-  version?: string;
-  /** Часовой пояс браузера — для разреза по часам. */
-  tz?: string;
 }
 
 export interface CallFlow {
@@ -953,33 +821,6 @@ export const api = {
       keepalive: true,
     }),
   callStats: (q: CallStatsQuery) => request<CallStats>(`/api/playbook/call-stats${query(q)}`),
-  callRuns: (q: CallStatsQuery & { outcome?: string; node?: string; cursor?: string }) =>
-    request<Page<CallRun>>(`/api/playbook/call-runs${query(q)}`),
-  /** Звонки таблицей для Excel — скачивается файлом. */
-  downloadCallRuns: async (q: CallStatsQuery & { outcome?: string; tz?: string }) => {
-    const headers: Record<string, string> = {};
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const resp = await fetch(`${BASE}/api/playbook/call-runs.csv${query(q)}`, { headers });
-    if (!resp.ok) throw new Error(`Не удалось выгрузить звонки (${resp.status})`);
-    const name =
-      /filename="([^"]+)"/.exec(resp.headers.get("Content-Disposition") ?? "")?.[1] ?? "calls.csv";
-    const url = URL.createObjectURL(await resp.blob());
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
-  callRunsForRecording: (recordingId: string) =>
-    request<Page<CallRun>>(`/api/playbook/call-runs/by-recording/${recordingId}`),
-  saveCallTarget: (target: number | null) =>
-    request<void>("/api/playbook/call-target", { method: "PUT", body: JSON.stringify({ target }) }),
-  callbacks: (sectionId?: string) =>
-    request<Callback[]>(`/api/playbook/callbacks${query({ section: sectionId })}`),
-  patchCallback: (id: string, body: { done: boolean; callback_at?: string | null }) =>
-    request<void>(`/api/playbook/callbacks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   saveCallFlow: (sectionId: string, flow: CallFlow, changeNote: string) =>
     request<ScriptSection>(`/api/playbook/sections/${sectionId}/flow`, {
       method: "PUT",

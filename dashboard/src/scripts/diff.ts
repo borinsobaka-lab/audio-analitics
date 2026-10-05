@@ -1,7 +1,7 @@
 /** Сравнение версий скрипта для хронологии: какие поля поменялись и какие
  *  слова в них — удалены или добавлены.
  */
-import { OUTCOME_LABELS, type ScriptChange, type ScriptSnapshot } from "../api";
+import type { ScriptChange, ScriptSnapshot } from "../api";
 import { KIND_LABELS, LANGS } from "./logic";
 
 export interface FieldChange {
@@ -29,7 +29,6 @@ function flatten(s: ScriptSnapshot | null): Map<string, { label: string; text: s
       for (const l of LANGS) put(`n:${n.id}:text:${l.key}`, `${name} · текст ${l.label}`, n.text[l.key] ?? "");
       put(`n:${n.id}:hint`, `${name} · подсказка`, n.hint ?? "");
       put(`n:${n.id}:client`, `${name} · клиент`, n.client ?? "");
-      put(`n:${n.id}:outcome`, `${name} · итог звонка`, n.outcome ? OUTCOME_LABELS[n.outcome] : "");
       put(
         `n:${n.id}:answers`,
         `${name} · ответы`,

@@ -3,13 +3,11 @@ import json
 import logging
 import tempfile
 import traceback
-from datetime import timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
-from sqlalchemy.exc import ProgrammingError
 
 from .. import storage
 from ..celery_app import celery
@@ -23,7 +21,6 @@ from ..models import (
     DialogTurn,
     MetricEvaluation,
     MetricsDaily,
-    PlaybookCallRun,
     PromptTemplate,
     Transcript,
 )
@@ -111,98 +108,6 @@ def _cleanup_previous_results(db, rec: DayRecording, drop_transcript: bool) -> N
         for tr in db.scalars(select(Transcript).where(Transcript.day_recording_id == rec.id)):
             db.delete(tr)
     db.commit()
-
-
-# Звонки по сценарию из админки — подсказка к оценке разговора.
-CALL_OUTCOMES = {
-    "booked": "записан",
-    "callback": "перезвонить",
-    "refused": "отказ",
-    "no_answer": "не дозвонились",
-}
-# Насколько звонок может «не совпасть» с окном диалога: часы телефона и
-# границы диалога, которые нашла модель, расходятся на десятки секунд.
-CALL_MATCH_SLACK_S = 60
-SHIFT_MAX = timedelta(hours=16)
-
-
-def _shift_call_runs(db, rec: DayRecording) -> list[dict]:
-    """Звонки, которые сотрудник смены вёл по сценарию в админке, — с
-    окном в секундах от начала записи (паузы пишутся тишиной, поэтому
-    время на часах и время в записи совпадают). До миграции 017 или без
-    сотрудника у смены — пусто: разбор идёт как раньше."""
-    if not rec.employee_id or not rec.created_at:
-        return []
-    length = timedelta(seconds=rec.total_duration_s) if rec.total_duration_s else SHIFT_MAX
-    try:
-        with db.begin_nested():
-            rows = db.execute(
-                select(
-                    PlaybookCallRun.id,
-                    PlaybookCallRun.section_title,
-                    PlaybookCallRun.path,
-                    PlaybookCallRun.outcome,
-                    PlaybookCallRun.started_at,
-                    PlaybookCallRun.updated_at,
-                    PlaybookCallRun.ended_at,
-                ).where(
-                    PlaybookCallRun.user_key == f"emp:{rec.employee_id}",
-                    PlaybookCallRun.started_at >= rec.created_at,
-                    PlaybookCallRun.started_at <= rec.created_at + length,
-                )
-            ).all()
-    except ProgrammingError:
-        return []
-    out = []
-    for r in rows:
-        end = r.ended_at or r.updated_at or r.started_at
-        out.append(
-            {
-                "id": str(r.id),
-                "title": r.section_title,
-                "path": list(r.path or []),
-                "outcome": r.outcome or "",
-                "start_s": (r.started_at - rec.created_at).total_seconds(),
-                "end_s": (end - rec.created_at).total_seconds(),
-            }
-        )
-    return out
-
-
-def match_call_runs(runs: list[dict], d_start: float, d_end: float) -> list[dict]:
-    """Звонки, пересекающиеся с окном диалога (с запасом)."""
-    return [
-        r
-        for r in runs
-        if r["start_s"] <= d_end + CALL_MATCH_SLACK_S and r["end_s"] >= d_start - CALL_MATCH_SLACK_S
-    ]
-
-
-def render_call_runs(runs: list[dict]) -> str:
-    """Сценарий звонка — текстом для модели, после транскрипта диалога."""
-    parts = []
-    for run in runs:
-        steps = []
-        for i, step in enumerate(run["path"], 1):
-            line = f"{i}. {step.get('title', '')}"
-            if step.get("answer"):
-                line += f" → ответ клиента: «{step['answer']}»"
-            if step.get("gap"):
-                line += f" (в сценарии не нашлось ответа, клиент сказал: «{step['gap']}»)"
-            steps.append(line)
-        outcome = CALL_OUTCOMES.get(run["outcome"], "не отмечен")
-        parts.append(
-            f"Сценарий «{run['title']}», пройденные шаги:\n" + "\n".join(steps)
-            + f"\nИтог, отмеченный администратором: {outcome}."
-        )
-    return (
-        "\n\nСЦЕНАРИЙ ЗВОНКА ИЗ АДМИНКИ (во время этого разговора администратор вёл звонок "
-        "по сценарию и отмечал ответы клиента):\n"
-        + "\n\n".join(parts)
-        + "\nЭто подсказка, а не доказательство: оценивай только по тому, что реально сказано "
-        "в транскрипте. Если метрика касается следования скрипту — сверь сказанное с шагами "
-        "сценария и отметь пропущенные или искажённые шаги."
-    )
 
 
 def _progress(db, rec: DayRecording, detail: str) -> None:
@@ -410,7 +315,6 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
     evals_applicable = 0
     to_evaluate = sum(1 for m in dialogs_meta if m["type"] in METRIC_TYPES)
     evaluated = 0
-    call_runs = _shift_call_runs(db, rec)
 
     for meta in dialogs_meta:
         # Timestamps and type are already validated by normalize_dialogs().
@@ -459,10 +363,6 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
             evaluated += 1
             _progress(db, rec, f"оценка разговоров по метрикам: {evaluated} из {to_evaluate}")
             dialog_text = render_transcript(d_turns)
-            matched = match_call_runs(call_runs, d_start, d_end)
-            if matched:
-                dialog_text += render_call_runs(matched)
-                dialog.analysis_json = {"call_run_ids": [r["id"] for r in matched]}
             dialog_evals: dict = {}
             for metric in metrics:
                 # One failed evaluation must not cost the whole day's report.
