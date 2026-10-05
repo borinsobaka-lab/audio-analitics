@@ -211,7 +211,7 @@ async def call_stats(
         ).all()
     except ProgrammingError as exc:
         await db.rollback()
-        raise missing_migration("Аналитика звонков", "017_call_runs.sql") from exc
+        raise missing_migration("Аналитика звонков ещё не включена", "017_call_runs.sql") from exc
 
     counts = {r.section_id: (r.title, r.runs) for r in per_section}
     sections = [

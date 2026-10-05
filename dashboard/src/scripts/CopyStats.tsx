@@ -11,7 +11,7 @@ import { api, CopyStats, LangCounts, plural } from "../api";
 import { Empty, Note, Skeleton } from "../components/ui";
 import { Slider } from "../components/Slider";
 import { LANGS, scriptPath } from "./logic";
-import { DEFAULT_PERIOD, Period, periodQuery } from "./period";
+import { defaultPeriod, Period, periodQuery } from "./period";
 import PeriodFilter from "./PeriodFilter";
 import { usePlaybook } from "./store";
 
@@ -30,7 +30,7 @@ function LangCells({ row, lang }: { row: LangCounts; lang: string }) {
 export default function CopyStatsView() {
   const navigate = useNavigate();
   const { playbook } = usePlaybook();
-  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
+  const [period, setPeriod] = useState<Period>(defaultPeriod);
   const [user, setUser] = useState("");
   const [lang, setLang] = useState("");
   const [data, setData] = useState<CopyStats | null>(null);

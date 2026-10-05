@@ -29,8 +29,9 @@ async def current_org(db: AsyncSession) -> Organization:
 
 def missing_migration(what: str, migration: str) -> HTTPException:
     """Таблицы ещё нет — миграцию не выполнили. Порядок «миграция, потом
-    деплой» не должен ломать остальное: отвечаем 503 с подсказкой, а не 500."""
-    return HTTPException(503, f"{what} ещё не включена: выполните миграцию {migration}")
+    деплой» не должен ломать остальное: отвечаем 503 с подсказкой, а не 500.
+    what — что не работает, фразой: «Статистика ещё не включена»."""
+    return HTTPException(503, f"{what}: выполните миграцию {migration}")
 
 
 # --- Страницы по курсору ---

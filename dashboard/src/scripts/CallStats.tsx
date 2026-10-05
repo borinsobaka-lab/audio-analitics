@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, CallStats, plural } from "../api";
 import { Empty, Note, Section, Skeleton, Stat } from "../components/ui";
-import { DEFAULT_PERIOD, Period, periodQuery } from "./period";
+import { defaultPeriod, Period, periodQuery } from "./period";
 import PeriodFilter from "./PeriodFilter";
 
 function pct(part: number, whole: number): string {
@@ -24,7 +24,7 @@ function pct(part: number, whole: number): string {
 }
 
 export default function CallStatsView() {
-  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
+  const [period, setPeriod] = useState<Period>(defaultPeriod);
   const [section, setSection] = useState("");
   const [data, setData] = useState<CallStats | null>(null);
   const [loading, setLoading] = useState(true);

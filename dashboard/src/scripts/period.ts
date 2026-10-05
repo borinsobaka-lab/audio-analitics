@@ -5,14 +5,10 @@
  *  «сегодня» — это тбилисское сегодня, а не UTC.
  */
 
-export function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+import { addDays, toApiDate } from "../api";
 
 export function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return ymd(d);
+  return toApiDate(addDays(new Date(), -n));
 }
 
 /** Начало дня по местному времени — в ISO для сервера; shift=1 — следующий
@@ -35,7 +31,11 @@ export const PERIOD_PRESETS = [
   { key: "all", label: "Всё время", from: () => "" },
 ] as const;
 
-export const DEFAULT_PERIOD: Period = { from: daysAgo(29), to: daysAgo(0) };
+/** Последние 30 дней — считается при открытии, а не при загрузке модуля:
+ *  вкладка может жить дольше суток. */
+export function defaultPeriod(): Period {
+  return { from: daysAgo(29), to: daysAgo(0) };
+}
 
 /** Какой отрезок выбран сейчас; пусто — даты заданы руками. */
 export function activePreset(p: Period): string {

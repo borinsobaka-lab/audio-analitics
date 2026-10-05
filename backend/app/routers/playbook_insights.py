@@ -144,7 +144,7 @@ async def copy_stats(
         ).all()
     except ProgrammingError as exc:
         await db.rollback()
-        raise missing_migration("Статистика", "015_playbook_copies_ai.sql") from exc
+        raise missing_migration("Статистика ещё не включена", "015_playbook_copies_ai.sql") from exc
 
     # Названия и разделы — текущие: скрипт могли переименовать после
     # копирований. Удалённый остаётся под последним названием.

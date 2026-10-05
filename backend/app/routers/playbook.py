@@ -353,7 +353,7 @@ async def create_section(
         await db.commit()
     except ProgrammingError as exc:
         await db.rollback()
-        raise missing_migration("Разделы-звонки", "016_call_scripts.sql") from exc
+        raise missing_migration("Разделы-звонки ещё не включены", "016_call_scripts.sql") from exc
     await db.refresh(section)
     return section_out(section, flow)
 
