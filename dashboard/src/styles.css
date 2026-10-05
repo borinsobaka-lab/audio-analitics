@@ -1477,8 +1477,47 @@ tbody tr:hover {
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
-  margin: 0 -4px;
-  padding: 0 4px;
+  /* Место под скролл зарезервировано всегда и вынесено к краю колонки:
+     пункты меню не сдвигаются, когда разделов становится больше экрана. */
+  scrollbar-gutter: stable;
+  margin: 0 -12px 0 -4px;
+  padding: 0 0 0 4px;
+}
+/* Свой скролл меню: тонкая полупрозрачная «таблетка» без дорожки и
+   стрелок. Едва видна, пока курсор не в меню; ярче — под курсором и при
+   перетаскивании. Системный серый скролл резал тёмную колонку. */
+.nav-sections::-webkit-scrollbar {
+  width: 8px;
+}
+.nav-sections::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nav-sections::-webkit-scrollbar-thumb {
+  /* Прозрачная рамка сужает видимую таблетку до 4px, зона захвата — 8px. */
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08) padding-box;
+}
+.sidebar:hover .nav-sections::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2) padding-box;
+}
+.nav-sections::-webkit-scrollbar-thumb:hover,
+.nav-sections::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.36) padding-box;
+}
+.nav-sections::-webkit-scrollbar-button {
+  display: none;
+}
+/* Firefox не знает ::-webkit-scrollbar — там тонкий скролл стандартными
+   свойствами. В Chrome их не задаём: они отменили бы таблетку выше. */
+@supports not selector(::-webkit-scrollbar) {
+  .nav-sections {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  }
+  .sidebar:hover .nav-sections {
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
 }
 .nav-link.wrap {
   white-space: normal;
