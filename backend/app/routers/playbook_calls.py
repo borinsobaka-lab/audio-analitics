@@ -30,7 +30,8 @@ from ..schemas import (
     CallStatsOut,
     CallStatTotals,
 )
-from .playbook import author, current_org, load_flows
+from .playbook import load_flows
+from .playbook_common import author, current_org, missing_migration
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
 log = logging.getLogger(__name__)
@@ -38,7 +39,6 @@ log = logging.getLogger(__name__)
 # Не завершённый звонок, который трогали меньше получаса назад, ещё идёт —
 # в статистику он не попадает, иначе «закончился» бы на текущем шаге.
 LIVE_WINDOW = timedelta(minutes=30)
-MISSING_MIGRATION = "Аналитика звонков ещё не включена: выполните миграцию 017_call_runs.sql"
 
 
 @router.put("/call-runs/{run_id}", status_code=204)
@@ -211,7 +211,7 @@ async def call_stats(
         ).all()
     except ProgrammingError as exc:
         await db.rollback()
-        raise HTTPException(503, MISSING_MIGRATION) from exc
+        raise missing_migration("Аналитика звонков", "017_call_runs.sql") from exc
 
     counts = {r.section_id: (r.title, r.runs) for r in per_section}
     sections = [

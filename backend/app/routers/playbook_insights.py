@@ -37,7 +37,8 @@ from ..schemas import (
     LangCounts,
     PlaybookCopyIn,
 )
-from .playbook import author, current_org, utcnow
+from ..models import utcnow
+from .playbook_common import author, current_org, missing_migration
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
 log = logging.getLogger(__name__)
@@ -143,9 +144,7 @@ async def copy_stats(
         ).all()
     except ProgrammingError as exc:
         await db.rollback()
-        raise HTTPException(
-            503, "Статистика ещё не включена: выполните миграцию 015_playbook_copies_ai.sql"
-        ) from exc
+        raise missing_migration("Статистика", "015_playbook_copies_ai.sql") from exc
 
     # Названия и разделы — текущие: скрипт могли переименовать после
     # копирований. Удалённый остаётся под последним названием.

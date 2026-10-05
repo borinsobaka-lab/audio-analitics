@@ -8,32 +8,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, CopyStats, LangCounts, plural } from "../api";
-import { DateField, Empty, Note, Skeleton } from "../components/ui";
+import { Empty, Note, Skeleton } from "../components/ui";
 import { Slider } from "../components/Slider";
 import { LANGS, scriptPath } from "./logic";
+import { DEFAULT_PERIOD, Period, periodQuery } from "./period";
+import PeriodFilter from "./PeriodFilter";
 import { usePlaybook } from "./store";
-
-/** Дата в поле — YYYY-MM-DD по часам браузера (тбилисское время). */
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return ymd(d);
-}
-/** Начало дня по местному времени — в ISO для сервера. */
-function dayStart(value: string, shift = 0): string {
-  const [y, m, d] = value.split("-").map(Number);
-  return new Date(y, m - 1, d + shift).toISOString();
-}
-
-const PRESETS = [
-  { key: "today", label: "Сегодня", from: () => daysAgo(0) },
-  { key: "7", label: "7 дней", from: () => daysAgo(6) },
-  { key: "30", label: "30 дней", from: () => daysAgo(29) },
-  { key: "all", label: "Всё время", from: () => "" },
-];
 
 function LangCells({ row, lang }: { row: LangCounts; lang: string }) {
   return (
@@ -50,8 +30,7 @@ function LangCells({ row, lang }: { row: LangCounts; lang: string }) {
 export default function CopyStatsView() {
   const navigate = useNavigate();
   const { playbook } = usePlaybook();
-  const [from, setFrom] = useState(daysAgo(29));
-  const [to, setTo] = useState(daysAgo(0));
+  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
   const [user, setUser] = useState("");
   const [lang, setLang] = useState("");
   const [data, setData] = useState<CopyStats | null>(null);
@@ -66,12 +45,7 @@ export default function CopyStatsView() {
     setLoading(true);
     setError("");
     api
-      .copyStats({
-        from: from ? dayStart(from) : "",
-        to: to ? dayStart(to, 1) : "",
-        user,
-        lang,
-      })
+      .copyStats({ ...periodQuery(period), user, lang })
       .then((res) => {
         if (!alive) return;
         setData(res);
@@ -86,9 +60,8 @@ export default function CopyStatsView() {
     return () => {
       alive = false;
     };
-  }, [from, to, user, lang]);
+  }, [period, user, lang]);
 
-  const preset = PRESETS.find((p) => p.from() === from && to === daysAgo(0))?.key ?? "";
   const max = useMemo(() => Math.max(1, ...(data?.items.map((i) => i.total) ?? [1])), [data]);
 
   function open(itemId: string | null) {
@@ -102,26 +75,7 @@ export default function CopyStatsView() {
   return (
     <div className="copy-stats">
       <div className="stats-filters">
-        <Slider className="seg" active={preset} role="group" aria-label="Период">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className={`seg-btn${preset === p.key ? " on" : ""}`}
-              onClick={() => {
-                setFrom(p.from());
-                setTo(daysAgo(0));
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </Slider>
-        <span className="stats-range">
-          <DateField value={from} max={to || undefined} onChange={setFrom} aria-label="С даты" />
-          <span className="muted">—</span>
-          <DateField value={to} min={from || undefined} onChange={setTo} aria-label="По дату" />
-        </span>
+        <PeriodFilter value={period} onChange={setPeriod} />
         <select
           className="stats-user"
           value={user}

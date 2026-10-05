@@ -132,11 +132,6 @@ export function messageText(message: ScriptMessage, lang: ScriptLang): ShownText
   return { text: other ? message[other.key] : "", lang: other?.key ?? lang, fallback: true };
 }
 
-/** Есть ли у скрипта текст на этом языке хоть в одном сообщении варианта. */
-export function variantHasLang(variant: ScriptVariant, lang: ScriptLang): boolean {
-  return variant.messages.some((m) => m[lang].trim());
-}
-
 /** Копирование в буфер. Clipboard API есть только на https и в фокусе;
  *  запасной путь через выделение textarea — для всего остального. */
 export async function copyText(text: string): Promise<boolean> {

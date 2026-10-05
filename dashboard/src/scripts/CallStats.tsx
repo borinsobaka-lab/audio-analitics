@@ -12,26 +12,10 @@
  *  Все числа видны текстом — полосы только помогают глазу.
  */
 import { useEffect, useMemo, useState } from "react";
-import { addDays, api, CallStats, plural, toApiDate } from "../api";
-import { DateField, Empty, Note, Section, Skeleton, Stat } from "../components/ui";
-import { Slider } from "../components/Slider";
-
-const today = () => new Date();
-const PRESETS = [
-  { key: "7", label: "7 дней", range: () => [addDays(today(), -6), today()] },
-  { key: "30", label: "30 дней", range: () => [addDays(today(), -29), today()] },
-  {
-    key: "month",
-    label: "Этот месяц",
-    range: () => [new Date(today().getFullYear(), today().getMonth(), 1), today()],
-  },
-] as const;
-
-/** Начало дня по часам браузера (тбилисское время) — в ISO для сервера. */
-function dayStart(value: string, shift = 0): string {
-  const [y, m, d] = value.split("-").map(Number);
-  return new Date(y, m - 1, d + shift).toISOString();
-}
+import { api, CallStats, plural } from "../api";
+import { Empty, Note, Section, Skeleton, Stat } from "../components/ui";
+import { DEFAULT_PERIOD, Period, periodQuery } from "./period";
+import PeriodFilter from "./PeriodFilter";
 
 function pct(part: number, whole: number): string {
   if (!whole) return "—";
@@ -40,24 +24,13 @@ function pct(part: number, whole: number): string {
 }
 
 export default function CallStatsView() {
-  const [preset, setPreset] = useState<string>("30");
-  const [range, setRange] = useState<[string, string]>(() => {
-    const [a, b] = PRESETS[1].range();
-    return [toApiDate(a), toApiDate(b)];
-  });
+  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
   const [section, setSection] = useState("");
   const [data, setData] = useState<CallStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const q = useMemo(
-    () => ({
-      from: range[0] ? dayStart(range[0]) : "",
-      to: range[1] ? dayStart(range[1], 1) : "",
-      section,
-    }),
-    [range, section]
-  );
+  const q = useMemo(() => ({ ...periodQuery(period), section }), [period, section]);
 
   useEffect(() => {
     let alive = true;
@@ -73,33 +46,10 @@ export default function CallStatsView() {
     };
   }, [q]);
 
-  const applyPreset = (key: string) => {
-    const [a, b] = PRESETS.find((x) => x.key === key)!.range();
-    setPreset(key);
-    setRange([toApiDate(a), toApiDate(b)]);
-  };
-  const setCustom = (index: 0 | 1, value: string) => {
-    if (!value) return;
-    setPreset("custom");
-    setRange((r) => (index === 0 ? [value, r[1]] : [r[0], value]));
-  };
-
   return (
     <div className="calls">
       <div className="stats-filters">
-        <Slider className="seg" active={preset} role="group" aria-label="Период">
-          {PRESETS.map((p) => (
-            <button key={p.key} type="button" className={`seg-btn${preset === p.key ? " on" : ""}`}
-              onClick={() => applyPreset(p.key)}>
-              {p.label}
-            </button>
-          ))}
-        </Slider>
-        <span className="stats-range">
-          <DateField value={range[0]} max={range[1]} onChange={(v) => setCustom(0, v)} aria-label="С даты" />
-          <span className="muted">—</span>
-          <DateField value={range[1]} min={range[0]} onChange={(v) => setCustom(1, v)} aria-label="По дату" />
-        </span>
+        <PeriodFilter value={period} onChange={setPeriod} />
         {data && data.sections.length > 1 && (
           <select className="stats-user" value={data.section_id ?? ""} aria-label="Сценарий"
             onChange={(e) => setSection(e.target.value)}>

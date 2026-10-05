@@ -21,22 +21,16 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, ProgrammingError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import UserContext, require_scripts_edit, require_user
 from ..db import get_db
 from ..models import (
+    Organization,
     PlaybookCallFlow,
     PlaybookChange,
-    PlaybookSeen,
-    PlaybookSuggestion,
-    Employee,
-    Location,
-    Organization,
     PlaybookItem,
     PlaybookSection,
-    PlaybookSettings,
     PlaybookState,
     utcnow,
 )
@@ -50,18 +44,9 @@ from ..schemas import (
     PlaybookSectionIn,
     PlaybookSectionOut,
     PlaybookSectionPatch,
-    PlaybookChangeOut,
-    PlaybookChangesPage,
-    PlaybookSettingsIn,
-    PlaybookSuggestionIn,
-    PlaybookSuggestionOut,
-    PlaybookSuggestionPatch,
-    PlaybookSuggestionsPage,
-    UnreadOut,
-    PlaybookSettingsOut,
-    AdminNamesOut,
-    StudioNamesOut,
 )
+
+from .playbook_common import author, current_org, missing_migration
 
 router = APIRouter(prefix="/api/playbook", tags=["playbook"])
 log = logging.getLogger(__name__)
@@ -169,19 +154,6 @@ def clean_variants(body: PlaybookItemIn) -> list[dict]:
         }
         for variant in body.variants
     ]
-
-
-def author(user: UserContext) -> str:
-    if user.is_owner:
-        return "Владелец"
-    return user.full_name or user.email or "владелец"
-
-
-async def current_org(db: AsyncSession) -> Organization:
-    org = await db.scalar(select(Organization).limit(1))
-    if not org:
-        raise HTTPException(400, "Организация не создана — выполните seed")
-    return org
 
 
 async def ensure_seeded(db: AsyncSession, org: Organization) -> None:
@@ -301,20 +273,6 @@ async def record(
         log.warning("Хронология скриптов не записана: нет таблицы playbook_changes (миграция 013)")
 
 
-def encode_cursor(created_at, row_id) -> str:
-    return f"{created_at.isoformat()}|{row_id}"
-
-
-def decode_cursor(cursor: str):
-    from datetime import datetime as dt
-
-    try:
-        at, row_id = cursor.split("|", 1)
-        return dt.fromisoformat(at), uuid.UUID(row_id)
-    except ValueError:
-        raise HTTPException(400, "Неверный курсор") from None
-
-
 async def next_position(db: AsyncSession, model, *where) -> int:
     last = await db.scalar(select(func.max(model.position)).where(*where))
     return 0 if last is None else last + 1
@@ -395,9 +353,7 @@ async def create_section(
         await db.commit()
     except ProgrammingError as exc:
         await db.rollback()
-        raise HTTPException(
-            503, "Разделы-звонки ещё не включены: выполните миграцию 016_call_scripts.sql"
-        ) from exc
+        raise missing_migration("Разделы-звонки", "016_call_scripts.sql") from exc
     await db.refresh(section)
     return section_out(section, flow)
 
@@ -632,273 +588,3 @@ async def delete_item(
 
 
 # --- Настройки: студии, имена администраторов, переменные ---
-
-def first_name(full_name: str) -> str:
-    """Имя по умолчанию — первое слово: в чате пишут «Меня зовут Анна», а не
-    «Анна Гелашвили»."""
-    parts = full_name.split()
-    return parts[0] if parts else ""
-
-
-@router.get("/settings", response_model=PlaybookSettingsOut)
-async def get_settings(
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Читают все вошедшие: без настроек админка не подставит в скрипт ни
-    имя администратора, ни студию, ни переменные."""
-    org = await current_org(db)
-    row = await db.get(PlaybookSettings, org.id)
-    data = (row.data if row else None) or {}
-    studios = data.get("studios", {})
-    admins = data.get("admins", {})
-
-    locations = (
-        await db.scalars(select(Location).order_by(Location.active.desc(), Location.name))
-    ).all()
-    employees = (
-        await db.scalars(
-            select(Employee)
-            .where(Employee.active.is_(True))
-            .order_by(Employee.login.is_(None), Employee.full_name)
-        )
-    ).all()
-
-    def names(saved: dict | None, default_ru: str) -> dict:
-        saved = saved or {}
-        return {
-            "ru": saved.get("ru") or default_ru,
-            "en": saved.get("en", ""),
-            "ka": saved.get("ka", ""),
-        }
-
-    return PlaybookSettingsOut(
-        studios=[
-            StudioNamesOut(
-                location_id=loc.id,
-                location_name=loc.name,
-                active=loc.active,
-                **names(studios.get(str(loc.id)), loc.name),
-            )
-            for loc in locations
-        ],
-        admins=[
-            AdminNamesOut(
-                employee_id=emp.id,
-                full_name=emp.full_name,
-                has_login=bool(emp.login),
-                **names(admins.get(str(emp.id)), first_name(emp.full_name)),
-            )
-            for emp in employees
-        ],
-        variables=data.get("variables", []),
-        updated_at=row.updated_at if row else None,
-        updated_by=row.updated_by if row else "",
-    )
-
-
-@router.put("/settings", response_model=PlaybookSettingsOut)
-async def save_settings(
-    body: PlaybookSettingsIn,
-    user: UserContext = Depends(require_scripts_edit),
-    db: AsyncSession = Depends(get_db),
-):
-    org = await current_org(db)
-
-    def clean(texts) -> dict:
-        return {lang: getattr(texts, lang).strip() for lang in ("ru", "en", "ka")}
-
-    row = await db.get(PlaybookSettings, org.id)
-    # Остальное в настройках (промпт ИИ-помощника) правится на своей вкладке
-    # и здесь не теряется.
-    data = {
-        **dict((row.data if row else None) or {}),
-        "studios": {str(k): clean(v) for k, v in body.studios.items()},
-        "admins": {str(k): clean(v) for k, v in body.admins.items()},
-        "variables": [
-            {
-                "key": v.key.strip(),
-                "type": v.type,
-                "description": v.description.strip(),
-                # У даты текстов нет — значение считается от сегодняшнего дня.
-                "ru": v.ru.strip() if v.type == "text" else "",
-                "en": v.en.strip() if v.type == "text" else "",
-                "ka": v.ka.strip() if v.type == "text" else "",
-                "offset_days": v.offset_days if v.type == "date" else 0,
-            }
-            for v in body.variables
-        ],
-    }
-    if row:
-        row.data = data
-        row.updated_at = utcnow()
-        row.updated_by = author(user)
-    else:
-        db.add(PlaybookSettings(org_id=org.id, data=data, updated_by=author(user)))
-    await db.commit()
-    return await get_settings(user, db)
-
-
-# --- Хронология изменений ---
-
-PAGE = 20
-
-
-@router.get("/changes", response_model=PlaybookChangesPage)
-async def list_changes(
-    cursor: str = "",
-    limit: int = PAGE,
-    # Хронологию видят все: «почему текст стал другим» — вопрос и того, кто
-    # скрипты только читает.
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Порциями, от новых к старым. Курсор — время и id последней записи
-    порции: в отличие от номера страницы, он не съезжает, когда между
-    порциями кто-то сохранил новую правку."""
-    org = await current_org(db)
-    limit = max(1, min(limit, 50))
-    q = select(PlaybookChange).where(PlaybookChange.org_id == org.id)
-    if cursor:
-        at, row_id = decode_cursor(cursor)
-        q = q.where(
-            (PlaybookChange.created_at < at)
-            | ((PlaybookChange.created_at == at) & (PlaybookChange.id < row_id))
-        )
-    rows = (
-        await db.scalars(
-            q.order_by(PlaybookChange.created_at.desc(), PlaybookChange.id.desc()).limit(limit + 1)
-        )
-    ).all()
-    more = len(rows) > limit
-    rows = rows[:limit]
-    return PlaybookChangesPage(
-        items=[PlaybookChangeOut.model_validate(r) for r in rows],
-        next_cursor=encode_cursor(rows[-1].created_at, rows[-1].id) if more and rows else "",
-    )
-
-
-# --- Предложения сотрудников ---
-
-async def seen_at(db: AsyncSession, user: UserContext):
-    row = await db.get(PlaybookSeen, user.author_key)
-    return row.suggestions_seen_at if row else None
-
-
-@router.post("/suggestions", response_model=PlaybookSuggestionOut, status_code=201)
-async def create_suggestion(
-    body: PlaybookSuggestionIn,
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Предложить может любой, кто видит скрипты: замечают неудачный текст
-    чаще всего те, кто им пользуется у стойки."""
-    org = await current_org(db)
-    item = None
-    if body.item_id:
-        item = await db.get(PlaybookItem, body.item_id)
-        if not item or item.org_id != org.id:
-            raise HTTPException(404, "Скрипт не найден — возможно, его удалили")
-    row = PlaybookSuggestion(
-        org_id=org.id,
-        author_key=user.author_key,
-        author_name=author(user),
-        item_id=item.id if item else None,
-        item_title=item.title if item else "",
-        text=body.text.strip(),
-    )
-    db.add(row)
-    await db.commit()
-    await db.refresh(row)
-    return row
-
-
-@router.get("/suggestions", response_model=PlaybookSuggestionsPage)
-async def list_suggestions(
-    cursor: str = "",
-    limit: int = PAGE,
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    org = await current_org(db)
-    limit = max(1, min(limit, 50))
-    seen = await seen_at(db, user)
-    q = select(PlaybookSuggestion).where(PlaybookSuggestion.org_id == org.id)
-    if cursor:
-        at, row_id = decode_cursor(cursor)
-        q = q.where(
-            (PlaybookSuggestion.created_at < at)
-            | ((PlaybookSuggestion.created_at == at) & (PlaybookSuggestion.id < row_id))
-        )
-    rows = (
-        await db.scalars(
-            q.order_by(PlaybookSuggestion.created_at.desc(), PlaybookSuggestion.id.desc())
-            .limit(limit + 1)
-        )
-    ).all()
-    more = len(rows) > limit
-    rows = rows[:limit]
-    items = []
-    for r in rows:
-        out = PlaybookSuggestionOut.model_validate(r)
-        out.unread = r.author_key != user.author_key and (seen is None or r.created_at > seen)
-        items.append(out)
-    return PlaybookSuggestionsPage(
-        items=items,
-        next_cursor=encode_cursor(rows[-1].created_at, rows[-1].id) if more and rows else "",
-    )
-
-
-@router.patch("/suggestions/{suggestion_id}", response_model=PlaybookSuggestionOut)
-async def update_suggestion(
-    suggestion_id: uuid.UUID,
-    body: PlaybookSuggestionPatch,
-    user: UserContext = Depends(require_scripts_edit),
-    db: AsyncSession = Depends(get_db),
-):
-    row = await db.get(PlaybookSuggestion, suggestion_id)
-    if not row:
-        raise HTTPException(404, "Предложение не найдено")
-    row.status = body.status
-    row.resolved_at = utcnow() if body.status == "done" else None
-    row.resolved_by = author(user) if body.status == "done" else ""
-    await db.commit()
-    await db.refresh(row)
-    return row
-
-
-@router.get("/suggestions/unread", response_model=UnreadOut)
-async def unread_suggestions(
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Сколько новых предложений этот сотрудник ещё не видел. Свои не
-    считаются. Настройки скриптов открыты всем — и значок у всех свой."""
-    org = await current_org(db)
-    seen = await seen_at(db, user)
-    q = select(func.count()).select_from(PlaybookSuggestion).where(
-        PlaybookSuggestion.org_id == org.id,
-        PlaybookSuggestion.author_key != user.author_key,
-    )
-    if seen is not None:
-        q = q.where(PlaybookSuggestion.created_at > seen)
-    return UnreadOut(count=(await db.scalar(q)) or 0)
-
-
-@router.post("/suggestions/seen", response_model=UnreadOut)
-async def mark_suggestions_seen(
-    user: UserContext = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    # Одним запросом: два открытия вкладки подряд (две вкладки браузера)
-    # иначе спорят за одну строку и второе падает на уникальном ключе.
-    now = utcnow()
-    await db.execute(
-        pg_insert(PlaybookSeen)
-        .values(user_key=user.author_key, suggestions_seen_at=now)
-        .on_conflict_do_update(
-            index_elements=[PlaybookSeen.user_key], set_={"suggestions_seen_at": now}
-        )
-    )
-    await db.commit()
-    return UnreadOut(count=0)

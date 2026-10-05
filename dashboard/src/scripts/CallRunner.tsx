@@ -20,18 +20,13 @@
  *  теряет клиентов. Администратору ничего нажимать не нужно.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, CallNode, CallRunIn, ScriptLang, ScriptSection } from "../api";
+import { api, CallNode, ScriptLang, ScriptSection } from "../api";
 import { Note } from "../components/ui";
 import Formatted from "./Formatted";
+import { CallStep, newRunId, useCallRun } from "./callRun";
 import { langInfo, VarResolver } from "./logic";
 
-interface Step {
-  id: string;
-  /** Что ответил клиент на этом шаге (кнопка), или «переход» из панели. */
-  answer?: string;
-  /** Когда открыли блок. */
-  at?: string;
-}
+type Step = CallStep;
 
 interface Saved {
   path: Step[];
@@ -40,36 +35,8 @@ interface Saved {
   runId?: string;
 }
 
-function newRunId(): string {
-  // randomUUID есть только на https и localhost.
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  b[6] = (b[6] & 0x0f) | 0x40;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
 function fresh(start: string): Saved {
   return { path: [{ id: start, at: new Date().toISOString() }], name: "", runId: newRunId() };
-}
-
-function runBody(sectionId: string, byId: Map<string, CallNode>, path: Step[], finished: boolean): CallRunIn {
-  const now = new Date().toISOString();
-  return {
-    section_id: sectionId,
-    path: path.map((s) => {
-      const node = byId.get(s.id);
-      return {
-        id: s.id,
-        title: (node?.title ?? s.id).slice(0, 120),
-        group: node?.group ?? "main",
-        answer: (s.answer ?? "").slice(0, 120),
-        at: s.at ?? now,
-      };
-    }),
-    finished,
-  };
 }
 
 function storageKey(sectionId: string) {
@@ -160,43 +127,12 @@ export default function CallRunner({
       path: [...s.path.slice(0, index), { id: s.path[index].id, at: s.path[index].at }],
     }));
 
-  /* --- Путь звонка в аналитику ------------------------------------------- */
-
-  // Звонок начинается с первого ответа клиента; конец сценария — блок без
-  // ответов. Шлётся с задержкой, чтобы быстрые клики не превращались в
-  // пачку запросов, и досылается при уходе со страницы.
-  const started = validPath.length > 1;
-  const atEnd = current.answers.length === 0;
-  const pending = useRef<{ id: string; body: CallRunIn } | null>(null);
-  const timer = useRef<number>();
-  const flush = useCallback(() => {
-    window.clearTimeout(timer.current);
-    const p = pending.current;
-    pending.current = null;
-    if (p) api.saveCallRun(p.id, p.body).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!started || !state.runId) return;
-    pending.current = { id: state.runId, body: runBody(section.id, byId, validPath, atEnd) };
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(flush, 400);
-  }, [validPath, started, atEnd, state.runId, section.id, byId, flush]);
-
-  useEffect(() => {
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("pagehide", flush);
-      flush();
-    };
-  }, [flush]);
+  // Путь звонка тихо уходит в аналитику; конец сценария — блок без ответов.
+  const endRun = useCallRun(section.id, byId, validPath, state.runId, current.answers.length === 0);
 
   /** «Новый звонок»: прежний звонок закончился на текущем блоке. */
   const restart = () => {
-    if (started && state.runId) {
-      pending.current = { id: state.runId, body: runBody(section.id, byId, validPath, true) };
-      flush();
-    }
+    endRun();
     setState(fresh(flow.start));
   };
 
