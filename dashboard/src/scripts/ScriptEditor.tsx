@@ -246,12 +246,12 @@ export default function ScriptEditor({
         </div>
 
         <label className="field">
-          <span className="label">Как использовать — видит только администратор</span>
+          <span className="label">Как использовать — подсказка всем сотрудникам, клиенту не копируется</span>
           <textarea
             {...focusProps("ed-note")}
             value={draft.note}
             rows={rowsFor(draft.note, 2)}
-            placeholder="Когда отправлять, что проверить перед этим. Необязательно."
+            placeholder="Когда отправлять, что проверить перед этим. Видят все, кто открывает скрипты. Необязательно."
             onChange={(e) => patch({ note: e.target.value })}
           />
         </label>

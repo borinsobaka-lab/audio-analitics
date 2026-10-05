@@ -1610,11 +1610,41 @@ tbody tr:hover {
   box-shadow: var(--ring), var(--sh-2);
 }
 
+/* Шапка карточки — тёмная, цветом открытого пункта меню, название белым
+   (решение владельца): по тёмным шапкам глаз находит, где начинается
+   следующий скрипт, в длинной ленте раскрытых карточек. */
 .script-top {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 18px 20px 14px;
+  padding: 14px 20px;
+  background: var(--nav-active);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  color: var(--nav-ink-hi);
+}
+.script-top .script-section {
+  color: var(--nav-ink-2);
+}
+/* Метки типа на тёмной шапке — светлые оттенки тех же цветов, ≥5.7:1. */
+.script-top .kind-chat {
+  background: rgba(42, 120, 214, 0.24);
+  color: #9cc6f7;
+}
+.script-top .kind-call {
+  background: rgba(0, 168, 116, 0.24);
+  color: #6fe0b8;
+}
+.script-top .kind-task {
+  background: rgba(240, 138, 0, 0.24);
+  color: #ffc469;
+}
+.script-top .kind-info {
+  background: rgba(255, 255, 255, 0.1);
+  color: #c4ccd6;
+}
+.script-top mark.hit {
+  background: rgba(252, 95, 255, 0.35);
+  color: inherit;
 }
 .script-head {
   flex: 1;
@@ -1698,7 +1728,7 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 0 20px 16px;
+  padding: 16px 20px;
 }
 /* «Как использовать» и «Дальше» — пара плашек одной формы: зелёная —
    «до отправки», синяя — «после». Заголовки обычным текстом, не капсом:
@@ -2718,10 +2748,10 @@ button.var-chip:hover {
     margin: 0;
   }
   .script-top {
-    padding: 12px 10px 12px 16px;
+    padding: 12px 16px;
   }
   .script-body {
-    padding: 0 16px 16px;
+    padding: 14px 16px;
   }
   .copy-btn {
     min-width: 0;
