@@ -9,19 +9,34 @@
  *  «Копировать» — открывать скрипт не нужно. Написанный ИИ ответ можно
  *  поправить прямо в поле перед копированием.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, AssistResult, ScriptItem, ScriptLang, ScriptSection } from "../api";
 import { Note } from "../components/ui";
 import { langInfo, messageText, pickVariant, resolveText, VarResolver } from "./logic";
 import { CopyButton } from "./ScriptCard";
 import RichText from "./RichText";
 
-const IconSparkle = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9L12 2.5z" />
-    <path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8L19 15z" opacity="0.7" />
-  </svg>
-);
+/** Искра ИИ — залита фирменным градиентом ИИ (тот же, что --ai-grad в
+ *  стилях: бирюза → голубой → фиолетовый). white — белая, для градиентной
+ *  подложки. id градиента свой у каждого значка: на странице их несколько. */
+function IconSparkle({ size = 16, white = false }: { size?: number; white?: boolean }) {
+  const id = `ai-grad-${useId().replace(/:/g, "")}`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="ai-sparkle">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#2cd8d5" />
+          <stop offset="48%" stopColor="#6b8dd6" />
+          <stop offset="100%" stopColor="#8e37d7" />
+        </linearGradient>
+      </defs>
+      <g fill={white ? "#fff" : `url(#${id})`}>
+        <path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9L12 2.5z" />
+        <path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8L19 15z" opacity="0.75" />
+      </g>
+    </svg>
+  );
+}
 export { IconSparkle };
 
 function MatchCard({
@@ -150,7 +165,7 @@ export default function AssistDialog({
   return (
     <dialog
       ref={ref}
-      className="modal modal-wide"
+      className={`modal modal-wide ai-modal${busy ? " thinking" : ""}`}
       aria-labelledby="assist-title"
       onClose={onClose}
       onClick={(e) => {
@@ -160,7 +175,7 @@ export default function AssistDialog({
       <div className="modal-head">
         <div>
           <h2 id="assist-title" className="assist-title">
-            <span className="assist-icon"><IconSparkle size={18} /></span>
+            <span className="assist-icon"><IconSparkle size={18} white /></span>
             ИИ-помощник
           </h2>
           <p className="muted">
@@ -200,7 +215,7 @@ export default function AssistDialog({
           </label>
           <div className="assist-ask-foot">
             <span className="muted">Ctrl + Enter — подобрать</span>
-            <button type="submit" disabled={busy || message.trim().length < 2}>
+            <button type="submit" className="ai-primary" disabled={busy || message.trim().length < 2}>
               {busy ? "Думаю…" : result ? "Подобрать заново" : "Подобрать ответ"}
             </button>
           </div>
@@ -209,7 +224,9 @@ export default function AssistDialog({
         {busy && (
           <div className="assist-busy" role="status">
             <span className="assist-spinner" aria-hidden="true" />
-            Подбираю скрипт или пишу ответ и сверяю его с базой — обычно 10–40 секунд.
+            <span className="ai-text">
+              Подбираю скрипт или пишу ответ и сверяю его с базой — не дольше 10 секунд.
+            </span>
           </div>
         )}
         {error && <Note kind="error">{error}</Note>}

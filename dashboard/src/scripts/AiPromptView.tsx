@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { AiPrompt, api, fmtWhen } from "../api";
 import { Note, Skeleton } from "../components/ui";
+import { IconSparkle } from "./AssistDialog";
 
 export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
   const [data, setData] = useState<AiPrompt | null>(null);
@@ -57,7 +58,10 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
     <div className="ai-settings">
       <div className="sheet sheet-pad ai-card">
         <div className="ai-how">
-          <strong>Как работает.</strong> Сотрудник нажимает «ИИ-помощник» и вставляет сообщение
+          <span className="ai-how-head">
+            <span className="assist-icon"><IconSparkle size={18} white /></span>
+            <strong>Как работает ИИ-помощник</strong>
+          </span> Сотрудник нажимает «ИИ-помощник» и вставляет сообщение
           клиента. ИИ видит всю базу: скрипты, правила продаж из скрипта продаж «Аналитики» и
           переменные с их значениями из «Подстановки».
           <ol>
@@ -141,7 +145,8 @@ export default function AiPromptView({ canEdit }: { canEdit: boolean }) {
                   Вернуть стандартные промпты
                 </button>
               )}
-              <button type="button" disabled={saving || !dirty || !text.trim() || !verifyText.trim()}
+              <button type="button" className="ai-primary"
+                disabled={saving || !dirty || !text.trim() || !verifyText.trim()}
                 onClick={() => save(text, verifyText)}>
                 {saving ? "Сохраняем…" : "Сохранить"}
               </button>

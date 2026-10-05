@@ -507,6 +507,39 @@ export interface Page<T> {
   next_cursor: string;
 }
 
+/* Ответы ИИ-помощника — с запасом на рассинхрон версий: админка
+ * обновляется сама, а бэкенд — по Redeploy. Поле, которого старый сервер
+ * не знает, получает значение по умолчанию, а не роняет страницу. */
+function normalizeAiPrompt(raw: Partial<AiPrompt>): AiPrompt {
+  return {
+    prompt: raw.prompt ?? "",
+    default_prompt: raw.default_prompt ?? raw.prompt ?? "",
+    is_default: raw.is_default ?? true,
+    verify_prompt: raw.verify_prompt ?? raw.default_verify_prompt ?? "",
+    default_verify_prompt: raw.default_verify_prompt ?? raw.verify_prompt ?? "",
+    verify_is_default: raw.verify_is_default ?? true,
+    model: raw.model ?? "",
+    model_saved: raw.model_saved ?? "",
+    model_default: raw.model_default ?? "",
+    configured: raw.configured ?? false,
+  };
+}
+
+function normalizeAssist(raw: Partial<AssistResult>): AssistResult {
+  return {
+    status: raw.status ?? "ready",
+    language: raw.language ?? "ru",
+    matches: raw.matches ?? [],
+    reply: raw.reply ?? "",
+    verified: raw.verified ?? false,
+    attempts: raw.attempts ?? 1,
+    sources: raw.sources ?? [],
+    missing_information: raw.missing_information ?? "",
+    issues: raw.issues ?? [],
+    comment: raw.comment ?? "",
+  };
+}
+
 // --- Endpoints ---
 
 export const api = {
@@ -756,11 +789,16 @@ export const api = {
     const qs = params.toString();
     return request<CopyStats>(`/api/playbook/stats${qs ? `?${qs}` : ""}`);
   },
-  aiPrompt: () => request<AiPrompt>("/api/playbook/ai"),
+  aiPrompt: () => request<Partial<AiPrompt>>("/api/playbook/ai").then(normalizeAiPrompt),
   saveAiPrompt: (body: { prompt: string; verify_prompt: string; model: string }) =>
-    request<AiPrompt>("/api/playbook/ai", { method: "PUT", body: JSON.stringify(body) }),
+    request<Partial<AiPrompt>>("/api/playbook/ai", { method: "PUT", body: JSON.stringify(body) }).then(
+      normalizeAiPrompt
+    ),
   assist: (body: { message: string; lang: ScriptLang; studio: string }) =>
-    request<AssistResult>("/api/playbook/assist", { method: "POST", body: JSON.stringify(body) }),
+    request<Partial<AssistResult>>("/api/playbook/assist", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(normalizeAssist),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

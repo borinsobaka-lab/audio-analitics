@@ -24,6 +24,11 @@
   /* Оправа переключателей (язык, студия, вкладки) — заметно темнее холста,
      чтобы невыбранные варианты читались как кнопки, а не как фон. */
   --seg-bg: #d9ded8;
+  /* ИИ — свой фирменный градиент: везде, где работает ИИ-помощник
+     (кнопка, значок, поле в фокусе, «Подобрать», ожидание). */
+  --ai-grad: linear-gradient(-225deg, #2cd8d5 0%, #6b8dd6 48%, #8e37d7 100%);
+  --ai-violet: #8e37d7;
+  --ai-glow: rgba(142, 55, 215, 0.45);
   --deck: #0b0d16;
   --deck-2: #171b28;
 
@@ -4394,19 +4399,32 @@ button.change-title:hover {
 
 /* Кнопка в панели — вторичная, как «+ Скрипт», но со значком-искрой
    акцентного цвета: заметна, не споря с поиском. */
-.assist-btn {
+button.secondary.assist-btn {
   flex: none;
   height: 40px;
   min-height: 40px;
   padding: 0 14px;
   gap: 7px;
-  background: var(--card);
+  /* Градиентная рамка: белая заливка поверх градиента, рамка прозрачная —
+     градиент виден только по краю. */
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--ai-grad) border-box;
   box-shadow: var(--sh-1);
   font-weight: 600;
   white-space: nowrap;
+  transition: box-shadow 200ms ease;
+}
+button.secondary.assist-btn:hover {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--ai-grad) border-box;
+  box-shadow: 0 0 0 3px rgba(142, 55, 215, 0.12), 0 4px 14px -4px var(--ai-glow);
 }
 .assist-btn svg {
-  color: var(--accent-ink);
+  flex: none;
 }
 .modal-wide {
   width: min(780px, calc(100vw - 32px));
@@ -4417,16 +4435,48 @@ button.change-title:hover {
   gap: 10px;
 }
 .assist-icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border-radius: var(--r-sm);
-  background: var(--accent-tint);
-  color: var(--accent-ink);
+  background: var(--ai-grad);
+  box-shadow: 0 4px 12px -4px var(--ai-glow);
 }
 .assist-ask {
-  padding-top: 18px;
+  /* Снизу — отступ, чтобы «Подобрать ответ» не прилипала к краю окна. */
+  padding: 18px 0 20px;
+}
+/* Поле в фокусе — рамка фирменным градиентом и мягкое фиолетовое свечение. */
+.ai-modal .assist-ask textarea {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--card-2), var(--card-2)) padding-box,
+    linear-gradient(var(--edge-strong), var(--edge-strong)) border-box;
+  transition: box-shadow 200ms ease;
+}
+.ai-modal .assist-ask textarea:focus {
+  outline: none;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--ai-grad) border-box;
+  box-shadow: 0 0 0 4px rgba(142, 55, 215, 0.12);
+}
+/* Главная кнопка ИИ — залита градиентом. */
+button.ai-primary,
+button.ai-primary:hover {
+  border: none;
+  background: var(--ai-grad);
+  color: #fff;
+  box-shadow: 0 6px 16px -6px var(--ai-glow);
+}
+button.ai-primary:hover {
+  filter: brightness(1.06);
+}
+button.ai-primary:disabled {
+  filter: saturate(0.6);
+  opacity: 0.55;
+  box-shadow: none;
 }
 .assist-ask textarea {
   width: 100%;
@@ -4444,23 +4494,42 @@ button.change-title:hover {
   font-size: 12.5px;
 }
 .assist-busy {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 18px 0 6px;
+  margin: 0 0 6px;
   padding: 12px 14px;
+  border: 1.5px solid transparent;
   border-radius: var(--r-sm);
-  background: var(--accent-tint);
-  color: var(--accent-ink);
+  background:
+    linear-gradient(#fbf8ff, #fbf8ff) padding-box,
+    var(--ai-grad) border-box;
   font-size: 14px;
+  font-weight: 500;
+}
+/* Текст ожидания — тем же градиентом, переливается. */
+.ai-text {
+  background: linear-gradient(90deg, #2cd8d5, #6b8dd6, #8e37d7, #6b8dd6, #2cd8d5);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 2.4s linear infinite;
+}
+@keyframes ai-shimmer {
+  to {
+    background-position: -200% 0;
+  }
 }
 .assist-spinner {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: none;
   border-radius: 50%;
-  border: 2px solid rgba(168, 27, 173, 0.25);
-  border-top-color: var(--accent-ink);
+  background: conic-gradient(from 0deg, #2cd8d5, #6b8dd6, #8e37d7, transparent 85%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
   animation: assist-spin 800ms linear infinite;
 }
 @keyframes assist-spin {
@@ -4544,8 +4613,9 @@ button.change-title:hover {
 .assist-why {
   margin: 0;
   padding: 8px 12px;
-  border-radius: var(--r-sm);
-  background: var(--green-tint);
+  border-left: 3px solid transparent;
+  border-image: var(--ai-grad) 1;
+  background: linear-gradient(-225deg, rgba(44, 216, 213, 0.1), rgba(107, 141, 214, 0.1) 48%, rgba(142, 55, 215, 0.1));
   color: var(--ink);
   font-size: 13.5px;
 }
@@ -4884,4 +4954,86 @@ button.change-title:hover {
 }
 .assist-source-link:hover {
   text-decoration: underline;
+}
+
+/* ИИ размышляет — окно дышит фиолетовым свечением: ощущение, что что-то
+   происходит, пока ждём ответ. */
+.ai-modal.thinking {
+  animation: modal-in 180ms var(--ease), ai-glow 2.2s ease-in-out infinite;
+}
+@keyframes ai-glow {
+  0%,
+  100% {
+    box-shadow:
+      var(--sh-deck),
+      0 0 0 1px rgba(142, 55, 215, 0.25),
+      0 0 24px 2px rgba(142, 55, 215, 0.35),
+      0 0 60px 8px rgba(107, 141, 214, 0.18);
+  }
+  50% {
+    box-shadow:
+      var(--sh-deck),
+      0 0 0 1px rgba(142, 55, 215, 0.55),
+      0 0 46px 8px rgba(142, 55, 215, 0.55),
+      0 0 110px 22px rgba(44, 216, 213, 0.22);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-modal.thinking,
+  .ai-text {
+    animation: none;
+  }
+  .ai-modal.thinking {
+    box-shadow: var(--sh-deck), 0 0 32px 4px rgba(142, 55, 215, 0.4);
+  }
+}
+.ai-how-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+.ai-prompt:focus,
+.ai-model input:focus {
+  outline: none;
+  border-color: transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--ai-grad) border-box;
+  box-shadow: 0 0 0 4px rgba(142, 55, 215, 0.12);
+}
+.ai-prompt,
+.ai-model input {
+  border: 2px solid var(--edge-strong);
+}
+
+/* Экран, который упал при отрисовке, — вместо серой пустоты. */
+.crash {
+  max-width: 560px;
+  margin: 40px 0;
+  padding: 24px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+.crash h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.crash-detail {
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.ai-card .field > .label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
 }

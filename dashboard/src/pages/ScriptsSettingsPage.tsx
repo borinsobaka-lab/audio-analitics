@@ -26,6 +26,7 @@ import {
 import { Note, PageHead, Section, Skeleton } from "../components/ui";
 import { Slider } from "../components/Slider";
 import AiPromptView from "../scripts/AiPromptView";
+import { IconSparkle } from "../scripts/AssistDialog";
 import CopyStatsView from "../scripts/CopyStats";
 import History from "../scripts/History";
 import Suggestions from "../scripts/Suggestions";
@@ -518,6 +519,7 @@ export default function ScriptsSettingsPage() {
             className={`tab${tab === t.key ? " on" : ""}`}
             onClick={() => setParams({ tab: t.key }, { replace: true })}
           >
+            {t.key === "ai" && <IconSparkle size={14} />}
             {t.label}
             {t.badge ? <span className="nav-badge num">{t.badge}</span> : null}
           </button>

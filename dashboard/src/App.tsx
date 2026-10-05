@@ -11,6 +11,7 @@ import EmployeesPage from "./pages/EmployeesPage";
 import AppPage from "./pages/AppPage";
 import LocationsPage from "./pages/LocationsPage";
 import LoginPage from "./pages/LoginPage";
+import ErrorBoundary from "./components/ErrorBoundary";
 import MetricsPage from "./pages/MetricsPage";
 import ScriptsPage from "./pages/ScriptsPage";
 import ScriptsSettingsPage from "./pages/ScriptsSettingsPage";
@@ -368,6 +369,7 @@ export default function App() {
             </nav>
 
             <main className="content">
+              <ErrorBoundary resetKey={location.pathname + location.search}>
               <Routes>
                 {/* После входа открываются скрипты: ими пользуются каждый час,
                     аналитику смотрят раз в день. */}
@@ -385,6 +387,7 @@ export default function App() {
                 {me.can_manage && <Route path="/app" element={<AppPage />} />}
                 <Route path="*" element={<Navigate to="/scripts" replace />} />
               </Routes>
+              </ErrorBoundary>
             </main>
           </div>
         </PlaybookProvider>
