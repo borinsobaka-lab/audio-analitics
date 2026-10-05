@@ -58,6 +58,22 @@ export default function ScriptsPage() {
   /** Форма раздела: новый или правка названия и иконки конкретного. */
   const [sectionForm, setSectionForm] = useState<"new" | { edit: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Панель закреплена сверху; как только под ней поехал список, она
+  // отделяется линией и тенью — иначе карточки просто «обрезаются» о неё.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const check = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setStuck(window.scrollY > 4));
+    };
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", check);
+    };
+  }, []);
 
   const sections = playbook?.sections ?? [];
   const terms = useMemo(() => searchTerms(query), [query]);
@@ -327,7 +343,7 @@ export default function ScriptsPage() {
 
   return (
     <div className="scripts-page">
-      <div className="script-toolbar">
+      <div className={`script-toolbar${stuck ? " stuck" : ""}`}>
         <label className="search">
           <IconSearch />
           <input

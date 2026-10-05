@@ -215,6 +215,9 @@ a {
 .layout {
   display: flex;
   min-height: 100vh;
+  /* clip, а не hidden: не создаёт контейнер прокрутки, и sticky-панели
+     продолжают липнуть к окну. */
+  overflow-x: clip;
 }
 
 /* Меню тёмное — единственный тёмный блок страницы наряду с декой. Светлый
@@ -1544,6 +1547,10 @@ tbody tr:hover {
 
 /* Поиск и язык висят над списком: к ним возвращаются после каждого
    скопированного ответа, и прокручивать за ними наверх не нужно. */
+/* Панель закреплена сверху и занимает всю ширину колонки контента — до её
+   краёв, а не только до отступов. Пока страница в начале, она сливается с
+   фоном; поехал список — `.stuck`: линия 1px снизу, мягкая тень и лёгкое
+   матовое стекло, через которое угадываются уезжающие карточки. */
 .script-toolbar {
   position: sticky;
   top: 0;
@@ -1552,9 +1559,27 @@ tbody tr:hover {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin: -28px 0 16px;
-  padding: 20px 0 12px;
+  margin: -28px -40px 16px;
+  padding: 20px 40px 12px;
+  isolation: isolate;
+}
+/* Подложка панели — отдельным слоем до правого края окна: на широком
+   мониторе колонка контента кончается раньше, а линия под панелью должна
+   идти через весь экран. Лишнее справа срезает `.layout { overflow-x: clip }`. */
+.script-toolbar::before {
+  content: "";
+  position: absolute;
+  inset: 0 -100vw 0 0;
+  z-index: -1;
   background: var(--bg);
+  box-shadow: 0 1px 0 transparent, 0 10px 18px -14px transparent;
+  transition: box-shadow 200ms ease, background-color 200ms ease;
+}
+.script-toolbar.stuck::before {
+  background: rgba(239, 241, 238, 0.86);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  backdrop-filter: saturate(1.4) blur(12px);
+  box-shadow: 0 1px 0 var(--edge-strong), 0 10px 18px -14px rgba(11, 13, 22, 0.35);
 }
 .search {
   position: relative;
@@ -4318,4 +4343,10 @@ button.change-title:hover {
 .section-head .section-menu {
   align-self: center;
   margin-left: -6px;
+}
+@media (max-width: 900px) {
+  /* На телефоне панель не закреплена — и отделять её не от чего. */
+  .script-toolbar::before {
+    display: none;
+  }
 }
