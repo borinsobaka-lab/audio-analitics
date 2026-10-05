@@ -24,6 +24,7 @@ import {
   StudioNames,
 } from "../api";
 import { Empty, Note, PageHead, Section, Skeleton } from "../components/ui";
+import { Slider } from "../components/Slider";
 import History from "../scripts/History";
 import Suggestions from "../scripts/Suggestions";
 import { BUILTIN_VARIABLES, dateAfter, dateAfterLabel, LANGS } from "../scripts/logic";
@@ -503,7 +504,7 @@ export default function ScriptsSettingsPage() {
   return (
     <div className="settings-page">
       <PageHead title="Настройки скриптов" />
-      <div className="tabs" role="tablist" aria-label="Настройки скриптов">
+      <Slider className="tabs" active={tab} role="tablist" aria-label="Настройки скриптов">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -517,7 +518,7 @@ export default function ScriptsSettingsPage() {
             {t.badge ? <span className="nav-badge num">{t.badge}</span> : null}
           </button>
         ))}
-      </div>
+      </Slider>
       {tab === "history" && <History />}
       {tab === "suggestions" && <Suggestions />}
       {tab === "vars" && <Substitution />}

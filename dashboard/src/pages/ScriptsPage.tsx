@@ -12,6 +12,7 @@ import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-d
 import { api, plural, ScriptItem, ScriptItemDraft, ScriptSection } from "../api";
 import { ConfirmAction, Empty, Note, PageHead, Skeleton } from "../components/ui";
 import { DEFAULT_SECTION_ICON, SECTION_ICONS } from "../components/navIcons";
+import { Slider } from "../components/Slider";
 import ScriptCard from "../scripts/ScriptCard";
 import ScriptEditor, { emptyDraft } from "../scripts/ScriptEditor";
 import SuggestDialog from "../scripts/SuggestDialog";
@@ -313,7 +314,7 @@ export default function ScriptsPage() {
           )}
         </label>
         <div className="script-prefs">
-          <div className="seg" role="group" aria-label="Язык текста">
+          <Slider className="seg" active={lang} role="group" aria-label="Язык текста">
             {LANGS.map((l) => (
               <button
                 key={l.key}
@@ -326,9 +327,9 @@ export default function ScriptsPage() {
                 {l.label}
               </button>
             ))}
-          </div>
+          </Slider>
           {studios.length > 1 && (
-            <div className="seg" role="group" aria-label="Студия">
+            <Slider className="seg" active={activeStudio} role="group" aria-label="Студия">
               {studios.map((s) => (
                 <button
                   key={s}
@@ -340,7 +341,7 @@ export default function ScriptsPage() {
                   {s}
                 </button>
               ))}
-            </div>
+            </Slider>
           )}
         </div>
         {/* Предложить может любой, кто видит скрипты: прав на правку у

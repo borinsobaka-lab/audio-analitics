@@ -19,6 +19,7 @@ import {
   resolveText,
   VarResolver,
 } from "./logic";
+import { Slider } from "../components/Slider";
 import Formatted from "./Formatted";
 import RichText, { Highlight } from "./RichText";
 
@@ -177,7 +178,7 @@ export default function ScriptCard({
         {item.variants.length > 1 && (
           <div className="script-variants">
             <span className="label">Студия</span>
-            <div className="seg" role="group" aria-label="Вариант для студии">
+            <Slider className="seg" active={variant.label} role="group" aria-label="Вариант для студии">
               {item.variants.map((v) => (
                 <button
                   key={v.label}
@@ -189,7 +190,7 @@ export default function ScriptCard({
                   {v.label}
                 </button>
               ))}
-            </div>
+            </Slider>
           </div>
         )}
 

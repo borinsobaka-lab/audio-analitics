@@ -21,6 +21,9 @@
   --sunk: #e8ebe7;
   /* Подвал карточки скрипта: светло-серый, темнее подложек — 1.3:1 к белому. */
   --strip: #dfe3de;
+  /* Оправа переключателей (язык, студия, вкладки) — заметно темнее холста,
+     чтобы невыбранные варианты читались как кнопки, а не как фон. */
+  --seg-bg: #d9ded8;
   --deck: #0b0d16;
   --deck-2: #171b28;
 
@@ -3744,7 +3747,7 @@ input[type="file"]::file-selector-button:hover {
   max-width: 100%;
   overflow-x: auto;
   border-radius: var(--r-md);
-  background: var(--sunk);
+  background: var(--seg-bg);
 }
 .tab {
   display: inline-flex;
@@ -3992,4 +3995,69 @@ button.change-title:hover {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
+}
+
+/* --- Переключатели с переезжающей подложкой (Slider.tsx) ----------------- */
+
+/* Выбранный вариант — тёмная подложка цвета активного пункта меню с белым
+   текстом; при переключении она переезжает от старого варианта к новому.
+   Подложку рисует ::before по координатам из CSS-переменных. */
+.slide {
+  position: relative;
+  isolation: isolate;
+}
+.seg.slide {
+  background: var(--seg-bg);
+}
+.slide::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: var(--thumb-w, 0);
+  height: var(--thumb-h, 0);
+  transform: translate(var(--thumb-x, 0), var(--thumb-y, 0));
+  opacity: var(--thumb-o, 0);
+  border-radius: 5px;
+  background: var(--nav-active);
+  box-shadow: 0 1px 2px rgba(11, 13, 22, 0.18), 0 4px 10px -4px rgba(11, 13, 22, 0.35);
+  pointer-events: none;
+}
+.tabs.slide::before {
+  border-radius: var(--r-sm);
+}
+.slide[data-ready]::before {
+  transition:
+    transform 280ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    width 280ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    height 280ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 160ms ease;
+}
+.slide > .seg-btn,
+.slide > .tab {
+  transition: color 200ms ease, background-color 150ms ease;
+}
+.slide > .seg-btn:hover,
+.slide > .tab:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+.slide > .seg-btn.on,
+.slide > .seg-btn.on:hover,
+.slide > .tab.on,
+.slide > .tab.on:hover {
+  background: transparent;
+  color: var(--nav-ink-hi);
+  box-shadow: none;
+}
+.slide > .seg-btn.on:focus-visible,
+.slide > .tab.on:focus-visible {
+  box-shadow: var(--ring);
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide[data-ready]::before,
+  .slide > .seg-btn,
+  .slide > .tab {
+    transition: none;
+  }
 }
