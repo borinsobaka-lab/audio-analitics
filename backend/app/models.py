@@ -639,3 +639,35 @@ class PlaybookCallFlow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_by: Mapped[str] = mapped_column(String(255), default="")
     change_note: Mapped[str] = mapped_column(Text, default="")
+
+
+class PlaybookCallRun(Base):
+    """Один звонок по сценарию — для аналитики звонков.
+
+    Строка пишется по ходу разговора, после каждого клика: так и брошенный
+    на середине звонок виден — на каком шаге он оборвался. id приходит из
+    админки, повторная запись того же звонка — обновление, а не дубль.
+    """
+
+    __tablename__ = "playbook_call_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    # Без внешнего ключа: удалённый раздел остаётся в статистике.
+    section_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    section_title: Mapped[str] = mapped_column(String(255), default="")
+    user_key: Mapped[str] = mapped_column(String(64))
+    user_name: Mapped[str] = mapped_column(String(255), default="")
+    studio: Mapped[str] = mapped_column(String(120), default="")
+    lang: Mapped[str] = mapped_column(String(2), default="ru")
+    flow_version: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # [{"id", "title", "group", "answer", "at"}]
+    path: Mapped[list] = mapped_column(JSONB, default=list)
+    steps: Mapped[int] = mapped_column(Integer, default=0)
+    last_node_id: Mapped[str] = mapped_column(String(40), default="")
+    last_node_title: Mapped[str] = mapped_column(String(120), default="")
+    # booked | callback | refused | no_answer | "" — итог не отмечен.
+    outcome: Mapped[str] = mapped_column(String(16), default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

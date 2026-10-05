@@ -42,3 +42,9 @@ def test_missing_start_and_duplicates_are_rejected():
         CallFlow.model_validate({"start": "x", "nodes": [node("a")]})
     with pytest.raises(ValidationError, match="одинаковый id"):
         CallFlow.model_validate({"start": "a", "nodes": [node("a"), node("a")]})
+
+
+def test_default_call_section_tags_outcomes():
+    flow = CallFlow.model_validate(default_call_section()["flow"])
+    tags = {n.id: n.outcome for n in flow.nodes if n.outcome}
+    assert tags == {"booked": "booked", "callback_end": "callback"}

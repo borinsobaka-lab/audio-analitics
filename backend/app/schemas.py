@@ -577,6 +577,10 @@ class CallText(BaseModel):
     ka: str = Field(default="", max_length=6000)
 
 
+CallOutcomeTag = Literal["", "booked", "callback", "refused"]
+CallOutcome = Literal["", "booked", "callback", "refused", "no_answer"]
+
+
 class CallAnswer(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     # id блока, куда ведёт ответ.
@@ -593,6 +597,10 @@ class CallNode(BaseModel):
     hint: str = Field(default="", max_length=2000)
     client: str = Field(default="", max_length=300)
     answers: list[CallAnswer] = Field(default=[], max_length=12)
+    # Итог звонка, если разговор дошёл до этого блока: «Запись» — записан,
+    # «Перезвоню» — перезвонить. По нему аналитика считает конверсию без
+    # лишних кликов администратора.
+    outcome: CallOutcomeTag = ""
 
 
 class CallFlow(BaseModel):
@@ -886,3 +894,147 @@ class AiPromptIn(BaseModel):
     verify_prompt: str = Field(default="", max_length=20000)
     # Пусто — модель с сервера (OPENAI_MODEL).
     model: str = Field(default="", max_length=120)
+
+
+# --- Аналитика звонков ---
+
+class CallRunStep(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
+    title: str = Field(default="", max_length=120)
+    group: Literal["main", "objection"] = "main"
+    # Что ответил клиент на этом шаге (кнопка) или «→ переход» из панели.
+    answer: str = Field(default="", max_length=120)
+    at: datetime
+
+
+class CallRunIn(BaseModel):
+    """Состояние звонка целиком — админка присылает его после каждого шага.
+    Повторная отправка того же id перезаписывает звонок: шаг назад убирает
+    шаг и в статистике."""
+
+    section_id: uuid.UUID
+    studio: str = Field(default="", max_length=120)
+    lang: ScriptLangCode = "ru"
+    flow_version: datetime | None = None
+    path: list[CallRunStep] = Field(min_length=1, max_length=300)
+    finished: bool = False
+    outcome: CallOutcome = ""
+
+
+class CallStatSection(BaseModel):
+    id: uuid.UUID
+    title: str
+    runs: int = 0
+    deleted: bool = False
+
+
+class CallStatTotals(BaseModel):
+    runs: int = 0
+    # Идут прямо сейчас — обновлялись последние 30 минут и не завершены.
+    live: int = 0
+    booked: int = 0
+    callback: int = 0
+    refused: int = 0
+    no_answer: int = 0
+    # Брошены без итога: не дошли до конца и итог не отмечен.
+    no_outcome: int = 0
+    # Записан / дозвонились (все, кроме «не дозвонились»).
+    conversion: float | None = None
+    avg_seconds: float | None = None
+    avg_steps: float | None = None
+
+
+class CallAnswerCount(BaseModel):
+    label: str
+    count: int
+
+
+class CallFunnelStep(BaseModel):
+    """Этап воронки. Считаются только разговоры: «не дозвонились» — не
+    разговор, доли — от дозвонившихся."""
+
+    node_id: str
+    title: str
+    # Сколько звонков дошли до этого этапа.
+    reached: int = 0
+    # Сколько звонков оборвались на нём без записи.
+    ended_here: int = 0
+    # Медиана времени на этапе, секунды.
+    median_seconds: float | None = None
+    answers: list[CallAnswerCount] = []
+
+
+class CallObjectionStat(BaseModel):
+    node_id: str
+    title: str
+    runs: int = 0
+    booked: int = 0
+    ended_here: int = 0
+
+
+class CallEndStat(BaseModel):
+    node_id: str
+    title: str
+    group: str = "main"
+    count: int = 0
+    callback: int = 0
+    refused: int = 0
+    no_outcome: int = 0
+
+
+class CallUserStat(BaseModel):
+    user_key: str
+    name: str = ""
+    runs: int = 0
+    booked: int = 0
+    callback: int = 0
+    refused: int = 0
+    no_answer: int = 0
+    no_outcome: int = 0
+    conversion: float | None = None
+    avg_steps: float | None = None
+    avg_seconds: float | None = None
+    # Где чаще всего обрываются его звонки без записи.
+    top_drop: CallEndStat | None = None
+    # node_id этапа → сколько его разговоров (без «не дозвонились») до него дошли.
+    reach: dict[str, int] = {}
+
+
+class CallStatsOut(BaseModel):
+    sections: list[CallStatSection] = []
+    section_id: uuid.UUID | None = None
+    # Когда сценарий последний раз правили — звонки до и после правки
+    # шли по разным текстам.
+    flow_changed_at: datetime | None = None
+    totals: CallStatTotals = CallStatTotals()
+    funnel: list[CallFunnelStep] = []
+    objections: list[CallObjectionStat] = []
+    ends: list[CallEndStat] = []
+    users: list[CallUserStat] = []
+
+
+class CallRunPathStep(BaseModel):
+    title: str = ""
+    group: str = "main"
+    answer: str = ""
+
+
+class CallRunOut(BaseModel):
+    id: uuid.UUID
+    section_title: str = ""
+    user_name: str = ""
+    studio: str = ""
+    lang: str = "ru"
+    started_at: datetime
+    seconds: float | None = None
+    steps: int = 0
+    last_node_title: str = ""
+    outcome: str = ""
+    # live — идёт сейчас; ended — завершён; dropped — брошен без итога.
+    status: Literal["live", "ended", "dropped"] = "ended"
+    path: list[CallRunPathStep] = []
+
+
+class CallRunsPage(BaseModel):
+    items: list[CallRunOut] = []
+    next_cursor: str = ""

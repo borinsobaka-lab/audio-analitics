@@ -14,6 +14,7 @@ from .routers import (
     locations,
     metrics,
     playbook,
+    playbook_calls,
     playbook_insights,
     prompts,
     recordings,
@@ -59,6 +60,7 @@ app.include_router(prompts.script_router)
 app.include_router(audio.router)
 app.include_router(playbook.router)
 app.include_router(playbook_insights.router)
+app.include_router(playbook_calls.router)
 
 
 @app.get("/health")

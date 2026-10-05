@@ -564,6 +564,7 @@ export default function ScriptsPage() {
             key={section.id}
             section={section}
             lang={lang}
+            studio={activeStudio}
             resolveVar={resolveVar}
             resolveRef={resolveRef}
             resolveId={resolveId}

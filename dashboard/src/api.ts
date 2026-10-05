@@ -373,6 +373,111 @@ export interface CallNode {
   /** Чего ждать от клиента. */
   client: string;
   answers: CallAnswer[];
+  /** Итог звонка, если разговор дошёл до этого блока. */
+  outcome?: CallOutcomeTag;
+}
+
+/** Итог, который ставит сам блок сценария («Запись» — записан). */
+export type CallOutcomeTag = "" | "booked" | "callback" | "refused";
+/** Итог звонка: из блока или отмеченный администратором. */
+export type CallOutcome = CallOutcomeTag | "no_answer";
+
+export const OUTCOME_LABELS: Record<Exclude<CallOutcome, "">, string> = {
+  booked: "Записан",
+  callback: "Перезвонить",
+  refused: "Отказ",
+  no_answer: "Не дозвонились",
+};
+
+export interface CallRunStep {
+  id: string;
+  title: string;
+  group: "main" | "objection";
+  answer: string;
+  at: string;
+}
+
+export interface CallRunIn {
+  section_id: string;
+  studio: string;
+  lang: ScriptLang;
+  flow_version: string | null;
+  path: CallRunStep[];
+  finished: boolean;
+  outcome: CallOutcome;
+}
+
+export interface CallStatTotals {
+  runs: number;
+  live: number;
+  booked: number;
+  callback: number;
+  refused: number;
+  no_answer: number;
+  no_outcome: number;
+  conversion: number | null;
+  avg_seconds: number | null;
+  avg_steps: number | null;
+}
+
+export interface CallFunnelStep {
+  node_id: string;
+  title: string;
+  reached: number;
+  ended_here: number;
+  median_seconds: number | null;
+  answers: { label: string; count: number }[];
+}
+
+export interface CallEndStat {
+  node_id: string;
+  title: string;
+  group: string;
+  count: number;
+  callback: number;
+  refused: number;
+  no_outcome: number;
+}
+
+export interface CallUserStat extends Omit<CallStatTotals, "live"> {
+  user_key: string;
+  name: string;
+  top_drop: CallEndStat | null;
+  reach: Record<string, number>;
+}
+
+export interface CallStats {
+  sections: { id: string; title: string; runs: number; deleted: boolean }[];
+  section_id: string | null;
+  flow_changed_at: string | null;
+  totals: CallStatTotals;
+  funnel: CallFunnelStep[];
+  objections: { node_id: string; title: string; runs: number; booked: number; ended_here: number }[];
+  ends: CallEndStat[];
+  users: CallUserStat[];
+}
+
+export interface CallRun {
+  id: string;
+  section_title: string;
+  user_name: string;
+  studio: string;
+  lang: string;
+  started_at: string;
+  seconds: number | null;
+  steps: number;
+  last_node_title: string;
+  outcome: CallOutcome;
+  status: "live" | "ended" | "dropped";
+  path: { title: string; group: string; answer: string }[];
+}
+
+export interface CallStatsQuery {
+  from?: string;
+  to?: string;
+  section?: string;
+  user?: string;
+  studio?: string;
 }
 
 export interface CallFlow {
@@ -578,6 +683,14 @@ function normalizeAssist(raw: Partial<AssistResult>): AssistResult {
 
 // --- Endpoints ---
 
+/** ?a=1&b=2 из непустых значений. */
+function query(q: object): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v) params.set(k, String(v));
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 export const api = {
   authState: () => request<{ has_logins: boolean }>("/api/auth/state"),
   login: (login: string, password: string) =>
@@ -774,6 +887,17 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  /** Звонок по сценарию — после каждого шага. keepalive: последний шаг
+   *  дойдёт, даже если вкладку закрыли сразу после клика. */
+  saveCallRun: (id: string, body: CallRunIn) =>
+    request<void>(`/api/playbook/call-runs/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      keepalive: true,
+    }),
+  callStats: (q: CallStatsQuery) => request<CallStats>(`/api/playbook/call-stats${query(q)}`),
+  callRuns: (q: CallStatsQuery & { outcome?: string; node?: string; cursor?: string }) =>
+    request<Page<CallRun>>(`/api/playbook/call-runs${query(q)}`),
   saveCallFlow: (sectionId: string, flow: CallFlow, changeNote: string) =>
     request<ScriptSection>(`/api/playbook/sections/${sectionId}/flow`, {
       method: "PUT",

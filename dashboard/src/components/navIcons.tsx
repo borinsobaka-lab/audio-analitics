@@ -43,6 +43,7 @@ type IconComponent = ComponentType<{ size?: number | string }>;
 export const NavIcons = {
   dashboard: Widget5Icon,
   days: CalendarIcon,
+  calls: PhoneCallingRoundedIcon,
   metrics: Chart2Icon,
   people: UsersGroupRoundedIcon,
   studio: Shop2Icon,

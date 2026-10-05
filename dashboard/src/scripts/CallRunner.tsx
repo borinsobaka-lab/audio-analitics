@@ -14,9 +14,22 @@
  *
  *  Место в сценарии и имя живут в sessionStorage вкладки: случайный переход
  *  в другой раздел посреди звонка не сбрасывает разговор.
+ *
+ *  Каждый звонок пишется в аналитику по ходу разговора — после каждого
+ *  клика (см. «Аналитика» → «Звонки»): путь, ответы клиента и итог. Итог
+ *  ставится сам, если разговор дошёл до блока с итогом («Запись» —
+ *  записан); иначе администратор отмечает его одним нажатием в конце.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, CallNode, ScriptLang, ScriptSection } from "../api";
+import {
+  api,
+  CallNode,
+  CallOutcome,
+  CallRunIn,
+  OUTCOME_LABELS,
+  ScriptLang,
+  ScriptSection,
+} from "../api";
 import { Note } from "../components/ui";
 import Formatted from "./Formatted";
 import { langInfo, VarResolver } from "./logic";
@@ -25,11 +38,71 @@ interface Step {
   id: string;
   /** Что ответил клиент на этом шаге (кнопка), или «переход» из панели. */
   answer?: string;
+  /** Когда открыли этот блок — для времени на этапе в аналитике. */
+  at?: string;
 }
 
 interface Saved {
   path: Step[];
   name: string;
+  /** id звонка в аналитике: повторная отправка — обновление, не дубль. */
+  runId?: string;
+}
+
+/** Итоги, которые администратор отмечает сам, — в порядке частоты. */
+const MANUAL_OUTCOMES: Exclude<CallOutcome, "">[] = ["booked", "callback", "refused", "no_answer"];
+/** Приветствие могло висеть на экране до звонка долго: время на первом
+ *  шаге — не больше минуты, иначе длительность звонка врёт. */
+const FIRST_STEP_MAX_MS = 60_000;
+
+function newRunId(): string {
+  // randomUUID есть только на https и localhost.
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function fresh(start: string): Saved {
+  return { path: [{ id: start, at: new Date().toISOString() }], name: "", runId: newRunId() };
+}
+
+/** Итог, который поставил сам сценарий: последний пройденный блок с итогом. */
+function pathOutcome(path: Step[], byId: Map<string, CallNode>): CallOutcome {
+  for (let i = path.length - 1; i >= 0; i--) {
+    const tag = byId.get(path[i].id)?.outcome;
+    if (tag) return tag;
+  }
+  return "";
+}
+
+function runBody(
+  section: ScriptSection,
+  byId: Map<string, CallNode>,
+  path: Step[],
+  extra: { studio: string; lang: ScriptLang; finished: boolean; outcome: CallOutcome }
+): CallRunIn {
+  const now = new Date().toISOString();
+  return {
+    section_id: section.id,
+    studio: extra.studio,
+    lang: extra.lang,
+    flow_version: section.flow_updated_at ?? null,
+    path: path.map((s) => {
+      const node = byId.get(s.id);
+      return {
+        id: s.id,
+        title: (node?.title ?? s.id).slice(0, 120),
+        group: node?.group ?? "main",
+        answer: (s.answer ?? "").slice(0, 120),
+        at: s.at ?? now,
+      };
+    }),
+    finished: extra.finished,
+    outcome: extra.outcome,
+  };
 }
 
 function storageKey(sectionId: string) {
@@ -41,12 +114,13 @@ function load(sectionId: string, start: string): Saved {
     const raw = sessionStorage.getItem(storageKey(sectionId));
     if (raw) {
       const saved = JSON.parse(raw) as Saved;
-      if (Array.isArray(saved.path) && saved.path.length) return saved;
+      if (Array.isArray(saved.path) && saved.path.length)
+        return saved.runId ? saved : { ...saved, runId: newRunId() };
     }
   } catch {
     /* нет sessionStorage — начинаем сначала */
   }
-  return { path: [{ id: start }], name: "" };
+  return fresh(start);
 }
 
 function nodeText(node: CallNode, lang: ScriptLang): { text: string; fallback: boolean } {
@@ -58,6 +132,7 @@ function nodeText(node: CallNode, lang: ScriptLang): { text: string; fallback: b
 export default function CallRunner({
   section,
   lang,
+  studio,
   resolveVar,
   resolveRef,
   resolveId,
@@ -66,6 +141,7 @@ export default function CallRunner({
 }: {
   section: ScriptSection;
   lang: ScriptLang;
+  studio: string;
   resolveVar: VarResolver;
   resolveRef: (title: string) => (() => void) | null;
   resolveId: (id: string) => { open: () => void; title: string } | null;
@@ -80,7 +156,7 @@ export default function CallRunner({
   // Сценарий могли поменять в редакторе: шаги, которых больше нет, — прочь.
   const validPath = useMemo(() => {
     const kept = path.filter((s) => byId.has(s.id));
-    return kept.length ? kept : [{ id: flow.start }];
+    return kept.length ? kept : [{ id: flow.start, at: new Date().toISOString() }];
   }, [path, byId, flow.start]);
   const current = byId.get(validPath[validPath.length - 1].id)!;
   const visited = useMemo(() => new Set(validPath.map((s) => s.id)), [validPath]);
@@ -95,25 +171,113 @@ export default function CallRunner({
 
   const go = useCallback((to: string, answer: string) => {
     setState((s) => {
-      const p = s.path.filter((x) => byId.has(x.id));
+      const now = Date.now();
+      let p = s.path.filter((x) => byId.has(x.id));
+      if (!p.length) p = [{ id: flow.start }];
+      if (p.length === 1) {
+        // Первый ответ — звонок начался: приветствие на экране до звонка
+        // в его длительность не идёт.
+        const at = p[0].at ? Date.parse(p[0].at) : NaN;
+        const first =
+          Number.isFinite(at) && now - at <= FIRST_STEP_MAX_MS
+            ? p[0].at
+            : new Date(now - FIRST_STEP_MAX_MS / 4).toISOString();
+        p = [{ ...p[0], at: first }];
+      }
       const last = p[p.length - 1];
-      return { ...s, path: [...p.slice(0, -1), { ...last, answer }, { id: to }] };
+      return {
+        ...s,
+        path: [...p.slice(0, -1), { ...last, answer }, { id: to, at: new Date(now).toISOString() }],
+      };
     });
-  }, [byId]);
+  }, [byId, flow.start]);
 
   const back = useCallback(() => {
     setState((s) => {
       if (s.path.length < 2) return s;
       const p = s.path.slice(0, -1);
       const last = p[p.length - 1];
-      return { ...s, path: [...p.slice(0, -1), { id: last.id }] };
+      return { ...s, path: [...p.slice(0, -1), { id: last.id, at: last.at }] };
     });
   }, []);
 
   const backTo = (index: number) =>
-    setState((s) => ({ ...s, path: [...s.path.slice(0, index), { id: s.path[index].id }] }));
+    setState((s) => ({
+      ...s,
+      path: [...s.path.slice(0, index), { id: s.path[index].id, at: s.path[index].at }],
+    }));
 
-  const restart = () => setState({ name: "", path: [{ id: flow.start }] });
+  /* --- Звонок в аналитику ------------------------------------------------ */
+
+  const autoOutcome = pathOutcome(validPath, byId);
+  // Конец сценария — звонок завершён сам; итог — от блока, если он есть.
+  const atEnd = current.answers.length === 0;
+  const started = validPath.length > 1;
+  const [saved, setSaved] = useState("");
+  const [choosing, setChoosing] = useState(false);
+
+  // Последнее состояние звонка, ещё не отправленное: шлётся с задержкой,
+  // чтобы быстрые клики подряд не превращались в пачку запросов.
+  const pending = useRef<{ id: string; body: CallRunIn } | null>(null);
+  const timer = useRef<number>();
+  const flush = useCallback(() => {
+    window.clearTimeout(timer.current);
+    const p = pending.current;
+    pending.current = null;
+    if (p) api.saveCallRun(p.id, p.body).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!started || !state.runId) return;
+    pending.current = {
+      id: state.runId,
+      body: runBody(section, byId, validPath, {
+        studio,
+        lang,
+        finished: atEnd,
+        outcome: autoOutcome,
+      }),
+    };
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(flush, 400);
+  }, [validPath, started, state.runId, atEnd, autoOutcome, section, byId, studio, lang, flush]);
+
+  // Ушли со страницы или закрыли вкладку — дослать последний шаг.
+  useEffect(() => {
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [flush]);
+
+  useEffect(() => {
+    if (!saved) return;
+    const t = window.setTimeout(() => setSaved(""), 4000);
+    return () => window.clearTimeout(t);
+  }, [saved]);
+
+  const restart = () => {
+    flush();
+    setChoosing(false);
+    setState(fresh(flow.start));
+  };
+
+  /** Итог отмечен вручную — звонок записан, сразу готов следующий. */
+  const finish = (outcome: CallOutcome) => {
+    const runId = state.runId ?? newRunId();
+    window.clearTimeout(timer.current);
+    pending.current = null;
+    api
+      .saveCallRun(
+        runId,
+        runBody(section, byId, validPath, { studio, lang, finished: true, outcome })
+      )
+      .catch(() => {});
+    setSaved(outcome ? OUTCOME_LABELS[outcome] : "без итога");
+    setChoosing(false);
+    setState(fresh(flow.start));
+  };
 
   // {имя} — имя клиента из поля сверху; остальные переменные — как везде.
   const callVar: VarResolver = useCallback(
@@ -174,15 +338,41 @@ export default function CallRunner({
         </label>
         <span className="grow" />
         <span className="call-keys muted">1–9 — ответ клиента · Backspace — назад</span>
-        <button type="button" className="secondary" onClick={restart}>
-          Новый звонок
-        </button>
+        {saved && (
+          <span className="call-saved" role="status">
+            ✓ Звонок сохранён · {saved}
+          </span>
+        )}
+        {!started ? (
+          <button type="button" className="secondary" onClick={() => finish("no_answer")}
+            title="Записать звонок без ответа и начать следующий">
+            Не дозвонились
+          </button>
+        ) : atEnd ? (
+          <button type="button" className="secondary" onClick={restart}>
+            Новый звонок
+          </button>
+        ) : (
+          <button type="button" className={choosing ? "" : "secondary"} aria-expanded={choosing}
+            onClick={() => setChoosing((v) => !v)}>
+            Завершить звонок
+          </button>
+        )}
         {canEdit && (
           <button type="button" className="ghost" onClick={onEdit}>
             Редактировать сценарий
           </button>
         )}
       </div>
+
+      {choosing && !atEnd && started && (
+        <OutcomePicker
+          title="Чем закончился звонок?"
+          suggested={autoOutcome}
+          onPick={finish}
+          onCancel={() => setChoosing(false)}
+        />
+      )}
 
       <div className="call-grid">
         <aside className="call-path" aria-label="Пройденный путь">
@@ -250,12 +440,19 @@ export default function CallRunner({
                   </button>
                 ))
               ) : (
-                <div className="call-end">
-                  <strong>Конец сценария</strong>
-                  <button type="button" onClick={restart}>
-                    Новый звонок
-                  </button>
-                </div>
+                autoOutcome ? (
+                  <div className="call-end">
+                    <strong>Конец сценария</strong>
+                    <span className={`call-outcome call-outcome-${autoOutcome}`}>
+                      Итог: {OUTCOME_LABELS[autoOutcome]}
+                    </span>
+                    <button type="button" onClick={restart}>
+                      Новый звонок
+                    </button>
+                  </div>
+                ) : (
+                  <OutcomePicker title="Конец сценария. Чем закончился звонок?" onPick={finish} inline />
+                )
               )}
             </div>
 
@@ -294,6 +491,46 @@ export default function CallRunner({
             ))}
           </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Итог звонка одним нажатием: звонок уходит в аналитику, следующий —
+ *  с чистого листа. */
+function OutcomePicker({
+  title,
+  suggested = "",
+  onPick,
+  onCancel,
+  inline = false,
+}: {
+  title: string;
+  suggested?: CallOutcome;
+  onPick: (o: CallOutcome) => void;
+  onCancel?: () => void;
+  inline?: boolean;
+}) {
+  return (
+    <div className={`call-finish${inline ? " inline" : ""}`} role="group" aria-label={title}>
+      <strong className="call-finish-title">{title}</strong>
+      <div className="call-finish-btns">
+        {MANUAL_OUTCOMES.map((o) => (
+          <button key={o} type="button"
+            className={`call-outcome-btn call-outcome-${o}${suggested === o ? " suggested" : ""}`}
+            onClick={() => onPick(o)}>
+            {OUTCOME_LABELS[o]}
+          </button>
+        ))}
+        <button type="button" className="ghost small" onClick={() => onPick("")}
+          title="Сохранить звонок без итога">
+          Без итога
+        </button>
+        {onCancel && (
+          <button type="button" className="ghost small" onClick={onCancel}>
+            Отмена
+          </button>
+        )}
       </div>
     </div>
   );

@@ -100,7 +100,7 @@ export default function CopyStatsView() {
   const userName = user ? knownUsers[user] || "сотрудник" : "";
 
   return (
-    <div className="stats">
+    <div className="copy-stats">
       <div className="stats-filters">
         <Slider className="seg" active={preset} role="group" aria-label="Период">
           {PRESETS.map((p) => (
