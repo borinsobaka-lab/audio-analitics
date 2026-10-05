@@ -3999,8 +3999,8 @@ button.change-title:hover {
 
 /* --- Переключатели с переезжающей подложкой (Slider.tsx) ----------------- */
 
-/* Выбранный вариант — тёмная подложка цвета активного пункта меню с белым
-   текстом; при переключении она переезжает от старого варианта к новому.
+/* Выбранный вариант — белая подложка с тенью на тёмной оправе `--seg-bg`;
+   при переключении она переезжает от старого варианта к новому.
    Подложку рисует ::before по координатам из CSS-переменных. */
 .slide {
   position: relative;
@@ -4020,8 +4020,8 @@ button.change-title:hover {
   transform: translate(var(--thumb-x, 0), var(--thumb-y, 0));
   opacity: var(--thumb-o, 0);
   border-radius: 5px;
-  background: var(--nav-active);
-  box-shadow: 0 1px 2px rgba(11, 13, 22, 0.18), 0 4px 10px -4px rgba(11, 13, 22, 0.35);
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(11, 13, 22, 0.1), 0 2px 6px -2px rgba(11, 13, 22, 0.16);
   pointer-events: none;
 }
 .tabs.slide::before {
@@ -4047,7 +4047,8 @@ button.change-title:hover {
 .slide > .tab.on,
 .slide > .tab.on:hover {
   background: transparent;
-  color: var(--nav-ink-hi);
+  color: var(--ink);
+  font-weight: 600;
   box-shadow: none;
 }
 .slide > .seg-btn.on:focus-visible,
