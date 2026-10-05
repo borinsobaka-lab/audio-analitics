@@ -2,7 +2,9 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Recordings / segments ---
@@ -482,3 +484,93 @@ class SummaryOut(BaseModel):
     metrics: list[MetricPeriodStat] = []
     employees: list[EmployeePeriodStat] = []
     trend: list[TrendPoint] = []
+
+
+# --- Скрипты администраторов ---
+
+PLAYBOOK_LANGS = ("ru", "en", "ka")
+
+
+class PlaybookMessage(BaseModel):
+    """Одно сообщение на трёх языках. Пустая строка — перевода нет: админка
+    скажет об этом прямо, а не подставит молча русский текст в английский чат."""
+
+    label: str = Field(default="", max_length=200)
+    ru: str = Field(default="", max_length=20000)
+    en: str = Field(default="", max_length=20000)
+    ka: str = Field(default="", max_length=20000)
+
+    def has_text(self) -> bool:
+        return any(getattr(self, lang).strip() for lang in PLAYBOOK_LANGS)
+
+
+class PlaybookVariant(BaseModel):
+    label: str = Field(default="", max_length=120)
+    messages: list[PlaybookMessage] = Field(min_length=1, max_length=30)
+
+
+PlaybookKind = Literal["chat", "call", "task", "info"]
+
+
+class PlaybookItemIn(BaseModel):
+    section_id: uuid.UUID
+    title: str = Field(min_length=1, max_length=255)
+    kind: PlaybookKind = "chat"
+    keywords: str = Field(default="", max_length=1000)
+    note: str = Field(default="", max_length=5000)
+    follow_up: str = Field(default="", max_length=5000)
+    variants: list[PlaybookVariant] = Field(min_length=1, max_length=12)
+
+    @field_validator("title")
+    @classmethod
+    def title_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Название скрипта не может быть пустым")
+        return value
+
+    @field_validator("variants")
+    @classmethod
+    def something_to_send(cls, variants: list[PlaybookVariant]) -> list[PlaybookVariant]:
+        """Скрипт без единого текста — пустая карточка, которую найдут поиском
+        и не смогут ничего скопировать."""
+        for variant in variants:
+            if not any(m.has_text() for m in variant.messages):
+                name = f"«{variant.label}»" if variant.label else "скрипта"
+                raise ValueError(f"В варианте {name} нет ни одного текста")
+        return variants
+
+
+class PlaybookItemOut(BaseModel):
+    id: uuid.UUID
+    section_id: uuid.UUID
+    title: str
+    kind: PlaybookKind
+    keywords: str = ""
+    note: str = ""
+    follow_up: str = ""
+    variants: list[PlaybookVariant] = []
+    position: int = 0
+    updated_at: datetime | None = None
+    updated_by: str = ""
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybookSectionIn(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+
+class PlaybookSectionOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    position: int = 0
+    items: list[PlaybookItemOut] = []
+
+
+class PlaybookOut(BaseModel):
+    sections: list[PlaybookSectionOut] = []
+
+
+class PlaybookOrder(BaseModel):
+    ids: list[uuid.UUID] = Field(max_length=500)

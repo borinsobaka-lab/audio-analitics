@@ -1,0 +1,964 @@
+{
+  "sections": [
+    {
+      "title": "Запись на пробное",
+      "items": [
+        {
+          "title": "Первое сообщение",
+          "kind": "chat",
+          "keywords": "привет приветствие пробное запись цель гибкость стресс фигура",
+          "note": "Первое сообщение новому клиенту в чате. Когда клиент выбирает цель — отправить соответствующее сообщение ниже.",
+          "follow_up": "После отправки: поставить задачу на отправку сообщения «Какие вопросы» на следующий день, если конец рабочего дня.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Здравствуйте!\nМеня зовут Анастасия, я менеджер Lady Stretch 🌸\n\nРада, что вы заинтересовались нашей студией! Первое занятие у нас пробное и подойдет для любого уровня подготовки.\n\nСкажите, какая цель вам ближе?\n1️⃣ Стать гибче\n2️⃣ Снять напряжение и стресс\n3️⃣ Подтянуть фигуру\n\nЯ посмотрю расписание и подберу удобное время на ближайшие дни 🌿",
+                  "en": "Hello!\nMy name is Anastasia, I am the manager of Lady Stretch 🌸\n\nI am glad that you are interested in our studio! Our first lesson is a trial and is suitable for any level of training.\n\nTell me, which goal is closer to you?\n1️⃣ Become more flexible\n2️⃣ Relieve tension and stress\n3️⃣ Lose weight\n\nI will look at the schedule and choose a convenient time for the next few days 🌿",
+                  "ka": "გამარჯობა!\nმე ანასტასია მქვია, Lady Stretch-ის მენეჯერი ვარ 🌸\n\nმიხარია, რომ ჩვენი სტუდიით დაინტერესდით! ჩვენი პირველი გაკვეთილი საცდელია და ნებისმიერი დონის ვარჯიშისთვისაა შესაფერისი.\n\nრომელი მიზანია თქვენთან უფრო ახლოს?\n1️⃣ გახდეთ უფრო მოქნილი\n2️⃣ მოიხსნათ დაძაბულობა და სტრესი\n3️⃣ გაიმკვრივოთ ფიგურა\n\nმე გადავხედავ გრაფიკს და მომდევნო რამდენიმე დღისთვის მოსახერხებელ დროს შევარჩევ 🌿"
+                },
+                {
+                  "label": "Если выбирают 1️⃣ Стать гибче",
+                  "ru": "отлично, тогда рекомендую вам начать с классической растяжки, здоровой спины или йоги  - направления, которые подходят для вашей цели. На этих тренировках вы можете расслабиться с пользой для здоровья, а после занятий заметите улучшение эластичности мышц и связок.",
+                  "en": "Great, then I recommend starting with classic stretching, healthy back or yoga - these are classes that suit your goal. In these sessions, you can relax while benefiting your health, and after training you will notice improved flexibility in your muscles and ligaments."
+                },
+                {
+                  "label": "Если выбирают 2️⃣ Снять напряжение и стресс",
+                  "ru": "отлично, тогда рекомендую вам начать с классической растяжки, здоровой спины или йоги  - направления, которые подходят для вашей цели. На этих тренировках вы можете расслабиться с пользой для здоровья, а после занятий заметите, что тело стало свободнее и легче.",
+                  "en": "Great, then I recommend starting with classic stretching, healthy back or yoga - these are classes that suit your goal. In these sessions, you can relax while benefiting your health, and after the workouts you will notice that your body feels freer and lighter."
+                },
+                {
+                  "label": "Если выбирают 3️⃣ Подтянуть фигуру",
+                  "ru": "отлично, тогда рекомендую вам начать с пилатеса и подкачки с растяжкой - это силовые направления, которые подходят для вашей цели. На этих тренировках вы будете работать с глубокими мышцами, а после занятий заметите, что тело подтянуто и в тонусе.",
+                  "en": "Great, then I recommend starting with Pilates and muscle pumping with stretching - these are classes that suit your goal. In these sessions, you will work your deep muscles, and after the workouts you will notice that your body feels more toned and firm."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Предоплата за пробное",
+          "kind": "chat",
+          "keywords": "предоплата оплата реквизиты пробное 14 лари чек",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Запись на пробное занятие производится по предоплате. Это позволяет нам заранее забронировать для вас место в группе😊\n\nСтоимость пробного занятия 14 лари. Оплатить можно по реквизитам:\n\nGE10CD0360000043702858\nShirshikova Milana\n\nПосле оплаты, пожалуйста, отправьте нам чек и запись будет подтверждена✨",
+                  "en": "Enrollment for a trial session is by prepayment. This allows us to reserve a place for you in the group in advance😊\n\nThe cost of the trial class is 14 GEL. You can pay by payment details:\n\nGE10CD0360000043702858\nShirshikova Milana\n\nAfter payment, please send us a check and the registration will be confirmed✨",
+                  "ka": "საცდელ ვარჯიშზე ჩაწერა ხდება წინასწარი გადახდით. ეს გვაძლევს საშუალებას წინასწარ დაგიჯავშნოთ ადგილი ჯგუფში😊\n\nსაცდელი ვარჯიშის ღირებულებაა 14 ლარი. შეგიძლიათ გადაიხადოთ გადმორიცხვით მითითებულ ანგარიშზე:\n\nGE10CD0360000043702858\nShirshikova Milana\n\nგადახდის შემდეგ გთხოვთ გამოგვიგზავნოთ ქვითარი და რეგისტრაცია დადასტურდება✨"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Подтверждение пробного",
+          "kind": "chat",
+          "keywords": "подтверждение запись адрес как добраться код домофона опоздание",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "Ваке",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Записала Вас на [день] в [время]\n\nПрийти необходимо за 10 минут до начала занятия, чтобы успеть переодеться. С собой нужно взять одежду из тянущейся ткани и носочки. Обувь не нужна. Вода, коврики и все необходимое у нас есть 😊\n\nМы находимся напротив (на другой стороне дороги) Посольства Ирана. Вам нужно ориентироваться на желтый шлагбаум, пройти в арку за ним. Сразу справа на углу здания Вы увидите дверь и лестницу вниз\n\nПожалуйста, приходите вовремя 🙏 Если вы опоздаете более чем на 10 минут, запись будет отменена, так как пропуск разминки может привести к травмам\n\n📍Чавчавадзе 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA",
+                  "en": "I signed you up for [day] at [time]\n\nIt is better to come 10 minutes before the start of the class in order to have time to change clothes. You need to take clothes made of stretch fabric and socks with you. Shoes are not needed. We have water, mats and everything you need 😊\n\nPlease arrive on time 🙏 If you are more than 10 minutes late, your appointment will be canceled, as missing the warm-up may lead to injuries.\n\nWe are located directly across the street from the Iranian Embassy. Look for the yellow barrier gate and walk through the archway behind it. Immediately on your right, at the corner of the building, you'll see a door and a staircase leading downstairs.\n\n📍Chavchavadze 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA",
+                  "ka": "ჩაგწერეთ [დღე] [დრო]-ზე. 😊\n\nთქვენ უნდა მოხვიდეთ გაკვეთილის დაწყებამდე 10 წუთით ადრე, რომ დრო გქონდეთ ტანსაცმლის გამოსაცვლელად. ასევე უნდა წამოიღოთ  თქვენთვის კომფორტული ელასტიური ტანსაცმელი . ფეხსაცმელი არ არის საჭირო. გვაქვს წყალი, ხალიჩები და ყველაფერი რაც თქვენ ვარჯიშისთვის გჭირდებათ 😊\n\nგთხოვთ, დროულად მობრძანდეთ 🙏 თუ 10 წუთზე მეტით დაგაგვიანდებათ, თქვენი ჯავშანი გაუქმდება, რადგან გახურების გამოტოვებამ შეიძლება ტრავმები გამოიწვიოს.\n\n📍ჭავჭავაძის 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA"
+                }
+              ]
+            },
+            {
+              "label": "Сабуртало",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Записала Вас на [день] в [время]\n\nПрийти необходимо за 10 минут до начала занятия, чтобы успеть переодеться. С собой нужно взять одежду из тянущейся ткани и носочки. Обувь не нужна. Вода, коврики и все необходимое у нас есть 😊\n\nЧтобы открыть дверь подъезда, на сером домофоне слева наберите код 123456\n\nСправа от лифтов будет проход к лестнице, нужно подняться на второй этаж, наша дверь слева с табличкой Lady Stretch\n\nПожалуйста, приходите вовремя 🙏 Если вы опоздаете более чем на 10 минут, запись будет отменена, так как пропуск разминки может привести к травмам\n\n📍Нуцубидзе 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6",
+                  "en": "I signed you up for [day] at [time]\n\nIt is better to come 10 minutes before the start of the class in order to have time to change clothes. You need to take clothes made of stretch fabric and socks with you. Shoes are not needed. We have water, mats and everything you need 😊\n\nTo open the building entrance door, enter the code 123456 on the gray intercom on the left.\n\nTo the right of the elevators there will be a passage to the stairs. Go up to the second floor; our door is on the left with a “Lady Stretch” sign.\n\nPlease arrive on time 🙏 If you are more than 10 minutes late, your appointment will be canceled, as missing the warm-up may lead to injuries.\n\n📍Nutsubidze 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6",
+                  "ka": "ჩაგწერეთ [დღე] [დრო]-ზე. 😊\n\nთქვენ უნდა მოხვიდეთ გაკვეთილის დაწყებამდე 10 წუთით ადრე, რომ დრო გქონდეთ ტანსაცმლის გამოსაცვლელად. ასევე უნდა წამოიღოთ  თქვენთვის კომფორტული ელასტიური ტანსაცმელი . ფეხსაცმელი არ არის საჭირო. გვაქვს წყალი, ხალიჩები და ყველაფერი რაც თქვენ ვარჯიშისთვის გჭირდებათ 😊\n\nსადარბაზოს კარის გასაღებად აკრიფეთ 123456\n\nლიფტების მარჯვნივ იქნება გასასვლელი კიბისკენ, უნდა ახვიდეთ მეორე სართულზე, ჩვენი კარი მარცხნივაა წარწერით „Lady Stretch“.\n\nგთხოვთ, დროულად მობრძანდეთ 🙏 თუ 10 წუთზე მეტით დაგაგვიანდებათ, თქვენი ჯავშანი გაუქმდება, რადგან გახურების გამოტოვებამ შეიძლება ტრავმები გამოიწვიოს.\n\n📍ნუცუბიძის 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Подтверждение АЭРО",
+          "kind": "chat",
+          "keywords": "аэро аэростретчинг гамак подтверждение запись адрес одежда",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "Ваке",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Записала Вас на [день] в [время]\n\nПрийти необходимо за 10 минут до начала занятия, чтобы успеть переодеться. Лучше заниматься в лосинах и футболке с закрытым рукавом, чтобы вам было комфортнее 😊\n\nПожалуйста, приходите вовремя 🙏 Если вы опоздаете более чем на 10 минут, запись будет отменена, так как пропуск разминки может привести к травмам\n\nМы находимся напротив (на другой стороне дороги) Посольства Ирана. Вам нужно ориентироваться на желтый шлагбаум, пройти в арку за ним. Сразу справа на углу здания Вы увидите дверь и лестницу вниз\n\n📍Чавчавадзе 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA",
+                  "en": "I've made an appointment for [day] at [time].\n\nYou need to arrive 10 minutes before the class starts so you have time to change. It’s better to wear leggings and a T-shirt with sleeves so you feel more comfortable 😊\n\nPlease arrive on time 🙏 If you are more than 10 minutes late, your appointment will be canceled, as missing the warm-up may lead to injuries\n\nWe are located directly across the street from the Iranian Embassy. Look for the yellow barrier gate and walk through the archway behind it. Immediately on your right, at the corner of the building, you'll see a door and a staircase leading downstairs.\n\n📍Chavchavadze 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA",
+                  "ka": "ჩაგწერეთ [დღე] [დრო]-ზე. 😊\n\nგთხოვთ, მობრძანდეთ გაკვეთილის დაწყებამდე 10 წუთით ადრე, რათა მშვიდად მოასწროთ გადაცმა. ვარჯიშისთვის უმჯობესია ჩაიცვათ ლეგინსები და დახურულმკლავიანი მაისური, რათა უფრო კომფორტულად იგრძნოთ თავი. 😊\n\nგთხოვთ, აუცილებლად მოხვიდეთ დროულად. 🙏 თუ 10 წუთზე მეტით დაგაგვიანდებათ, თქვენი ჯავშანი გაუქმდება, რადგან გახურების გამოტოვებამ შესაძლოა ტრავმა გამოიწვიოს.\n\nჩვენ ვიმყოფებით ირანის საელჩოს პირდაპირ, ქუჩის მეორე მხარეს. ორიენტირდით ყვითელ შლაგბაუმზე, გაიარეთ მის უკან მდებარე თაღში. შენობის კუთხეში, მარჯვენა მხარეს, მაშინვე დაინახავთ კარს და კიბეს, რომელიც ქვემოთ ჩადის.\n\n📍ჭავჭავაძის 51-2\nLady Stretch https://maps.app.goo.gl/RmkuYmpaUQSz9xKdA"
+                }
+              ]
+            },
+            {
+              "label": "Сабуртало",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Записала Вас на [день] в [время]\n\nПрийти необходимо за 10 минут до начала занятия, чтобы успеть переодеться. Лучше заниматься в лосинах и футболке с закрытым рукавом, чтобы вам было комфортнее 😊\n\nЧтобы открыть дверь подъезда, на сером домофоне слева наберите код 123456\n\nСправа от лифтов будет проход к лестнице, нужно подняться на второй этаж, наша дверь слева с табличкой Lady Stretch\n\nПожалуйста, приходите вовремя 🙏 Если вы опоздаете более чем на 10 минут, запись будет отменена, так как пропуск разминки может привести к травмам\n\n📍Нуцубидзе 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6",
+                  "en": "I've made an appointment for [day] at [time].\n\nYou need to arrive 10 minutes before the class starts so you have time to change.  It’s better to wear leggings and a T-shirt with sleeves so you feel more comfortable 😊\nTo open the building entrance door, enter the code 123456 on the gray intercom on the left.\n\nTo the right of the elevators there will be a passage to the stairs. Go up to the second floor; our door is on the left with a “Lady Stretch” sign.\n\nPlease arrive on time 🙏 If you are more than 10 minutes late, your appointment will be canceled, as missing the warm-up may lead to injuries.\n\n📍Nutsubidze 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6",
+                  "ka": "ჩაგწერეთ [დღე] [დრო]-ზე. 😊\n\nგთხოვთ, მობრძანდეთ გაკვეთილის დაწყებამდე 10 წუთით ადრე, რათა მოასწროთ გადაცმა. ვარჯიშისთვის უმჯობესია ჩაიცვათ ლეგინსები და დახურულმკლავიანი მაისური, რათა უფრო კომფორტულად იგრძნოთ თავი. 😊\n\nშესასვლელი კარის გასაღებად, მარცხენა მხარეს მდებარე ნაცრისფერ დომოფონზე აკრიფეთ კოდი 123456.\n\nლიფტების მარჯვენა მხარეს დაინახავთ გასასვლელს კიბეებისკენ. აიარეთ მეორე სართულზე — ჩვენი კარი მარცხენა მხარესაა, წარწერით Lady Stretch.\n\nგთხოვთ, აუცილებლად მოხვიდეთ დროულად. 🙏 თუ 10 წუთზე მეტით დაგაგვიანდებათ, თქვენი ჯავშანი გაუქმდება, რადგან გახურების გამოტოვებამ შესაძლოა ტრავმა გამოიწვიოს.\n\n📍ნუცუბიძის 125\nLady Stretch https://maps.app.goo.gl/vXexv2M1NTjrwqeA6"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Возврат не отвечающих",
+      "items": [
+        {
+          "title": "Какие вопросы",
+          "kind": "chat",
+          "keywords": "возврат вопросы не отвечает дожим",
+          "note": "",
+          "follow_up": "После отправки: поставить задачу через 2 дня отправить «Заканчиваем запись».",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Здравствуйте! Если у вас остались вопросы по тренировкам, я с удовольствием отвечу на них 🙋‍♀️\n\nДавайте подберем удобное время, чтобы мы могли забронировать за вами место в группе и записать к нашему топ-тренеру? ☺️",
+                  "en": "Hello! If you have any questions about classes, I will be happy to answer them 🙋‍♀️\n\nLet's find a convenient time so we can book a place for you in the group and sign you up to our top- trainer? ☺️",
+                  "ka": "გამარჯობა! თუ ვარჯიშთან დაკავშირებით რაიმე შეკითხვა გაგიჩნდებათ, სიამოვნებით გიპასუხებთ 🙋‍♀️\n\nმოდით, ამოვირჩიოთ თქვენთვის მოსახერხებელი დრო, რათა ჯგუფში ადგილი დაგიჯავშნოთ და ჩვენს საუკეთესო მწვრთნელთან ჩაგწეროთ? ☺️"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Заканчиваем запись",
+          "kind": "chat",
+          "keywords": "возврат осталось мест неделя дожим",
+          "note": "",
+          "follow_up": "После отправки: поставить задачу через 7 дней отправить «Актуальность».",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день! У нас осталось всего несколько мест на пробное занятие на эту неделю! Давайте подберем для вас время, в какой день вам было бы удобно записаться? 💜",
+                  "en": "Hello! We have only a few spots left for the trial lesson this week! Let's find a time for you, what day would be convenient for you to sign up? 💜",
+                  "ka": "გამარჯობა! ამ კვირაში საცდელი გაკვეთილისთვის მხოლოდ რამდენიმე ადგილი დაგვრჩა! მოდით, გამოვნახოთ თქვენთვის დრო, რომელ დღეს იქნება თქვენთვის მოსახერხებელი რეგისტრაციისთვის? 💜"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Актуальность",
+          "kind": "chat",
+          "keywords": "возврат скидка сгорает дожим",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день 💜\n\nХотели сообщить, что скидка на первое посещение сгорит через несколько дней 🥺\nПланируете ли вы начать занятия в нашей студии?",
+                  "en": "Hello 💜\n\nWe wanted to inform you that the discount on your first visit will expire in a few days 🥺\nAre you going to start classes at our studio?",
+                  "ka": "გამარჯობა💜\n\nგვინდა გაცნობოთ, რომ პირველ ვიზიტზე ფასდაკლება რამდენიმე დღეში იწურება 🥺\nგეგმავთ ჩვენს სტუდიაში გაკვეთილების დაწყებას?"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Перед пробным — напоминание",
+      "items": [
+        {
+          "title": "Напоминание о пробном",
+          "kind": "chat",
+          "keywords": "напоминание подтверждение завтра пробное звонок",
+          "note": "Если не отвечает на звонок — дублируем в чат (ОБЯЗАТЕЛЬНО сначала пробуем дозвониться).",
+          "follow_up": "После отправки: поставить задачу «Абонемент со скидкой» через 3 дня.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день, напоминаем, что вы завтра записаны на [направление] в [время]\nХотим подтвердить вашу запись, тренер будет вас ждать💜\n\nВ день пробного занятия будет действовать скидка на наши абонементы, вы сможете максимально выгодно воспользоваться нашими услугами 😊",
+                  "en": "Hello, just a reminder that you are signed up for [class] tomorrow at [time]\n\nWe would like to confirm your appointment, the trainer will be waiting for you💜\n\nOn the day of the trial class there will be discount on our passes, you will be able to maximize the benefits of our services 😊",
+                  "ka": "შუადღე მშვიდობისა, შეგახსენებთ, რომ თქვენ დარეგისტრირებული ხართ ხვალ [დრო]\n\nგვსურს დავადასტუროთ თქვენთან შეხვედრა, ტრენერი გელოდებათ 💜\n\nსაცდელი გაკვეთილის დღეს გექნებათ 30%მდე  ფასდაკლება ყველა აბონიმენტზე!თქვენ შეძლებთ მაქსიმალურად გამოიყენოთ ჩვენი სერვისების უპირატესობები 😊"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Не может прийти",
+          "kind": "chat",
+          "keywords": "перенос отмена другой день не придет",
+          "note": "",
+          "follow_up": "После отправки: поставить задачу повторно записать на пробное через 3 дня.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Спасибо, что сообщили нам! Возможно вам будет удобно прийти в другой день?\n\nНа этой неделе у нас есть несколько свободных вариантов. В какой день вы можете записаться, чтобы сохранить за собой скидку на пробное занятие? 😌",
+                  "en": "Thank you for letting us know! Perhaps it would be convenient for you to come back another day?\n\nThis week we have several available slots. Which day can you book to save your discount for the trial session? 😌"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "После пробного",
+      "items": [
+        {
+          "title": "Мобильное приложение",
+          "kind": "chat",
+          "keywords": "приложение запись онлайн setapp отмена записи",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Здравствуйте, напоминаю, что у нас есть мобильное приложение https://setapp.ru/ladystretch , можете его скачать и самостоятельно записываться на тренировки в удобное для вас время ❤️\n\nКогда вы скачаете приложение, вам нужно будет войти в личный кабинет, используя грузинский номер телефона, и пройти авторизацию через звонок (это звонок-сброс на российский номер). Если всё пройдет успешно, в приложении вы увидите своё имя и абонемент.\nЧтобы записаться на занятие, перейдите во вкладку «Расписание» и выберите подходящий класс.\nОбращаем ваше внимание, что отменить запись можно только если до начала занятия осталось 5 и более часов. Если вы напишете нам сюда, мы сможем отменить запись за 3 часа до начала тренировки.",
+                  "en": "Hello, I remind you that we have a mobile application https://setapp.ru/ladystretch , you can download it and sign up for training at your convenience ❤️\nWhen you download the app, you’ll need to log into your personal account using your Georgian phone number and complete authorization via a call (it’s a callback to a Russian number). If everything goes successfully, you will see your name and membership in the app.\nTo book a class, go to the “Schedule” tab and choose a suitable class.\nPlease note that you can cancel a booking only if there are 5 or more hours left before the class starts. If you message us here, we can cancel your booking up to 3 hours before the workout"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Сердечная забота",
+          "kind": "task",
+          "keywords": "отзыв отзывы карты правила студии",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "Ваке",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день!\n\nМы будем признательны, если вы оставите отзыв о нас на картах.Просто перейдите по ссылке: https://g.page/r/CV2O5Snq4Te1EBM/review и поделитесь вашим впечатлением от посещения студии 💜\n\nЕсли не знаете, о чем написать, вот несколько вопросов, которые помогут вам:\n- Расскажите, когда вы у нас были?\n- На какую тренировку ходили и какой абонемент купили?\n- Что вам больше всего понравилось?\nСпасибо! 🙏\n\nТакже просим ознакомиться с правилами студии по ссылке: https://lady-stretch.one/rules#!/tab/873111208-3",
+                  "en": "Hello!\n\nWe will be grateful if you leave a review about us on the maps. This will help us become better. Just follow the link: https://g.page/r/CV2O5Snq4Te1EBM/review and share your impressions of visiting the studio 💜\n\nIf you don't know what to write about, here are some questions to help you:\n- Tell me, when did you visit us?\n- What training did you go to and what membership did you buy?\n- What did you like most?\nThank you! 🙏\n\nPlease also read the studio rules at the link: https://lady-stretch.one/rules#!/tab/873111208-1"
+                }
+              ]
+            },
+            {
+              "label": "Сабуртало",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Мы будем признательны, если вы оставите отзыв о нас на картах. Это поможет нам стать лучше. Просто перейдите по ссылке: https://g.page/r/CVMSGWWTvpM8EBM/review и поделитесь вашим впечатлением от посещения студии 💜\n\nЕсли не знаете, о чем написать, вот несколько вопросов, которые помогут вам:\n- Расскажите, когда вы у нас были?\n- На какую тренировку ходили и какой абонемент купили?\n- Что вам больше всего понравилось?\nСпасибо! 🙏\n\nТакже просим ознакомиться с правилами студии по ссылке: https://lady-stretch.one/rules#!/tab/873111208-3",
+                  "en": "We will be grateful if you leave a review about us on the maps. This will help us become better. Just follow the link: https://g.page/r/CVMSGWWTvpM8EBM/review and share your impressions of visiting the studio 💜\n\nIf you don't know what to write about, here are some questions to help you:\n- Tell me, when did you visit us?\n- What training did you go to and what membership did you buy?\n- What did you like most?\nThank you! 🙏\n\nPlease also read the studio rules at the link: https://lady-stretch.one/rules#!/tab/873111208-1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Неделька",
+          "kind": "task",
+          "keywords": "посещаемость не ходит давно не видели",
+          "note": "- Проверяем ходит ли клиент после покупки, если ходит, то закрываем задачу\n- Если не ходит, то звоним и говорим, что давно не видели в студии, предлагаем записаться на тренировку\n- При недозвоне — отправляем сообщение ниже (СКРИПТ).",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "При недозвоне",
+                  "ru": "Здравствуйте! 💜\nДавно не видели вас на тренировках!)\nХотела уточнить, когда вы планируете возвращаться к занятиям? Чтобы сохранить результаты, очень важно не делать долгих перерывов! 🙌🏻💗",
+                  "en": "Hello! 💜\nWe haven’t seen you at training sessions for a while! 😊\nI wanted to check when you’re planning to return to your workouts. To maintain your results, it’s very important not to take long breaks! 🙌🏻💗"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Месяцок",
+          "kind": "task",
+          "keywords": "обратная связь план тренировок посещаемость месяц",
+          "note": "- Проверяем, как часто ходит клиент после покупки, если ходит регулярно (2-3 раза в неделю), то звоним и спрашиваем обратную связь по тренировкам:\n  - все ли нравится\n  - к каким тренерам ходит и на какие направления\n  - есть ли какие-то предложения по улучшению\n- Если ходит редко, то звоним и предлагаем составить план тренировок и собираем обратную связь",
+          "follow_up": "После выполнения поставить задачу еще через 3 недели “Проверить посещаемость” (если ходит редко, звоним и записываем на ближайшие занятия).",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "Скрипт звонка — если ходит редко",
+                  "ru": "[имя], Добрый день!\nЭто Мария, студия Леди Стрейч.\n\nВы не так давно покупали у нас абонемент. Видим, что у вас не так часто получается посещать нашу студию. Предлагаем вам составить тренировочный план для того, чтобы вы действительно получили тот результат, который хотите!\n\nМы советуем клиентам записаться на 3 занятия, чтобы вам комфортно было втянуться в тренировочный процесс. Давайте подберем для вас удобные дни и время для записи?)"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Частые вопросы",
+      "items": [
+        {
+          "title": "О студии",
+          "kind": "chat",
+          "keywords": "студия группы пробное цена направления абонемент",
+          "note": "",
+          "follow_up": "После отправки: поставить задачу на отправку сообщения возврата «Какие вопросы» через 4 часа или на следующий день, если конец рабочего дня.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Здравствуйте💜\nЗанятия проходят у нас каждый день в мини группах 5-8 человек, поэтому тренер занимается ИНДИВИДУАЛЬНО с каждым👍🏽\nУ нас есть пробное занятие, стоимость со скидкой всего 14 лари🥰\nДалее вы можете приобрести абонемент со скидкой до 30%🎁\n🤍абонемент на любые направления\n✅Стретчинг\n✅Аэростретчинг\n✅Растяжка с подкачкой\n✅Здоровая спина\n✅Пилатес\n✅Йога\n💁🏼‍♀️Стоимость абонементного занятия начинается от 18 лари в зависимости от выбранного абонемента\n📲Оставьте, пожалуйста, ваш контактный номер телефона. С вами свяжется администратор, расскажет подробно про нашу студию и запишет на пробное занятие в удобное для Вас время🌼",
+                  "en": "Hello💜\nWe have classes every day in mini groups of 5-8 people, so the trainer works INDIVIDUALLY with everyone👍🏽\nWe have a trial lesson, the discounted price is only 14 GEL🥰\nNext, you can buy a membership with a discount for any classes🎁\n✅Stretching\n✅Aerostretching\n✅Stretching with pumping\n✅Pilates\n✅Healthy back\n✅Yoga\n💁🏼‍♀️The price of a membership lesson starts from 18 GEL depending on the subscription chosen\n📲Please leave your contact phone number. The administrator will contact you, tell you in detail about our studio, the schedule and sign up for a trial lesson at a time convenient for you🌼",
+                  "ka": "გამარჯობა💜\nვარჯიშები ტარდება ყოველ დღე.\nდილას,შუადღეს და საღამოს საათებში 9:00 - 21:00 საათამდე. ყოველ ერთ საათში, ვარჯიშები ტარდება მინი-ჯგუფებში 5-8 ადამიანი, ამიტომაც ტრენერი მუშაობს ინდივიდუალურად ყველასთან👍🏽\nსაცდელი ვარჯიში ფასდაკლებით ღირს სულ 14 ლარი 🥰\nშემდეგ თქვენ შეძლებთ შეიძინოთ აბონიმენტი ფასდაკლებით🎁\n🤍 აბონიმენტი ნებისმიერი მიმართულებით:\n✅ სტრეტჩინგი\n✅აეროსტრეიჩინგი\n✅ წონის ვარჯიში\n✅ჯანმრთელი წელი\n✅პილატესი\n✅იოგა\n💁🏼‍♀️ აბონიმენტის ღირებულება იწყება 18 ლარიდან  გააჩნია, რომელ აბონიმენტს აირჩევთ\n📲გთხოვთ, დაგვიტოვოთ თქვენი ტელეფონის ნომერი. ადმინისტრატორი დაგიკავშირდებათ და ჩაგწერთ თქვენთვის მოსახერხებელ დღე და დროს,  საცდელ ვარჯიშზე, გაეცანით განრიგს, ფასებს და მოგიყვებით დაწვრილებით სტუდიის შესახებ"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Сколько стоит абонемент?",
+          "kind": "chat",
+          "keywords": "цена прайс стоимость оплата рассрочка абонемент",
+          "note": "Если клиент спрашивает конкретно прайс — следующим сообщением отправить актуальный прайс (картинку) вместе со вторым сообщением.",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "У нас разные абонементы на разное количество занятий: от 16 до 50. Стоимость одного занятия зависит от срока абонемента: от 20 до 25 лари за занятие. По одному абонементу вы можете посещать обе студии и все классы. Средняя стоимость абонемента в месяц 200 лари.\n\nПосле пробного занятия администратор поможет подобрать вам оптимальный вариант в зависимости от ваших предпочтений и целей, а также подарит скидку на любой абонемент.\nКогда вы планируете пробное посещение?",
+                  "en": "We have different subscriptions for different numbers of classes: from 16 to 50. The cost of one class depends on the subscription period: from 20 to 25 GEL per class. With one membership, you can attend both studios and all classes. The average cost of a monthly subscription is 200 GEL.\n\nAfter the trial class the administrator will help you choose the best option depending on your preferences and goals and will also give a discount on any subscription.\nWhen are you planning a trial visit?",
+                  "ka": "ჩვენ გვაქვს სხვადასხვა აბონიმენტები გაკვეთილების სხვადასხვა რაოდენობისთვის: 16-დან 50-მდე. ერთი გაკვეთილის ღირებულება დამოკიდებულია აბონიმენტის პერიოდზე: 20-დან 25 ლარამდე თითო გაკვეთილზე.\n\nსაცდელი გაკვეთილის შემდეგ, ადმინისტრატორი დაგეხმარებათ საუკეთესო ვარიანტის არჩევაში თქვენი პრეფერენციებისა და მიზნების გათვალისწინებით.\nროდის გეგმავთ საცდელ ვიზიტს?"
+                },
+                {
+                  "label": "Следующим сообщением — если спрашивают прайс",
+                  "ru": "Вот наш актуальный прайс☺️\nТакже у нас есть возможность разделить сумму на несколько платежей чтобы вам было комфортнее💜",
+                  "en": "Here is our current price☺️\nWe also have the opportunity to divide the amount into several payments to make it more comfortable for you.",
+                  "ka": "ეს არის ჩვენი მიმდინარე ფასები.\nასევე, გვაქვს შესაძლებლობა, თანხა რამდენიმე გადახდად გავყოთ, რათა თქვენთვის უფრო მოსახერხებელი იყოს."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Где мы?",
+          "kind": "chat",
+          "keywords": "адрес локация студии карта Ваке Сабуртало как добраться",
+          "note": "",
+          "follow_up": "После отправки: поставить задачу на отправку сообщения возврата «Какие вопросы» через 4 часа или на следующий день, если конец рабочего дня.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Здравствуйте!🥰\nУ нас 2 студии по адресам:\n- Чавчавадзе 51, около парка Ваке  https://maps.app.goo.gl/E3Hr7wMSM3Sam5gv6\n- Нуцубидзе 125, около метро Важа-Пшавела  https://maps.app.goo.gl/LC86i38ASkMTyQB2A\n\nКакая локация для вас удобнее?",
+                  "en": "Hello! 🥰\nWe have 2 studios at the addresses:\n- Chavchavadze 51, near Vake Park  https://maps.app.goo.gl/E3Hr7wMSM3Sam5gv6\n- Nutsubidze 125, near Vazha-Pshavela metro station https://maps.app.goo.gl/LC86i38ASkMTyQB2A\n\nWhich location is more convenient for you?",
+                  "ka": "გამარჯობა! 🥰\nჩვენ გვაქვს 2 სტუდია შემდეგ მისამართებზე:\nჭავჭავაძის 51, ვაკის პარკთან ახლოს\nhttps://maps.app.goo.gl/E3Hr7wMSM3Sam5gv6\nნუცუბიძის 125, ვაჟა-ფშაველას მეტროსთან ახლოს\nhttps://maps.app.goo.gl/LC86i38ASkMTyQB2A\n\nრომელი ლოკაციაა თქვენთვის უფრო მოსახერხებელი? 😊"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Русский админ",
+          "kind": "chat",
+          "keywords": "грузинский язык администратор русский английский",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день, к сожалению, сегодня нет администратора, который говорит на грузинском, удобно ли вам будет продолжить диалог на русском или английском?😊\nПриносим свои извинения за неудобства🙏🏼",
+                  "en": "Hello, unfortunately today there is no administrator who speaks Georgian, would it be convenient for you to continue the dialog in Russian or English? 😊\nWe apologize for the inconvenience 🙏🏼"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Как проходит занятие",
+          "kind": "chat",
+          "keywords": "занятие структура разминка тренировка",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "В начале проходит разминка для разогрева мышц, далее основная тренировка (растяжка или силовые), при этом в течении занятия тренер подходит к каждой ученице, она отвечает на вопросы и поможет выполнить упражнения качественно, в конце 5 минут расслабления для восстановления дыхания, пульса.\n\nБлагодаря такой структуре занятия, помимо растяжки вы получите подтянутое тело, гибкую спину и заряд бодрости  на весь оставшийся день 🧡\n\nДавайте запишем Вас на пробное занятие и вы сами всё увидите?)",
+                  "ka": "დასაწყისში ხდება ვარჯიშები კუნთების გახურებისთვის, შემდეგ ძირითადი ვარჯიში ( გაწელვა ან წონის ვარჯიში), (და ეხმარება სავარჯიშოების ეფექტურად შესრულებაში) ბოლოს არის 5 წუთი დასვენება სუნთქვისა და პულსის აღსადგენად.\n\nდასაწყისში ვაკეთებთ ვარჯიშებს კუნთების გასახურებლად.შემდეგ დანარჩენი ვარჯიში. გაკვეთილის  დროს  ტრენერი მიდის ყველა მოსწავლესთან ეხმარება და ასევე პასუხს სცემს ყველა კითხვას. დასასრულისას 5 წუთი მოდუნება, პულსისა და სუთქვის აღსადგენად."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Что взять на занятие",
+          "kind": "chat",
+          "keywords": "одежда форма носки что взять обувь",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "С собой нужно будет взять удобную одежду из тянущейся ткани, кроссовки не нужны - занимаетесь в носочках. Вода,коврик и все необходимое у нас есть 😍\nХотите записаться на пробное?",
+                  "ka": "თან მიგვაქვს კომფორტული ტანსაცმელი, წინდები, თმის სამაგრი,ფეხსაცმელი არ არის საჭირო.\nწყალი, ხალიჩები ჩვენ გვაქვს ყველაფერი რაც თქვენ გჭირდებათ.\nᲒსურთ ჩაგწეროთ საცდელ ვარჯიშზე?) 😍"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "9 направлений",
+          "kind": "chat",
+          "keywords": "направления виды занятий растяжка пилатес йога аэро",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Классическая растяжка — комплекс упражнений для развития гибкости, улучшения подвижности суставов и снятия мышечного напряжения. Подходит для любого уровня подготовки.\n\nПилатес — система тренировок, направленная на укрепление глубоких мышц, улучшение осанки, координации, баланса и контроля над телом.\n\nЗдоровая спина — мягкая тренировка для укрепления мышц спины и корпуса, улучшения осанки, снятия напряжения и профилактики болей в спине.\n\nЙога — сочетание физических упражнений, дыхательных техник и расслабления, которое помогает развить гибкость, силу, баланс и внутреннее спокойствие.\n\nАэростретчинг — растяжка в специальных гамаках. Улучшает гибкость, снимает нагрузку с позвоночника, развивает координацию и дарит ощущение легкости.\n\nПодкачка + растяжка — комбинированная тренировка, включающая силовые упражнения для укрепления мышц и завершающую растяжку для восстановления и гибкости.\n\nЯгодицы + пресс — интенсивная тренировка, направленная на укрепление ягодичных мышц, пресса и мышц кора, улучшение тонуса и рельефа тела.\n\nФункциональный тренинг — комплекс упражнений, развивающий силу, выносливость, координацию и подвижность, улучшая физическую форму для повседневной активности.",
+                  "en": "Classic Stretching — A series of exercises designed to improve flexibility, increase joint mobility, and relieve muscle tension. Suitable for all fitness levels.\n\nPilates — A low-impact workout focused on strengthening the core muscles, improving posture, balance, coordination, and body control.\n\nHealthy Back — A gentle class designed to strengthen the back and core muscles, improve posture, relieve tension, and help prevent back pain.\n\nYoga — A combination of physical postures, breathing techniques, and relaxation practices that enhance flexibility, strength, balance, and overall well-being.\n\nAerostretching — Stretching exercises performed in a hammock to improve flexibility, decompress the spine, enhance coordination, and create a feeling of lightness.\n\nStretching + muscle pumping — A combination workout that includes strength exercises to tone the body, followed by stretching to improve flexibility and aid recovery.\n\nGlutes + Abs — A focused workout designed to strengthen and tone the glutes, abdominal muscles, and core for improved stability and body shape.\n\nFunctional Training — A full-body workout that develops strength, endurance, coordination, mobility, and functional fitness for everyday movements."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Подробно о направлениях",
+          "kind": "chat",
+          "keywords": "направления описание растяжка пилатес йога аэро функциональный",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Классическая растяжка\nКлассическая растяжка — это комплекс упражнений, направленный на развитие гибкости, увеличение подвижности суставов и снятие мышечного напряжения. Регулярные занятия помогают улучшить осанку, уменьшить скованность, повысить эластичность мышц и связок, а также снизить риск травм. Подходит как новичкам, так и тем, кто уже занимается спортом и хочет поддерживать тело в форме.\n\nПилатес\nПилатес — это система тренировок, направленная на укрепление глубоких мышц корпуса, улучшение осанки, координации и баланса. Все упражнения выполняются плавно и осознанно, с акцентом на правильное дыхание и контроль движений. Регулярные занятия помогают укрепить мышцы, сделать тело более подтянутым, улучшить гибкость и повысить качество движений в повседневной жизни.\n\nЗдоровая спина\n«Здоровая спина» — это мягкая оздоровительная тренировка, направленная на укрепление мышц спины и кора, улучшение осанки и профилактику болей в позвоночнике. Комплекс упражнений помогает снять напряжение после длительного сидения, повысить подвижность позвоночника и укрепить мышцы, поддерживающие правильное положение тела. Подходит людям любого возраста и уровня подготовки.\n\nЙога\nЙога сочетает физические упражнения, дыхательные практики и техники расслабления, помогая достичь гармонии между телом и разумом. Занятия развивают гибкость, силу, баланс и выносливость, способствуют снятию стресса, улучшению концентрации и общего самочувствия. Подходит как начинающим, так и опытным практикующим.\n\nАэростретчинг\nАэростретчинг — это современное направление растяжки с использованием специальных гамаков. Благодаря поддержке полотна упражнения выполняются комфортнее, позволяя глубже растянуть мышцы без лишней нагрузки на суставы. Занятия способствуют декомпрессии позвоночника, развитию гибкости, улучшению координации, осанки и ощущения легкости во всем теле.\n\nПодкачка + растяжка\n«Подкачка + растяжка» — это эффективная комбинированная тренировка, объединяющая силовые упражнения и упражнения на гибкость. Первая часть занятия направлена на укрепление и тонус основных групп мышц, а вторая — на восстановление, растяжку и расслабление. Такой формат помогает одновременно развивать силу, улучшать гибкость и ускорять восстановление после физических нагрузок.\n\nЯгодицы + пресс\n«Ягодицы + пресс» — это интенсивная тренировка, направленная на укрепление ягодичных мышц, мышц живота и кора. Комплекс упражнений помогает сформировать красивый силуэт, повысить мышечный тонус, улучшить осанку и стабильность корпуса. Занятие подходит для любого уровня подготовки благодаря возможности регулировать нагрузку.\n\nФункциональный тренинг\nФункциональный тренинг — это динамичная тренировка всего тела, основанная на естественных движениях человека. Упражнения одновременно развивают силу, выносливость, координацию, баланс и подвижность, делая тело более сильным и подготовленным к повседневным нагрузкам. Такие занятия помогают улучшить физическую форму, укрепить мышцы и снизить риск травм.",
+                  "en": "Classic Stretching\nClassic Stretching is designed to improve flexibility, increase joint mobility, and release muscle tension through a series of controlled stretching exercises. Regular practice helps improve posture, reduce stiffness, enhance circulation, and support overall body mobility. This class is suitable for beginners as well as experienced participants looking to maintain flexibility and prevent injuries.\n\nPilates\nPilates is a low-impact training method focused on strengthening the deep core muscles while improving posture, balance, coordination, and body awareness. Every movement is performed with precision and control, promoting better spinal alignment and overall muscle tone. Suitable for all fitness levels, Pilates helps build a strong, stable, and balanced body.\n\nHealthy Back\nHealthy Back is a gentle, therapeutic-style class designed to strengthen the muscles supporting the spine, improve posture, and reduce everyday tension. The exercises focus on increasing mobility, correcting muscular imbalances, and relieving discomfort caused by prolonged sitting or poor posture. This class is ideal for anyone looking to maintain a healthy, pain-free back.\n\nYoga\nYoga combines physical postures, breathing techniques, and mindfulness to create harmony between body and mind. Classes improve flexibility, strength, balance, concentration, and stress management while encouraging relaxation and mental clarity. Suitable for practitioners of all levels, yoga promotes both physical health and emotional well-being.\n\nAerostretching\nAerial Stretching combines traditional stretching techniques with the support of a suspended hammock. The hammock allows for deeper stretches with less pressure on the joints while gently decompressing the spine. This class improves flexibility, balance, coordination, and posture, while creating a unique feeling of lightness and relaxation.\n\nStretching + muscle pumping\nThis balanced workout combines strength training with flexibility exercises. The first part of the class focuses on toning and strengthening the major muscle groups using bodyweight or light equipment, while the second part emphasizes stretching and recovery. The combination improves muscle tone, flexibility, posture, and overall physical performance.\n\nGlutes + Abs\nGlutes + Abs is a targeted workout designed to strengthen and sculpt the glutes, abdominal muscles, and core. The class combines effective strength and endurance exercises that improve stability, posture, and functional movement while helping tone the lower body and midsection. Suitable for all fitness levels, with modifications available.\n\nFunctional Training\nFunctional Training is a dynamic full-body workout that develops strength, endurance, balance, coordination, and mobility through natural movement patterns. Exercises mimic everyday activities, improving overall fitness, athletic performance, and injury prevention. Every session challenges multiple muscle groups while enhancing cardiovascular endurance and core stability."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Что входит в абонемент?",
+          "kind": "chat",
+          "keywords": "абонемент сертификат подруга обе студии",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "По одному абонементу вы можете ходить на все направления в обе  студии, также вы получаете подарочные сертификаты на бесплатную тренировку для ваших подруг, коллег или родственников",
+                  "en": "With one subscription you can go to all directions in both studios, you also receive gift certificates for a free training session for your friends, colleagues or relatives",
+                  "ka": "ერთი აბონიმენტის საშუალებით თქვენ შეგიძლიათ ჩვენს სტუდიაში წასვლა ყველა მიმართულებით, ასევე  გჩუქნით სასაჩუქრე სერთიფიკატებს თქვენს მეგობრებს, კოლეგებს, ან ნათესავებს უფასო ტრენინგზე."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Когда сяду на шпагат?",
+          "kind": "chat",
+          "keywords": "шпагат сколько занятий результат гибкость",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Есть несколько факторов, которые влияют на эластичность мышц и связок:\n- возраст;\n- строение суставов\n- пол\n- психологическое состояние\n- температура среды и тела\n- уровень силовой подготовки\n- предварительное напряжение мышц\nАбсолютно любого можно посадить на шпагат. В среднем новичкам требуется от 16 занятий регулярных занятий.\nПопробуйте посетить пробное занятие со скидкой  и тренер подробнее проконсультирует по этому вопросу.\nВ какой день Вам удобнее прийти?)",
+                  "ka": ".არსებობს რამდენიმე ფაქტორი, რომლებმაც ზეგავლენას ახდენენ კუნთების ელასტიურობას\n*ასაკი\n*სახსრების აგებულობა\n*სქესი\n*ფსიქოლოგიური მდგომარეობა\n*გარემოსა და სხეულის ტემპერატურა\n*სიძლიერის დონე\n*კუნთების წინასწარი დაძაბულობა\nაბსოლუტურად ყველას შეუძლია შპაგატში ჩაჯდომა.საშუალოდ ახალ დაწყებულებს სჭირდებათ ხოლმე 8 მეცადინეობა. თქვენ შეგიძლიად საცდელ გაკვეთილზე იაროთ ტრენერთან და ტრენერი დეტალურად ჩაგიტარებთ კონსულტაციას კი ამ  საკითხთან დაკავშირებით.\nსაცდელ გაკვეთილზე სასიარულოდ თქვენ რომელი დღე გაწყობთ?"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "С какого направления начать?",
+          "kind": "chat",
+          "keywords": "новичок начать выбрать направление",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Вы можете выбрать любое из направлений, даже если вы новичок. У нас разработан индивидуальный подход к каждой ученице.\n\nЧтобы помочь определиться с направлением, скажите, что бы вы хотели получить от занятий?)",
+                  "ka": "თქვენ შეგიძლიათ აირჩიოთ ნებისმიერი მიმართულება იმ შემთხვევაშიც კი თუ ახალ დამწყები ხართ.ჩვენ შევიმუშავეთ ინდივიდუალური მიდგომა თითოეული მოსწავლისთვის.\n\nიმისთვის რომ დაგეხმაროთ მიმართულების არჩევაში, შეგიძლიათ მითხრათ რა გსურთ რომ მიიღოთ მეცადინეობისგან."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Сесть на шпагат за 2 месяца?",
+          "kind": "chat",
+          "keywords": "шпагат два месяца результат",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Безусловно есть индивидуальные особенности, но согласно нашей статистике по студии большинство девушек садятся на шпагат за 2 месяца при регулярном посещении 3 раза в неделю\n\nЗаписать вас на первую пробную тренировку?)",
+                  "ka": "რა თქმა უნდა ყველას გააჩნია ინდივიდუალური შესაძლებლობები.მაგრამ ჩვენი სტატისტიკის მაჩვენებლობით გოგოების უმრავლესობა ვინც დადის ჩვენთან სტუდიაში შპაგატში ჩაჯდება ორ თვეში რეგულარული სიარულისას კვირაში სამჯერ.\n\nჩაგწეროთ პირველ საცდელ გაკვეთილზე?"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "В чём заключается тренировка по стретчингу?",
+          "kind": "chat",
+          "keywords": "стретчинг растяжка тренировка структура",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "В нашей студии занятие по растяжке включает в себя: дыхательную практику, разминку всех групп мышц, растяжку (шпагаты, спина) , подкачку (буквально несколько упражнений)  и заминку. Основной акцент делается на растяжку💫\n\nБлагодаря такой структуре занятия, помимо растяжки вы получите подтянутое тело, гибкую спину и заряд бодрости  на весь оставшийся день 🧡",
+                  "ka": "ჩვენთან სტუდიაში გაჭიმვაზე მეცადინეობა იგულისხმება:\nსუნთქვითი პრაქტიკა\nკუნთების ყველა ჯგუფის დათბობა\nგაჭიმვა ზურგისა და შპაგატის.\nძირითადი აქცენტი გაკეთებულია გაწელვაზე."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Растяжка — это больно?",
+          "kind": "chat",
+          "keywords": "больно болезненно боль страшно",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Тренер не только объясняет как правильно  выполнять упражнения, но и показывает. К тому же наши тренировки проходят в мини группах, что позволяет тренеру с каждым заниматься индивидуально)\n\nПри правильном подходе к занятиям растяжение происходит плавное и безболезненно под наблюдением тренера",
+                  "ka": "ტრენერი არა მხოლოდ ხსნის თუ როგორ უნდა გააკეთოთ სავარჯიშო სწორად არამედ თვითონ აჩვენებს.\n\nტრენერის ხელმძღვანელობით გაჭიმვა ხდება ტკივილის გარეშე და საფრთხეს არ წარმოადგენს."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Какие есть противопоказания?",
+          "kind": "chat",
+          "keywords": "противопоказания здоровье беременность грыжа давление",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Противопоказания для занятий стретчингом\n\nИх очень немного, ведь растяжка - один из самых щадящих видов физической активности. Но кое-какие всё-таки есть:\n- остеохондроз в острой стадии;\n- гипертония;\n- недавно перенесённые вывихи и переломы;\n- грыжи;\n- обострённые и хронические заболевания суставов;\n- первый триместр беременности.\n\nЕсли ты наблюдаешь у себя хоть что-то из вышеперечисленному, лучше проконсультироваться с врачом  и узнать, какие нагрузки тебе подойдут",
+                  "ka": "უკუჩვენებები გაწელვისას\n\nძალიან ცოტაა უკუჩვენებები რადგან გაწელვა ეს ყველზე აქტუალურია ფიზიკური აქტივობისას.\nოსტეროხონდროზი ბოლო სტადიაზე\nჰიპერტონია\nბოლო დროს მიღებული ტრავმები და მოტეხილობა\nთიაქარი\nქრონიკული დაავადებები\nორსულობის პირველი ტრიმესტრი\n\nთუ ზემოაღნიშნულებიდან ერთ ერთან დაკავშირებით პრობლემა გაქვთ ჯობია მიმართოთ ექიმს რათა გაიგოთ როგორი ტიპის სიმძიმის აწევაა თქვენთვის მიღებული."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Занятия для мужчин",
+          "kind": "chat",
+          "keywords": "мужчины мужчина парень персональные тренировки",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день!\n\nК сожалению, в наших студиях занимаются только девушки, у нас нет смешанных групп ☺️\nНо вы можете посещать наши персональные тренировки, желаете ознакомиться более подробно?)",
+                  "ka": "სამწუხაროდ, ჩვენს სტუდიებში მხოლოდ გოგონები ვარჯიშობენ. Შერეული ჯგუფები არ გვყავს  ☺️\nმაგრამ თქვენ შეგიძლიათ ისარგებლოთ პერსონალური ტრენერით. გსურთ გაიგოთ მეტი დეტალურად?)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Кто тренеры?",
+          "kind": "chat",
+          "keywords": "тренеры тренер опыт квалификация",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Все наши тренеры мастера спорта по художественной гимнастике/фигурному катанию с опытом проведение тренировок более 3 лет. Также они проходили обучение и сертификацию по всем направлениям, которые ведутся у нас в студии."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Возражения",
+      "items": [
+        {
+          "title": "Мне далеко",
+          "kind": "chat",
+          "keywords": "далеко расстояние неудобно добираться",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "В любом случае ждём вашего визита\nПробная тренировка вас не к чему не обязывает, просто сходите на нее и увидите все сами😍\nПосетив нас, вы поймете, что расстояние не помеха💫"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Выбрала других",
+          "kind": "chat",
+          "keywords": "другая студия конкуренты выбрала",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "За Вами также остается возможность прийти к нам на пробное занятие и мы будем очень рады видеть Вас в нашей студии и сравнить цены и качество, так как мы специализированная студия растяжки и у нас работают профессиональные тренеры и очень удобное расписание, благодаря чему вы сможете достичь нужного результата💜",
+                  "en": "You also have the opportunity to come to us for a trial session and we will be very happy to see you in our studio and compare prices and quality, as we are a specialized studio stretching and we have professional trainers and a very convenient schedule, so you can achieve the desired result💜"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Пока не в городе / плотный график",
+          "kind": "chat",
+          "keywords": "уехала не в городе занята позже потом график",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Время скидки на пробное занятие ограничено, поэтому сейчас можете оставить ваш номер телефона, чтобы мы закрепили за вами скидку на пробную тренировку 🌸\nИ вы сможете воспользоваться им в любое удобное для вас время ❤️",
+                  "en": "The time for the trial session discount is limited, so you can leave your phone number now so we can secure your trial session discount 🌸\nAnd you can use it anytime you want ❤️",
+                  "ka": "კარგით) აქციის დრო შეზღუდულია, ამიტომ გირჩევთ დატოვოთ თქვენი ტელეფონის ნომერი და ჩვენ დაგიკავშირდებით.\nდა თქვენ შეძლებთ გამოიყენოთ იგი თქვენთვის მოსახერხებელ ნებისმიერ დროს. რას ფიქრობთ?)❤️"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Нет свободного времени",
+          "kind": "chat",
+          "keywords": "нет времени занята график расписание",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "У нас удобный график, работаем каждый день  с 9:00 до 21:00, тренировки проходят почти каждый час, вы не привязаны к группе, ходите в удобное для Вас время 🤗\nДлительность занятия 50-55 минут)\nДавайте подберем для вас удобный день для посещения нашей студии?🥰",
+                  "en": "We have a convenient schedule, we work every day from 9:00 to 21:00, training is every hour, you are not tied to a group, go at a convenient time for you 🤗\nThe duration of the class is 50-55 minutes)\nLet's find a convenient day for you to visit our studio? 🥰",
+                  "ka": "ჩვენ ვმუშაობთ ყოველდღე და ძალიან კომფორტული გრაფიკი გვაქვს თქვენ სულ ერთ ჯგუფთან არ იქნებით ისე რომ შეგიძლიათ იაროთ თქვენთვის მისაღებ დროს.\nხანგრძლივობა 50-55 წუთი.\nშემიძლია შემოგთავაზოთ ვოტსაპით დახედოთ გრაფიკს.და ეს მოგცემთ შესაძლებლობას აირჩიოთ თქვენთვის მისაღები დრო."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Напишите номер, я сама позвоню",
+          "kind": "chat",
+          "keywords": "номер телефон сама позвоню контакт",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Администратор студии звонит клиентам и поэтому  очень часто номер бывает занят, чтобы оперативно с вами связались, я напрямую могу передать номер телефона, также мы можем поставить отметку когда вам удобно принять звонок)\n\nОставьте, пожалуйста, ваш контакт для связи❤️",
+                  "ka": "სტუდიის ადმინისტრატორი ყოველთვის უკავშირდება კლიენტებს ამიტომ ხშირ შემთხვევაში შეიძლება დაკავებული იყოს ამიტომ ხარისხიანად და დროულად რომ მოხდეს თქვენთან კონტაქტი,გთხოვთ) დაგვიტოვოთ თქვენი ტელეფონის ნომერი,რომ დაგიკავშირდეთ💜🤍"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Не могу сейчас разговаривать",
+          "kind": "chat",
+          "keywords": "занята не могу говорить перезвонить звонок",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Администратор может позвонить, когда вам будет удобно, вам остается только выбрать день и время для звонка 📲",
+                  "ka": "ადმინისტრატორს შეუძლია თქვენთან დაკავშირება ვოტსაპითაც თქვენ უბრალოდ მიუთითეთ თქვენთვის მისაღები დღე და დრო."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Дорого",
+          "kind": "chat",
+          "keywords": "дорого цена стоимость деньги скидка рассрочка",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "При личном общении",
+                  "ru": "Подскажите, пожалуйста, низкая цена это единственное, что вы ищете в услуге?)"
+                },
+                {
+                  "label": "В чате",
+                  "ru": "Наше пробное занятие и скидка специально созданы, чтобы быть доступными для всех. Это отличный шанс попробовать что-то новое без больших затрат. Кроме того, мы можем обсудить гибкие варианты оплаты или персонализированный план, чтобы сделать это более доступным для вас.\nДавайте подберем для вас удобный день и время для записи?❤️",
+                  "en": "Our trial class and discount are specifically designed to be accessible to everyone. This is a great chance to try something new without breaking the bank. Additionally, we can discuss flexible payment options or a personalized plan to make this more affordable for you.\nLet's find a convenient day and time for you to sign up?❤️",
+                  "ka": "მე მესმის თქვენი შეშფოთება ჩვენი მომსახურების ღირებულებასთან დაკავშირებით. თუმცა, მნიშვნელოვანია გვახსოვდეს, რომ ჩვენი ფასი ასახავს ჩვენს მიერ მოწოდებულ მაღალ ხარისხს და გამოცდილებას. თუ ამას განიხილავთ როგორც გრძელვადიან ინვესტიციას, თქვენ მიიღებთ მნიშვნელოვან სარგებელს ტრენერისგან პერსონალიზებული მიდგომის სახით, შესანიშნავი ფიგურისა და შესანიშნავი განწყობის სახით🌺 გარდა ამისა, ჩვენ შეგვიძლია განვიხილოთ გადახდის მოქნილი ვარიანტები ან პერსონალიზებული გეგმა. ეს თქვენთვის უფრო ხელმისაწვდომია."
+                },
+                {
+                  "label": "Следующим сообщением",
+                  "ru": "Нам важно, чтобы вы не купили абонемент, а именно получали результат, вы сами от этого будете счастливы и поделитесь этим с другими ❤️",
+                  "en": "It’s important to us that you don’t buy a subscription, but get results, you yourself will be happy about it and share it with others ❤️",
+                  "ka": "ჩვენთვის მნიშვნელოვანია, რომ არ იყიდოთ აბონიმენტი, არამედ მიიღოთ შედეგი, თქვენ თვითონ გაგიხარდებათ და გაუზიარეთ სხვებს ❤️"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "У меня травма",
+          "kind": "chat",
+          "keywords": "травма врач здоровье болит",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Если вы наблюдаетесь у врача – проконсультируйтесь с доктором.\nЕсли доктор разрешил - перед занятием предупредите тренера.",
+                  "ka": "თუ თქვენ დადიხართ ექიმთან, კონსულტაცია გაიარეთ. გააფრთხილეთ მწვრთნელი გაკვეთილის დაწყებამდე."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Не пластичная / не занималась",
+          "kind": "chat",
+          "keywords": "не гибкая новичок не занималась с нуля",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Конечно🤗\nМногие девушки к нам приходят и начинают с \"нуля\", при этом делают хорошие результаты и садятся на шпагаты даже начинающие😍\nНе переживайте, все к нам приходят научиться.\nДавайте запишем вас на пробное занятие?)",
+                  "ka": "რა თქმა უნდა,🤗\nბევრი გოგონა მოდის ჩვენთან და იწყებს ნულიდან, ამავე დროს იღებენ კარგ შედეგს ჯდებიან შპაგატში,\nარ ინერვიულოთ, ყველა მოდის ჩვენთან იმისასთვის, რომ  ვისწავლოთ.\nᲒსურთ ჩაგწეროთ საცდელ ვარჯიშზე?) 😍"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Я стесняюсь",
+          "kind": "chat",
+          "keywords": "стесняюсь возраст вес полная неловко",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "У нас нет ограничений по возрасту и по весу, большинство девушек к нам приходят с нулевой подготовки, тренировки проходят в мини группах что позволяет тренеру с каждым заниматься индивидуально ❤️\n\nНе переживайте у вас всё получится, пробная тренировка вас  ни к чему не обязывает, приходите на неё и вы всё увидите своими глазами)\n\nКогда вам было бы удобно записаться на пробное занятие?)",
+                  "ka": ".ჩვენთან შეზღუდვები არ არის ასაკსა და წონასთან დაკავშირებით.ზოგი დადის ჩვენთან ნულოვანი მომზადებით. მევადინეობები ტარდება მცირე ჯგუფებად იმისთვის რომ ტრენერს ჰქონდეს შესაძლებლობა იმუშაოს ინდივიდუალურად.\n\nარ ინერვიულოთ თქვენ შეძლებთ,მობრძანდით და თქვენ თვითონ დარწმუნდებით ამაში.❤️\n\nრომელი დღე და დრო იქნება თქვენტვის მოსახერხებელი?"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Подписка на Instagram",
+      "items": [
+        {
+          "title": "Когда подписались",
+          "kind": "chat",
+          "keywords": "инстаграм подписка сертификат директ",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день 🤗\nСпасибо, что интересуетесь нашей студией💜\nДарим вам сертификат на скидку для посещения пробного занятия❤️\n\nДля активации сертификата напишите свой номер телефона 📲 и имя 👍\nНаш администратор свяжется для закрепления сертификата за вами 💜",
+                  "en": "Good afternoon 🤗\nThank you for your interest in our studio💜\nWe are giving you a certificate for a discount for attending a trial lesson❤️\n\nTo activate the certificate, write your phone number 📲 and name 👍\nOur administrator will contact you to assign the certificate to you 💜"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Звонок: абонемент со скидкой",
+      "items": [
+        {
+          "title": "Абонемент со скидкой",
+          "kind": "call",
+          "keywords": "скидка 30 абонемент розыгрыш звонок после пробного",
+          "note": "Звонок клиенту, который был на пробном, но не купил абонемент. Текст можно также отправить сообщением.",
+          "follow_up": "После звонка или отправки сообщения поставить задачу «Актуальность» через 3 недели.",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день!\nУ нас проходил розыгрыш среди всех клиентов нашей студии, девушка выиграла скидку 30% на абонемент, но к сожалению, не воспользовалась ей 😊\nА скидка сегодня сгорает, абонемент будет стоить на четверть дешевле🔥\n\nЯ посмотрела, Вы у нас были недавно на пробном занятии, но не приобрели абонемент мы решили предложить скидку Вам, хотели бы воспользоваться?)\nА также, Какое количество занятий рассматриваете?💫",
+                  "en": "Good afternoon, it's Lady Stretch studio🌸\nWe had a drawing among all the clients of our studio, the girl won a 30% discount on a subscription, but unfortunately, she did not take advantage of it😊\nAnd the discount expires today, the subscription will cost a quarter cheaper🔥\n\nI saw that you recently attended a trial lesson with us, but did not purchase a subscription, we decided to offer you a discount, would you like to take advantage of it?)\nAnd also, How many classes are you considering?💫",
+                  "ka": "შუადღე მშვიდობისა\nჩვენი სტუდიის ყველა მომხმარებელს შორის გვქონდა გათამაშება, ერთ-ერთმა გოგონამ მოიგო 30% ფასდაკლება, მაგრამ სამწუხაროდ, მან არ ისარგებლა ამით 😊\nფასდაკლების ვადა კი დღეს იწურება, აბონიმენტი ეღირება მეოთხედით იაფი🔥\n\nდავინახე, რომ ახლახანს დაესწარით ჩვენთან საცდელ გაკვეთილს, მაგრამ არ იყიდეთ აბონიმენტი, გადავწყვიტეთ შემოგთავაზოთ ფასდაკლება, გსურთ ისარგებლოთ ამით?)\nდა ასევე, რამდენ გაკვეთილს განიხილავთ?💫"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Доплата за абонемент",
+      "items": [
+        {
+          "title": "Напоминание о доплате",
+          "kind": "chat",
+          "keywords": "доплата остаток долг оплата абонемента реквизиты",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "",
+                  "ru": "Добрый день! ☀️\n\nХотим напомнить Вам о небольшом остатке по оплате вашего абонемента в размере [сумма]. Будем благодарны, если вы сможете завершить оплату оставшейся суммы до конца этого месяца💜\n\nОплату можно произвести переводом на карту по реквизитам:\n\nGE02TB7296845064400012\nVladimir Borin\n\nПожалуйста, пришлите чек\nЖдём встречи в Lady Stretch! 😊",
+                  "en": "Good afternoon ☀️\n\nWe would like to remind you that there is a small balance remaining on your subscription payment in the amount of [amount] lari. We will be grateful if you could complete payment of the remaining amount before the end of this month💜\n\nPayment can be made in any way convenient for you when visiting the studio or by transfer to a card using the details:\n\nGE02TB7296845064400012\nVladimir Borin\n\nLooking forward to seeing you at Lady Stretch!😊"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Реквизиты для оплаты",
+          "kind": "info",
+          "keywords": "реквизиты счет iban оплата перевод карта",
+          "note": "",
+          "follow_up": "",
+          "variants": [
+            {
+              "label": "",
+              "messages": [
+                {
+                  "label": "Предоплата за пробное",
+                  "ru": "GE10CD0360000043702858\nShirshikova Milana"
+                },
+                {
+                  "label": "Доплата или продление — TBC Bank",
+                  "ru": "GE02TB7296845064400012\nVladimir Borin"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

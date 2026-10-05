@@ -48,6 +48,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const parsed = JSON.parse(body);
       if (typeof parsed.detail === "string") message = parsed.detail;
+      // Ошибка проверки полей приходит списком; человеку нужен текст, а не JSON.
+      else if (Array.isArray(parsed.detail))
+        message = parsed.detail
+          .map((d: { msg?: string }) => String(d.msg ?? "").replace(/^Value error, /, ""))
+          .filter(Boolean)
+          .join("; ");
     } catch {
       /* keep the raw body */
     }
@@ -309,6 +315,50 @@ export interface ScriptTemplate {
   active: boolean;
 }
 
+// --- Скрипты администраторов ---
+
+export type ScriptLang = "ru" | "en" | "ka";
+export type ScriptKind = "chat" | "call" | "task" | "info";
+
+export interface ScriptMessage {
+  label: string;
+  ru: string;
+  en: string;
+  ka: string;
+}
+
+export interface ScriptVariant {
+  label: string;
+  messages: ScriptMessage[];
+}
+
+export interface ScriptItem {
+  id: string;
+  section_id: string;
+  title: string;
+  kind: ScriptKind;
+  keywords: string;
+  note: string;
+  follow_up: string;
+  variants: ScriptVariant[];
+  position: number;
+  updated_at: string | null;
+  updated_by: string;
+}
+
+export interface ScriptSection {
+  id: string;
+  title: string;
+  position: number;
+  items: ScriptItem[];
+}
+
+export interface Playbook {
+  sections: ScriptSection[];
+}
+
+export type ScriptItemDraft = Omit<ScriptItem, "id" | "position" | "updated_at" | "updated_by">;
+
 // --- Endpoints ---
 
 export const api = {
@@ -493,6 +543,39 @@ export const api = {
   getScript: () => request<ScriptTemplate>("/api/script"),
   saveScript: (body: { name?: string; stages?: ScriptStage[]; body?: string }) =>
     request<ScriptTemplate>("/api/script", { method: "PUT", body: JSON.stringify(body) }),
+
+  playbook: () => request<Playbook>("/api/playbook"),
+  createScriptSection: (title: string) =>
+    request<ScriptSection>("/api/playbook/sections", {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    }),
+  renameScriptSection: (id: string, title: string) =>
+    request<ScriptSection>(`/api/playbook/sections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  deleteScriptSection: (id: string) =>
+    request<void>(`/api/playbook/sections/${id}`, { method: "DELETE" }),
+  orderScriptSections: (ids: string[]) =>
+    request<void>("/api/playbook/sections/order", {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
+  orderScripts: (sectionId: string, ids: string[]) =>
+    request<void>(`/api/playbook/sections/${sectionId}/order`, {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
+  createScript: (body: ScriptItemDraft) =>
+    request<ScriptItem>("/api/playbook/items", { method: "POST", body: JSON.stringify(body) }),
+  updateScript: (id: string, body: ScriptItemDraft) =>
+    request<ScriptItem>(`/api/playbook/items/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteScript: (id: string) =>
+    request<void>(`/api/playbook/items/${id}`, { method: "DELETE" }),
 };
 
 /** Позиция в записи: всегда ЧЧ:ММ:СС — смена длиннее часа, и обрезанный

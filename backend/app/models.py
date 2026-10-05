@@ -445,3 +445,69 @@ class Agreement(UUIDMixin, Base):
         ForeignKey("day_recordings.id"), nullable=True
     )
     resolution_note: Mapped[str] = mapped_column(Text, default="")
+
+
+class PlaybookSection(UUIDMixin, Base):
+    """Раздел скриптов: «Запись на пробное», «Возражения», «Частые вопросы».
+
+    Скрипты — второй продукт админки, отдельный от речевой аналитики: то, что
+    администратор отправляет клиенту в чат или говорит по телефону. Раньше
+    это был Google-документ, где нужный ответ искали прокруткой.
+    """
+
+    __tablename__ = "playbook_sections"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlaybookItem(UUIDMixin, Base):
+    """Один скрипт: что отправить, при каких условиях и что сделать потом.
+
+    variants — тексты целиком, одним JSON:
+        [{"label": "Ваке", "messages": [{"label": "", "ru": "…", "en": "…", "ka": "…"}]}]
+
+    Вариантов больше одного, только когда текст зависит от студии (адрес,
+    как пройти, ссылка на отзывы). Сообщений больше одного, когда скрипт
+    ветвится («если выбирают…») или отправляется в несколько приёмов
+    («следующим сообщением…»). Каждое сообщение копируется отдельно.
+    """
+
+    __tablename__ = "playbook_items"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("playbook_sections.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    # chat — сообщение в переписку, call — звонок, task — задача в CRM,
+    # info — справка (реквизиты и т. п.).
+    kind: Mapped[str] = mapped_column(String(16), default="chat")
+    # Слова, по которым скрипт должен находиться, хотя в тексте их нет:
+    # «цена» для «Сколько стоит абонемент?».
+    keywords: Mapped[str] = mapped_column(Text, default="")
+    # Пояснение для администратора до текста и что сделать после отправки.
+    note: Mapped[str] = mapped_column(Text, default="")
+    follow_up: Mapped[str] = mapped_column(Text, default="")
+    variants: Mapped[list] = mapped_column(JSONB, default=list)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+
+
+class PlaybookState(Base):
+    """Отметка, что стартовый набор скриптов уже загружен в организацию.
+
+    Отдельная таблица, а не колонка в organizations: если код выкатят раньше
+    миграции, сломается только раздел скриптов, а не каждый запрос, который
+    читает организацию.
+    """
+
+    __tablename__ = "playbook_state"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), primary_key=True
+    )
+    seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
