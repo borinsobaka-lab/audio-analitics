@@ -9,11 +9,17 @@
  *  - возражения: какие звучат чаще и записываются ли после них;
  *  - администраторы: у кого конверсия выше и докуда кто доводит разговор;
  *  - что отвечают клиенты на этапах (чего хотят, какую студию выбирают);
- *  - журнал: сами звонки, чтобы провалиться из цифры в конкретный разговор.
+ *  - где сценарию не хватает ответов («Нет нужного ответа» по шагам);
+ *  - версии сценария: как звонили до и после правки;
+ *  - студии, часы и дни недели: где и когда звонки идут лучше;
+ *  - цель по конверсии: кто из администраторов ниже неё;
+ *  - журнал: сами звонки, чтобы провалиться из цифры в конкретный разговор,
+ *    с переходом в запись смены на момент звонка и выгрузкой в Excel.
  *
  *  Все числа видны текстом — полосы и цвета только помогают глазу.
  */
 import { Fragment, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   addDays,
   api,
@@ -23,6 +29,7 @@ import {
   CallRun,
   CallStats,
   CallStatsQuery,
+  CallSlice,
   CallUserStat,
   fmtWhen,
   OUTCOME_LABELS,
@@ -52,6 +59,17 @@ function dayStart(value: string, shift = 0): string {
   const [y, m, d] = value.split("-").map(Number);
   return new Date(y, m - 1, d + shift).toISOString();
 }
+
+/** Часовой пояс браузера — для разреза по часам на сервере. */
+const TZ = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+})();
+
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 /* --- Форматирование ------------------------------------------------------ */
 
@@ -124,6 +142,8 @@ export default function CallsPage() {
   });
   const [section, setSection] = useState("");
   const [user, setUser] = useState("");
+  const [studio, setStudio] = useState("");
+  const [version, setVersion] = useState("");
   const [data, setData] = useState<CallStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -138,8 +158,10 @@ export default function CallsPage() {
       to: range[1] ? dayStart(range[1], 1) : "",
       section,
       user,
+      studio,
+      version,
     }),
-    [range, section, user]
+    [range, section, user, studio, version]
   );
 
   useEffect(() => {
@@ -147,7 +169,7 @@ export default function CallsPage() {
     setLoading(true);
     setError("");
     api
-      .callStats(q)
+      .callStats({ ...q, tz: TZ })
       .then((res) => {
         if (!alive) return;
         setData(res);
@@ -217,11 +239,42 @@ export default function CallsPage() {
         {data && data.sections.length > 1 && (
           <label className="filter">
             <span className="label">сценарий</span>
-            <select value={data.section_id ?? ""} onChange={(e) => setSection(e.target.value)}>
+            <select value={data.section_id ?? ""} onChange={(e) => {
+              setSection(e.target.value);
+              setVersion("");
+            }}>
               {data.sections.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
                   {s.deleted ? " (удалён)" : ""} · {s.runs}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {data && (data.studios.length > 1 || studio) && (
+          <label className="filter">
+            <span className="label">студия</span>
+            <select value={studio} onChange={(e) => setStudio(e.target.value)}>
+              <option value="">все</option>
+              {data.studios
+                .filter((st) => st.key !== "—")
+                .map((st) => (
+                  <option key={st.key} value={st.key}>
+                    {st.key} · {st.runs}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        {data && (data.versions.length > 1 || version) && (
+          <label className="filter">
+            <span className="label">версия сценария</span>
+            <select value={version} onChange={(e) => setVersion(e.target.value)}>
+              <option value="">все</option>
+              {data.versions.map((v) => (
+                <option key={v.version ?? "none"} value={v.version ?? "none"}>
+                  {versionLabel(v.version)} · {v.runs}
                 </option>
               ))}
             </select>
@@ -268,17 +321,24 @@ export default function CallsPage() {
             </Empty>
           ) : (
             <>
-              <Totals data={data} userName={userName} />
+              <Totals data={data} userName={userName} canManage={me.can_manage}
+                onTarget={(target) => setData((d) => (d ? { ...d, target } : d))} />
               <Outcomes data={data} bind={bind} />
               <Funnel data={data} bind={bind} onDrops={showDrops} />
               <Ends ends={data.ends} total={data.totals.runs - data.totals.no_answer} bind={bind} onDrops={showDrops} />
+              <Gaps gaps={data.gaps} />
               <Objections data={data} />
               {me.can_view_all && data.users.length > 0 && (
                 <>
-                  <Admins users={data.users} selected={user} onPick={setUser} />
+                  <Admins users={data.users} selected={user} onPick={setUser} target={data.target} />
                   {data.users.length > 1 && <Reach data={data} bind={bind} selected={user} />}
                 </>
               )}
+              {data.versions.length > 1 && (
+                <Versions versions={data.versions} selected={version} onPick={setVersion} target={data.target} />
+              )}
+              {data.studios.length > 1 && <Studios studios={data.studios} target={data.target} />}
+              <Times hours={data.hours} weekdays={data.weekdays} bind={bind} />
               <Answers funnel={data.funnel} />
             </>
           )}
@@ -297,9 +357,24 @@ type Bind = ReturnType<typeof useTip>["bind"];
 
 /* --- Итоги --------------------------------------------------------------- */
 
-function Totals({ data, userName }: { data: CallStats; userName: string }) {
+function versionLabel(v: string | null): string {
+  return v ? `от ${fmtWhen(v)}` : "до учёта версий";
+}
+
+function Totals({
+  data,
+  userName,
+  canManage,
+  onTarget,
+}: {
+  data: CallStats;
+  userName: string;
+  canManage: boolean;
+  onTarget: (target: number | null) => void;
+}) {
   const t = data.totals;
   const connected = t.runs - t.live - t.no_answer;
+  const gap = t.conversion != null && data.target != null ? Math.round((t.conversion - data.target) * 100) : null;
   return (
     <div className="stats calls-stats">
       <Stat
@@ -307,11 +382,73 @@ function Totals({ data, userName }: { data: CallStats; userName: string }) {
         value={share(t.conversion)}
         label={`Записались${userName ? ` · ${userName}` : ""}`}
         title="Записались на пробное из всех, до кого дозвонились"
+        delta={
+          gap == null
+            ? undefined
+            : gap === 0
+              ? { text: "ровно цель", dir: "flat", good: null }
+              : {
+                  text: `на ${Math.abs(gap)} п.п. ${gap > 0 ? "выше" : "ниже"} цели ${share(data.target)}`,
+                  dir: gap > 0 ? "up" : "down",
+                  good: gap > 0,
+                }
+        }
       />
       <Stat value={t.runs} label={plural(t.runs, "звонок", "звонка", "звонков")} />
       <Stat value={t.booked} label={`${plural(t.booked, "запись", "записи", "записей")} из ${connected} дозвонов`} />
       <Stat value={dur(t.avg_seconds)} label="Средняя длительность" />
       <Stat value={steps(t.avg_steps)} label="Шагов сценария в среднем" />
+      {canManage && <TargetTile target={data.target} onSaved={onTarget} />}
+    </div>
+  );
+}
+
+/** Цель по конверсии: одна на все сценарии, задаёт тот, кто управляет. */
+function TargetTile({ target, onSaved }: { target: number | null; onSaved: (t: number | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+  const save = async () => {
+    const n = value.trim() ? Math.round(Number(value)) : null;
+    if (n != null && !(n >= 1 && n <= 100)) {
+      setError("От 1 до 100");
+      return;
+    }
+    try {
+      await api.saveCallTarget(n);
+      onSaved(n == null ? null : n / 100);
+      setEditing(false);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  if (!editing)
+    return (
+      <button type="button" className="stat target-tile" onClick={() => {
+        setValue(target != null ? String(Math.round(target * 100)) : "");
+        setEditing(true);
+      }}>
+        <span className="v">{target != null ? share(target) : "—"}</span>
+        <span className="label">{target != null ? "Цель по записи · изменить" : "Задать цель по записи"}</span>
+      </button>
+    );
+  return (
+    <div className="stat target-tile editing">
+      <div className="target-edit">
+        <input type="number" min={1} max={100} value={value} autoFocus aria-label="Цель, %"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") setEditing(false);
+          }} />
+        <span>%</span>
+      </div>
+      <div className="target-actions">
+        <button type="button" className="small" onClick={save}>Сохранить</button>
+        <button type="button" className="ghost small" onClick={() => setEditing(false)}>Отмена</button>
+      </div>
+      {error ? <span className="label text-bad">{error}</span> : <span className="label">пусто — без цели</span>}
     </div>
   );
 }
@@ -345,6 +482,11 @@ function Outcomes({ data, bind }: { data: CallStats; bind: Bind }) {
               )} />
           ))}
         </div>
+        {data.callbacks_open > 0 && (
+          <p className="calls-callbacks-note">
+            Ждут перезвона сейчас: <strong>{data.callbacks_open}</strong> — список «Перезвонить» над сценарием в «Скриптах».
+          </p>
+        )}
         <ul className="outcome-legend">
           {parts.map((p) => (
             <li key={p.cls}>
@@ -477,6 +619,11 @@ function StepDetail({ step, onDrops }: { step: CallFunnelStep; onDrops: (id: str
       ) : (
         <p className="muted">Ответов клиента на этом этапе не отмечали.</p>
       )}
+      {step.gaps > 0 && (
+        <p className="step-gaps">
+          «Нет нужного ответа» на этом этапе: <strong>{step.gaps}</strong> — примеры в разделе ниже.
+        </p>
+      )}
       {step.ended_here > 0 && (
         <button type="button" className="secondary small" onClick={() => onDrops(step.node_id, step.title)}>
           Звонки, оборвавшиеся здесь · {step.ended_here}
@@ -606,10 +753,12 @@ function Admins({
   users,
   selected,
   onPick,
+  target,
 }: {
   users: CallUserStat[];
   selected: string;
   onPick: (key: string) => void;
+  target: number | null;
 }) {
   return (
     <Section title="Администраторы" hint="нажмите строку — вся страница покажет звонки этого администратора">
@@ -639,7 +788,9 @@ function Admins({
                 <td><strong>{u.name || u.user_key}</strong></td>
                 <td className="num-col">{u.runs}</td>
                 <td className="num-col">{u.booked}</td>
-                <td className="num-col"><strong>{share(u.conversion)}</strong></td>
+                <td className="num-col">
+                  <ConversionCell value={u.conversion} target={target} />
+                </td>
                 <td className="num-col">{u.callback || "—"}</td>
                 <td className="num-col">{u.refused || "—"}</td>
                 <td className="num-col">{u.no_answer || "—"}</td>
@@ -714,6 +865,197 @@ function Reach({ data, bind, selected }: { data: CallStats; bind: Bind; selected
   );
 }
 
+/** Конверсия с отметкой «ниже цели» — словами, не только цветом. */
+function ConversionCell({ value, target }: { value: number | null; target: number | null }) {
+  const below = value != null && target != null && value < target;
+  return (
+    <span className={below ? "text-bad" : ""} title={below ? `Ниже цели ${share(target)}` : undefined}>
+      <strong>{share(value)}</strong>
+      {below && <span className="below-tag">ниже цели</span>}
+    </span>
+  );
+}
+
+/* --- Где сценарию не хватает ответов ------------------------------------- */
+
+function Gaps({ gaps }: { gaps: CallStats["gaps"] }) {
+  if (!gaps.length) return null;
+  return (
+    <Section title="Где сценарию не хватает ответов" hint="«Нет нужного ответа» во время звонка — что говорил клиент; тексты есть и в «Предложениях»">
+      <div className="sheet gaps">
+        {gaps.map((g) => (
+          <div key={g.node_id} className="gap-row">
+            <div className="gap-head">
+              <strong>{g.title}</strong>
+              <span className="num">{g.count} {plural(g.count, "раз", "раза", "раз")}</span>
+            </div>
+            <ul className="gap-examples">
+              {g.examples.map((e, i) => (
+                <li key={i}>«{e}»</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/* --- Версии сценария ----------------------------------------------------- */
+
+function Versions({
+  versions,
+  selected,
+  onPick,
+  target,
+}: {
+  versions: CallStats["versions"];
+  selected: string;
+  onPick: (v: string) => void;
+  target: number | null;
+}) {
+  return (
+    <Section title="Версии сценария" hint="как звонили по каждой редакции текста · нажмите — вся страница по этой версии">
+      <div className="sheet table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Версия</th>
+              <th scope="col">Что изменили</th>
+              <th scope="col" className="num-col">Звонков</th>
+              <th scope="col" className="num-col">Записаны</th>
+              <th scope="col" className="num-col">Конверсия</th>
+              <th scope="col" className="num-col">Шагов</th>
+              <th scope="col" className="num-col">Длительность</th>
+            </tr>
+          </thead>
+          <tbody>
+            {versions.map((v, i) => {
+              const key = v.version ?? "none";
+              return (
+                <tr key={key} className={`row-link${selected === key ? " on" : ""}`} tabIndex={0}
+                  onClick={() => onPick(selected === key ? "" : key)}
+                  onKeyDown={(e) => e.key === "Enter" && onPick(selected === key ? "" : key)}>
+                  <td className="nowrap">
+                    <strong>{versionLabel(v.version)}</strong>
+                    {i === 0 && v.version && <span className="muted"> · текущая</span>}
+                  </td>
+                  <td className="muted">{v.note || "—"}</td>
+                  <td className="num-col">{v.runs}</td>
+                  <td className="num-col">{v.booked}</td>
+                  <td className="num-col"><ConversionCell value={v.conversion} target={target} /></td>
+                  <td className="num-col">{steps(v.avg_steps)}</td>
+                  <td className="num-col">{dur(v.avg_seconds)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+/* --- Студии -------------------------------------------------------------- */
+
+function Studios({ studios, target }: { studios: CallSlice[]; target: number | null }) {
+  return (
+    <Section title="Студии" hint="студия, выбранная вверху «Скриптов» во время звонка">
+      <div className="sheet table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Студия</th>
+              <th scope="col" className="num-col">Звонков</th>
+              <th scope="col" className="num-col">Записаны</th>
+              <th scope="col" className="num-col">Конверсия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {studios.map((st) => (
+              <tr key={st.key}>
+                <td><strong>{st.key === "—" ? "Не выбрана" : st.key}</strong></td>
+                <td className="num-col">{st.runs}</td>
+                <td className="num-col">{st.booked}</td>
+                <td className="num-col"><ConversionCell value={st.conversion} target={target} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+/* --- Когда звонят -------------------------------------------------------- */
+
+/** Звонки по часам и дням недели: полоса — сколько звонков, число справа —
+ *  конверсия в запись. Две величины — две колонки, не две оси. */
+function Times({ hours, weekdays, bind }: { hours: CallSlice[]; weekdays: CallSlice[]; bind: Bind }) {
+  if (!hours.length) return null;
+  const days = WEEKDAYS.map((label, i) => {
+    const d = weekdays.find((w) => w.key === String(i));
+    return { key: String(i), label, runs: d?.runs ?? 0, booked: d?.booked ?? 0, conversion: d?.conversion ?? null };
+  });
+  const first = Math.min(...hours.map((h) => Number(h.key)));
+  const last = Math.max(...hours.map((h) => Number(h.key)));
+  const hourRows = Array.from({ length: last - first + 1 }, (_, i) => {
+    const key = String(first + i).padStart(2, "0");
+    const h = hours.find((x) => x.key === key);
+    return { key, label: `${key}:00`, runs: h?.runs ?? 0, booked: h?.booked ?? 0, conversion: h?.conversion ?? null };
+  });
+  return (
+    <Section title="Когда звонят" hint="полоса — сколько звонков, справа — доля записавшихся из дозвонившихся">
+      <div className="times">
+        <TimeBars title="По часам" rows={hourRows} bind={bind} />
+        <TimeBars title="По дням недели" rows={days} bind={bind} />
+      </div>
+    </Section>
+  );
+}
+
+function TimeBars({
+  title,
+  rows,
+  bind,
+}: {
+  title: string;
+  rows: { key: string; label: string; runs: number; booked: number; conversion: number | null }[];
+  bind: Bind;
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.runs));
+  return (
+    <div className="sheet sheet-pad time-card">
+      <h4 className="answers-title">{title}</h4>
+      <div className="time-head muted">
+        <span />
+        <span />
+        <span className="num">звонков</span>
+        <span className="num">запись</span>
+      </div>
+      <ul className="time-bars">
+        {rows.map((r) => (
+          <li key={r.key} tabIndex={r.runs ? 0 : -1}
+            {...bind(
+              <>
+                <strong>{title === "По часам" ? `${r.label}–${String(Number(r.key) + 1).padStart(2, "0")}:00` : r.label}</strong>
+                <span>Звонков: {r.runs} · записались: {r.booked}</span>
+                <span>Конверсия: {share(r.conversion)}</span>
+              </>
+            )}>
+            <span className="time-label num">{r.label}</span>
+            <span className="answer-track">
+              {r.runs > 0 && <span className="answer-bar" style={{ width: `${(r.runs / max) * 100}%` }} />}
+            </span>
+            <span className="num">{r.runs || "—"}</span>
+            <span className="num muted">{r.runs ? share(r.conversion) : ""}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /* --- Ответы клиентов ----------------------------------------------------- */
 
 function Answers({ funnel }: { funnel: CallFunnelStep[] }) {
@@ -772,6 +1114,19 @@ function Journal({
   const [outcome, setOutcome] = useState("");
   useEffect(() => setOutcome(""), [dropAt]);
   const key = JSON.stringify({ q, outcome, node: dropAt?.id ?? "" });
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      await api.downloadCallRuns({ ...q, outcome, tz: TZ });
+    } catch (e) {
+      setExportError((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <Section title="Журнал звонков" hint="от новых к старым · нажмите звонок — весь путь по сценарию">
       <div className="journal-filters">
@@ -791,7 +1146,13 @@ function Journal({
             </button>
           </span>
         )}
+        <span className="grow" />
+        <button type="button" className="secondary small" disabled={exporting} onClick={exportCsv}
+          title="Звонки с этими фильтрами — таблицей для Excel">
+          {exporting ? "Готовим файл…" : "Скачать в Excel (CSV)"}
+        </button>
       </div>
+      {exportError && <Note kind="error">{exportError}</Note>}
       <JournalList key={key} q={q} outcome={outcome} node={dropAt?.id ?? ""} />
     </Section>
   );
@@ -816,7 +1177,10 @@ function JournalList({ q, outcome, node }: { q: CallStatsQuery; outcome: string;
             <button type="button" className="journal-row" aria-expanded={isOpen}
               onClick={() => setOpen(isOpen ? "" : r.id)}>
               <span className="journal-when num">{fmtWhen(r.started_at)}</span>
-              <span className="journal-who">{r.user_name}</span>
+              <span className="journal-who">
+                {r.user_name}
+                {r.client_name && <span className="journal-client"> · {r.client_name}</span>}
+              </span>
               <span className={`journal-outcome outcome-pill outcome-${cls}`}>{outcomeLabel(r)}</span>
               <span className="journal-last">
                 <span className="muted">{r.outcome === "booked" ? "до" : "на"}</span> {r.last_node_title}
@@ -826,14 +1190,36 @@ function JournalList({ q, outcome, node }: { q: CallStatsQuery; outcome: string;
               </span>
             </button>
             {isOpen && (
-              <ol className="journal-path">
-                {r.path.map((p, i) => (
-                  <li key={i} className={p.group === "objection" ? "objection" : ""}>
-                    <span className="journal-step">{p.title}</span>
-                    {p.answer && <span className="journal-answer">{p.answer}</span>}
-                  </li>
-                ))}
-              </ol>
+              <div className="journal-detail">
+                <ol className="journal-path">
+                  {r.path.map((p, i) => (
+                    <li key={i} className={p.group === "objection" ? "objection" : ""}>
+                      <span className="journal-step">{p.title}</span>
+                      {p.answer && <span className="journal-answer">{p.answer}</span>}
+                      {p.gap && <span className="journal-gap">нет ответа: «{p.gap}»</span>}
+                    </li>
+                  ))}
+                </ol>
+                {(r.client_phone || r.callback_at || r.callback_note || r.recording_id) && (
+                  <p className="journal-extra">
+                    {r.client_phone && (
+                      <a href={`tel:${r.client_phone.replace(/[^+\d]/g, "")}`} className="num">{r.client_phone}</a>
+                    )}
+                    {r.outcome === "callback" && (
+                      <span>
+                        Перезвонить{r.callback_at ? ` ${fmtWhen(r.callback_at)}` : ""}
+                        {r.callback_note ? ` — «${r.callback_note}»` : ""}
+                        {r.callback_done_at ? ` · закрыт ${fmtWhen(r.callback_done_at)}` : " · ждёт"}
+                      </span>
+                    )}
+                    {r.recording_id && (
+                      <Link to={`/days/${r.recording_id}?t=${Math.max(0, Math.round(r.recording_offset_s ?? 0) - 15)}`}>
+                        ▶ Послушать в записи смены
+                      </Link>
+                    )}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         );

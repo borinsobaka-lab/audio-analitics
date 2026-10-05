@@ -108,3 +108,36 @@ def test_jump_answers_are_not_client_answers():
     r = run("a", [("greet", "→ переход"), ("goal",)], "refused")
     out = aggregate([r], NODES, NOW)
     assert out["funnel"][0].answers == []
+
+
+def test_gaps_hours_and_versions():
+    from app.routers.playbook_calls import match_note, version_stats
+
+    v1 = NOW - timedelta(days=3)
+    a = run("a", [("greet", "Здравствуйте"), ("goal",)], "booked")
+    a.path[1]["gap"] = "хочу на йогу"
+    a.started_at = datetime(2026, 10, 5, 6, 30, tzinfo=timezone.utc)  # 10:30 в Тбилиси
+    a.flow_version = v1
+    b = run("b", [("greet", "Здравствуйте"), ("goal",)], "refused")
+    b.path[1]["gap"] = "а есть пилатес?"
+    b.started_at = datetime(2026, 10, 5, 7, 5, tzinfo=timezone.utc)
+    out = aggregate([a, b], NODES, NOW, tz="Asia/Tbilisi")
+    (gap,) = out["gaps"]
+    assert (gap.node_id, gap.title, gap.count) == ("goal", "Цель", 2)
+    assert gap.examples == ["хочу на йогу", "а есть пилатес?"]
+    assert {s.node_id: s.gaps for s in out["funnel"]}["goal"] == 2
+    assert [(h.key, h.runs) for h in out["hours"]] == [("10", 1), ("11", 1)]
+    assert [(d.key, d.runs) for d in out["weekdays"]] == [("0", 2)]  # понедельник
+
+    for r in (a, b):
+        r.status = "ended"
+    versions = version_stats([a, b], {v1 + timedelta(seconds=0.3): "Добавили йогу"})
+    assert [(v.version, v.runs, v.note) for v in versions] == [(v1, 1, "Добавили йогу"), (None, 1, "")]
+    assert match_note(v1, {v1 + timedelta(minutes=5): "далеко"}) == ""
+
+
+def test_bad_timezone_falls_back_to_utc():
+    r = run("a", [("greet",)], "no_answer")
+    r.started_at = datetime(2026, 10, 5, 6, 0, tzinfo=timezone.utc)
+    out = aggregate([r], NODES, NOW, tz="Нет/Такого")
+    assert [h.key for h in out["hours"]] == ["06"]

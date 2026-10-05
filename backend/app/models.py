@@ -671,3 +671,14 @@ class PlaybookCallRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Миграция 018: клиент и список «Перезвонить». Значения по умолчанию —
+    # на стороне базы, не Python: иначе SQLAlchemy вписывает эти колонки в
+    # каждую вставку, и до миграции 018 звонок не записался бы совсем.
+    client_name: Mapped[str] = mapped_column(String(120), server_default="")
+    client_phone: Mapped[str] = mapped_column(String(40), server_default="")
+    callback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    callback_note: Mapped[str] = mapped_column(Text, server_default="")
+    callback_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    callback_done_by: Mapped[str] = mapped_column(String(255), server_default="")
+    # Звонок сделан по перезвону — завершён, и перезвон закрывается сам.
+    callback_of: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

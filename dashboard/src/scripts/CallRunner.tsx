@@ -19,16 +19,22 @@
  *  клика (см. «Аналитика» → «Звонки»): путь, ответы клиента и итог. Итог
  *  ставится сам, если разговор дошёл до блока с итогом («Запись» —
  *  записан); иначе администратор отмечает его одним нажатием в конце.
+ *
+ *  «Перезвонить» — с временем и комментарием: такой звонок попадает в
+ *  список «Перезвонить» над сценарием, откуда по нему звонят снова (имя и
+ *  телефон подставятся сами). Новый разговор закрывает перезвон.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  Callback,
   CallNode,
   CallOutcome,
   CallRunIn,
   OUTCOME_LABELS,
   ScriptLang,
   ScriptSection,
+  fmtWhen,
 } from "../api";
 import { Note } from "../components/ui";
 import Formatted from "./Formatted";
@@ -40,13 +46,24 @@ interface Step {
   answer?: string;
   /** Когда открыли этот блок — для времени на этапе в аналитике. */
   at?: string;
+  /** «Нет нужного ответа» на этом шаге — что сказал клиент. */
+  gap?: string;
 }
 
 interface Saved {
   path: Step[];
   name: string;
+  phone?: string;
   /** id звонка в аналитике: повторная отправка — обновление, не дубль. */
   runId?: string;
+  /** Звонок по перезвону — id исходного звонка. */
+  callbackOf?: string;
+}
+
+/** Перезвонить: когда и что важно не забыть. */
+interface CallbackInfo {
+  at: string | null;
+  note: string;
 }
 
 /** Итоги, которые администратор отмечает сам, — в порядке частоты. */
@@ -81,8 +98,15 @@ function pathOutcome(path: Step[], byId: Map<string, CallNode>): CallOutcome {
 function runBody(
   section: ScriptSection,
   byId: Map<string, CallNode>,
+  state: Saved,
   path: Step[],
-  extra: { studio: string; lang: ScriptLang; finished: boolean; outcome: CallOutcome }
+  extra: {
+    studio: string;
+    lang: ScriptLang;
+    finished: boolean;
+    outcome: CallOutcome;
+    callback?: CallbackInfo;
+  }
 ): CallRunIn {
   const now = new Date().toISOString();
   return {
@@ -98,10 +122,16 @@ function runBody(
         group: node?.group ?? "main",
         answer: (s.answer ?? "").slice(0, 120),
         at: s.at ?? now,
+        gap: (s.gap ?? "").slice(0, 300),
       };
     }),
     finished: extra.finished,
     outcome: extra.outcome,
+    client_name: state.name.trim().slice(0, 120),
+    client_phone: (state.phone ?? "").trim().slice(0, 40),
+    callback_at: extra.callback?.at ?? null,
+    callback_note: (extra.callback?.note ?? "").trim().slice(0, 500),
+    callback_of: state.callbackOf ?? null,
   };
 }
 
@@ -197,14 +227,17 @@ export default function CallRunner({
       if (s.path.length < 2) return s;
       const p = s.path.slice(0, -1);
       const last = p[p.length - 1];
-      return { ...s, path: [...p.slice(0, -1), { id: last.id, at: last.at }] };
+      return { ...s, path: [...p.slice(0, -1), { id: last.id, at: last.at, gap: last.gap }] };
     });
   }, []);
 
   const backTo = (index: number) =>
     setState((s) => ({
       ...s,
-      path: [...s.path.slice(0, index), { id: s.path[index].id, at: s.path[index].at }],
+      path: [
+        ...s.path.slice(0, index),
+        { id: s.path[index].id, at: s.path[index].at, gap: s.path[index].gap },
+      ],
     }));
 
   /* --- Звонок в аналитику ------------------------------------------------ */
@@ -215,6 +248,8 @@ export default function CallRunner({
   const started = validPath.length > 1;
   const [saved, setSaved] = useState("");
   const [choosing, setChoosing] = useState(false);
+  // Выбрали «Перезвонить» — сначала спросить, когда.
+  const [askCallback, setAskCallback] = useState(false);
 
   // Последнее состояние звонка, ещё не отправленное: шлётся с задержкой,
   // чтобы быстрые клики подряд не превращались в пачку запросов.
@@ -231,7 +266,7 @@ export default function CallRunner({
     if (!started || !state.runId) return;
     pending.current = {
       id: state.runId,
-      body: runBody(section, byId, validPath, {
+      body: runBody(section, byId, state, validPath, {
         studio,
         lang,
         finished: atEnd,
@@ -240,7 +275,7 @@ export default function CallRunner({
     };
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, 400);
-  }, [validPath, started, state.runId, atEnd, autoOutcome, section, byId, studio, lang, flush]);
+  }, [validPath, started, state, atEnd, autoOutcome, section, byId, studio, lang, flush]);
 
   // Ушли со страницы или закрыли вкладку — дослать последний шаг.
   useEffect(() => {
@@ -257,27 +292,74 @@ export default function CallRunner({
     return () => window.clearTimeout(t);
   }, [saved]);
 
+  /* --- Перезвонить ------------------------------------------------------ */
+
+  const [callbacks, setCallbacks] = useState<Callback[]>([]);
+  const [showCallbacks, setShowCallbacks] = useState(false);
+  const loadCallbacks = useCallback(() => {
+    api.callbacks(section.id).then(setCallbacks).catch(() => {});
+  }, [section.id]);
+  useEffect(loadCallbacks, [loadCallbacks]);
+
   const restart = () => {
     flush();
     setChoosing(false);
+    setAskCallback(false);
     setState(fresh(flow.start));
+    // Звонок по перезвону мог закрыть перезвон — список обновится.
+    if (state.callbackOf) window.setTimeout(loadCallbacks, 800);
   };
 
   /** Итог отмечен вручную — звонок записан, сразу готов следующий. */
-  const finish = (outcome: CallOutcome) => {
+  const finish = (outcome: CallOutcome, callback?: CallbackInfo) => {
+    if (outcome === "callback" && !callback) {
+      setAskCallback(true);
+      return;
+    }
     const runId = state.runId ?? newRunId();
     window.clearTimeout(timer.current);
     pending.current = null;
     api
       .saveCallRun(
         runId,
-        runBody(section, byId, validPath, { studio, lang, finished: true, outcome })
+        runBody(section, byId, state, validPath, { studio, lang, finished: true, outcome, callback })
       )
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (outcome === "callback" || state.callbackOf) loadCallbacks();
+      });
     setSaved(outcome ? OUTCOME_LABELS[outcome] : "без итога");
     setChoosing(false);
+    setAskCallback(false);
     setState(fresh(flow.start));
   };
+
+  /** Позвонить по перезвону: имя и телефон — из того звонка. */
+  const callBack = (cb: Callback) => {
+    flush();
+    setShowCallbacks(false);
+    setChoosing(false);
+    setAskCallback(false);
+    setState({ ...fresh(flow.start), name: cb.client_name, phone: cb.client_phone, callbackOf: cb.id });
+  };
+
+  const closeCallback = (cb: Callback) => {
+    setCallbacks((list) => list.filter((c) => c.id !== cb.id));
+    api.patchCallback(cb.id, { done: true }).catch(loadCallbacks);
+  };
+
+  /** «Нет нужного ответа» — отметка на шаге: аналитика покажет, где
+   *  сценарию не хватает ответов. */
+  const markGap = (text: string) =>
+    setState((s) => {
+      const p = s.path.filter((x) => byId.has(x.id));
+      if (!p.length) return s;
+      const last = p[p.length - 1];
+      const gap = last.gap ? `${last.gap}; ${text}` : text;
+      return { ...s, path: [...p.slice(0, -1), { ...last, gap: gap.slice(0, 300) }] };
+    });
+
+  const calledBack = state.callbackOf ? callbacks.find((c) => c.id === state.callbackOf) : undefined;
 
   // {имя} — имя клиента из поля сверху; остальные переменные — как везде.
   const callVar: VarResolver = useCallback(
@@ -332,11 +414,29 @@ export default function CallRunner({
           <input
             type="text"
             value={name}
+            maxLength={120}
             placeholder="подставится вместо {имя}"
             onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
           />
         </label>
+        <label className="call-name call-phone">
+          <span>Телефон</span>
+          <input
+            type="tel"
+            value={state.phone ?? ""}
+            maxLength={40}
+            placeholder="для перезвона"
+            onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))}
+          />
+        </label>
         <span className="grow" />
+        {callbacks.length > 0 && (
+          <button type="button" className={`call-callbacks-btn${showCallbacks ? " on" : ""}`}
+            aria-expanded={showCallbacks} onClick={() => setShowCallbacks((v) => !v)}>
+            Перезвонить
+            <span className="call-callbacks-count num">{callbacks.length}</span>
+          </button>
+        )}
         <span className="call-keys muted">1–9 — ответ клиента · Backspace — назад</span>
         {saved && (
           <span className="call-saved" role="status">
@@ -365,13 +465,34 @@ export default function CallRunner({
         )}
       </div>
 
-      {choosing && !atEnd && started && (
-        <OutcomePicker
-          title="Чем закончился звонок?"
-          suggested={autoOutcome}
-          onPick={finish}
-          onCancel={() => setChoosing(false)}
+      {showCallbacks && (
+        <CallbacksPanel
+          list={callbacks}
+          onCall={callBack}
+          onDone={closeCallback}
+          onClose={() => setShowCallbacks(false)}
         />
+      )}
+
+      {state.callbackOf && (
+        <p className="call-recall">
+          Перезвон{calledBack?.client_name ? ` · ${calledBack.client_name}` : ""}
+          {calledBack?.callback_note ? ` — «${calledBack.callback_note}»` : ""}. Поговорите — и перезвон
+          закроется сам; не дозвонились — останется в списке.
+        </p>
+      )}
+
+      {askCallback ? (
+        <CallbackForm onSave={(cb) => finish("callback", cb)} onCancel={() => setAskCallback(false)} />
+      ) : (
+        choosing && !atEnd && started && (
+          <OutcomePicker
+            title="Чем закончился звонок?"
+            suggested={autoOutcome}
+            onPick={finish}
+            onCancel={() => setChoosing(false)}
+          />
+        )
       )}
 
       <div className="call-grid">
@@ -387,6 +508,7 @@ export default function CallRunner({
                     title={isCurrent ? "Вы здесь" : "Вернуться к этому шагу"}>
                     <span className="call-path-title">{node.title}</span>
                     {step.answer && <span className="call-path-answer">{step.answer}</span>}
+                    {step.gap && <span className="call-path-gap">нет ответа: {step.gap}</span>}
                   </button>
                 </li>
               );
@@ -440,7 +562,10 @@ export default function CallRunner({
                   </button>
                 ))
               ) : (
-                autoOutcome ? (
+                autoOutcome === "callback" ? (
+                  <CallbackForm inline title="Конец сценария. Когда перезвонить?"
+                    onSave={(cb) => finish("callback", cb)} />
+                ) : autoOutcome ? (
                   <div className="call-end">
                     <strong>Конец сценария</strong>
                     <span className={`call-outcome call-outcome-${autoOutcome}`}>
@@ -460,7 +585,7 @@ export default function CallRunner({
               <button type="button" className="ghost small" disabled={validPath.length < 2} onClick={back}>
                 ← Назад
               </button>
-              <NoAnswer sectionTitle={section.title} node={current} />
+              <NoAnswer sectionTitle={section.title} node={current} onSent={markGap} />
             </footer>
           </article>
         </section>
@@ -536,9 +661,145 @@ function OutcomePicker({
   );
 }
 
+/** Время перезвона: быстрые варианты и точное время. */
+function localInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function quickTimes(): { label: string; at: Date }[] {
+  const now = new Date();
+  const inHour = new Date(now.getTime() + 60 * 60_000);
+  inHour.setMinutes(Math.ceil(inHour.getMinutes() / 15) * 15, 0, 0);
+  const evening = new Date(now);
+  evening.setHours(19, 0, 0, 0);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  tomorrow.setHours(11, 0, 0, 0);
+  const list = [{ label: "Через час", at: inHour }];
+  if (evening.getTime() - now.getTime() > 90 * 60_000) list.push({ label: "Сегодня в 19:00", at: evening });
+  list.push({ label: "Завтра в 11:00", at: tomorrow });
+  return list;
+}
+
+function CallbackForm({
+  title = "Когда перезвонить?",
+  inline = false,
+  onSave,
+  onCancel,
+}: {
+  title?: string;
+  inline?: boolean;
+  onSave: (cb: CallbackInfo) => void;
+  onCancel?: () => void;
+}) {
+  const quick = useMemo(quickTimes, []);
+  const [when, setWhen] = useState(() => localInput(quick[quick.length - 1].at));
+  const [note, setNote] = useState("");
+  const save = () => onSave({ at: when ? new Date(when).toISOString() : null, note });
+  return (
+    <div className={`call-finish call-callback-form${inline ? " inline" : ""}`} role="group" aria-label={title}>
+      <strong className="call-finish-title">{title}</strong>
+      <div className="call-finish-btns">
+        {quick.map((q) => (
+          <button key={q.label} type="button"
+            className={`call-outcome-btn${when === localInput(q.at) ? " suggested" : ""}`}
+            onClick={() => setWhen(localInput(q.at))}>
+            {q.label}
+          </button>
+        ))}
+        <input type="datetime-local" value={when} aria-label="Дата и время перезвона"
+          onChange={(e) => setWhen(e.target.value)} />
+      </div>
+      <input type="text" className="call-callback-note" value={note} maxLength={500}
+        placeholder="Комментарий: что важно, когда удобно…"
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && save()} />
+      <div className="call-finish-btns">
+        <button type="button" onClick={save}>
+          {inline ? "Сохранить и новый звонок" : "Сохранить перезвон"}
+        </button>
+        {onCancel && (
+          <button type="button" className="ghost small" onClick={onCancel}>
+            Назад
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Список «Перезвонить»: у кого время подошло — сверху и выделены. */
+function CallbacksPanel({
+  list,
+  onCall,
+  onDone,
+  onClose,
+}: {
+  list: Callback[];
+  onCall: (cb: Callback) => void;
+  onDone: (cb: Callback) => void;
+  onClose: () => void;
+}) {
+  const now = Date.now();
+  return (
+    <section className="call-callbacks" aria-label="Перезвонить">
+      <header className="call-callbacks-head">
+        <strong>Перезвонить</strong>
+        <span className="muted">звонок по перезвону закроет его сам</span>
+        <span className="grow" />
+        <button type="button" className="ghost small" onClick={onClose}>
+          Скрыть
+        </button>
+      </header>
+      <ul>
+        {list.map((cb) => {
+          const due = cb.callback_at ? Date.parse(cb.callback_at) <= now : false;
+          return (
+            <li key={cb.id} className={due ? "due" : ""}>
+              <div className="call-cb-main">
+                <span className="call-cb-name">{cb.client_name || "Без имени"}</span>
+                {cb.client_phone && (
+                  <a className="call-cb-phone num" href={`tel:${cb.client_phone.replace(/[^+\d]/g, "")}`}>
+                    {cb.client_phone}
+                  </a>
+                )}
+                <span className={`call-cb-when${due ? " due" : ""}`}>
+                  {cb.callback_at ? (due ? `пора · ${fmtWhen(cb.callback_at)}` : fmtWhen(cb.callback_at)) : "время не указано"}
+                </span>
+              </div>
+              {cb.callback_note && <p className="call-cb-note">«{cb.callback_note}»</p>}
+              <p className="call-cb-meta muted">
+                {cb.user_name}, {fmtWhen(cb.started_at)} · остановились на «{cb.last_node_title}»
+                {cb.attempts > 0 && ` · не дозвонились ${cb.attempts}×`}
+              </p>
+              <div className="call-cb-actions">
+                <button type="button" className="small" onClick={() => onCall(cb)}>
+                  Позвонить
+                </button>
+                <button type="button" className="ghost small" onClick={() => onDone(cb)}>
+                  Готово
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /** «Нет нужного ответа»: что сказал клиент — в «Предложения», чтобы
  *  дописать сценарий. Разговор при этом продолжается. */
-function NoAnswer({ sectionTitle, node }: { sectionTitle: string; node: CallNode }) {
+function NoAnswer({
+  sectionTitle,
+  node,
+  onSent,
+}: {
+  sectionTitle: string;
+  node: CallNode;
+  onSent: (text: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "busy" | "sent" | "error">("idle");
@@ -553,6 +814,7 @@ function NoAnswer({ sectionTitle, node }: { sectionTitle: string; node: CallNode
   async function send() {
     if (text.trim().length < 3) return;
     setState("busy");
+    onSent(text.trim());
     try {
       await api.suggestScript(
         `Звонок «${sectionTitle}», блок «${node.title}» — нет нужного ответа. Клиент: ${text.trim()}`,

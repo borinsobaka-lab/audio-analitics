@@ -395,6 +395,8 @@ export interface CallRunStep {
   group: "main" | "objection";
   answer: string;
   at: string;
+  /** «Нет нужного ответа» на этом шаге — что сказал клиент. */
+  gap?: string;
 }
 
 export interface CallRunIn {
@@ -405,6 +407,11 @@ export interface CallRunIn {
   path: CallRunStep[];
   finished: boolean;
   outcome: CallOutcome;
+  client_name: string;
+  client_phone: string;
+  callback_at: string | null;
+  callback_note: string;
+  callback_of: string | null;
 }
 
 export interface CallStatTotals {
@@ -427,6 +434,24 @@ export interface CallFunnelStep {
   ended_here: number;
   median_seconds: number | null;
   answers: { label: string; count: number }[];
+  gaps: number;
+}
+
+export interface CallSlice {
+  key: string;
+  runs: number;
+  booked: number;
+  conversion: number | null;
+}
+
+export interface CallVersion {
+  version: string | null;
+  note: string;
+  runs: number;
+  booked: number;
+  conversion: number | null;
+  avg_steps: number | null;
+  avg_seconds: number | null;
 }
 
 export interface CallEndStat {
@@ -455,6 +480,13 @@ export interface CallStats {
   objections: { node_id: string; title: string; runs: number; booked: number; ended_here: number }[];
   ends: CallEndStat[];
   users: CallUserStat[];
+  gaps: { node_id: string; title: string; count: number; examples: string[] }[];
+  versions: CallVersion[];
+  studios: CallSlice[];
+  hours: CallSlice[];
+  weekdays: CallSlice[];
+  target: number | null;
+  callbacks_open: number;
 }
 
 export interface CallRun {
@@ -469,7 +501,29 @@ export interface CallRun {
   last_node_title: string;
   outcome: CallOutcome;
   status: "live" | "ended" | "dropped";
-  path: { title: string; group: string; answer: string }[];
+  path: { title: string; group: string; answer: string; gap: string }[];
+  client_name: string;
+  client_phone: string;
+  callback_at: string | null;
+  callback_note: string;
+  callback_done_at: string | null;
+  recording_id: string | null;
+  recording_offset_s: number | null;
+}
+
+/** Открытый перезвон: звонок с итогом «Перезвонить». */
+export interface Callback {
+  id: string;
+  section_id: string;
+  section_title: string;
+  user_name: string;
+  client_name: string;
+  client_phone: string;
+  callback_at: string | null;
+  callback_note: string;
+  started_at: string;
+  last_node_title: string;
+  attempts: number;
 }
 
 export interface CallStatsQuery {
@@ -478,6 +532,9 @@ export interface CallStatsQuery {
   section?: string;
   user?: string;
   studio?: string;
+  version?: string;
+  /** Часовой пояс браузера — для разреза по часам. */
+  tz?: string;
 }
 
 export interface CallFlow {
@@ -898,6 +955,31 @@ export const api = {
   callStats: (q: CallStatsQuery) => request<CallStats>(`/api/playbook/call-stats${query(q)}`),
   callRuns: (q: CallStatsQuery & { outcome?: string; node?: string; cursor?: string }) =>
     request<Page<CallRun>>(`/api/playbook/call-runs${query(q)}`),
+  /** Звонки таблицей для Excel — скачивается файлом. */
+  downloadCallRuns: async (q: CallStatsQuery & { outcome?: string; tz?: string }) => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+    const resp = await fetch(`${BASE}/api/playbook/call-runs.csv${query(q)}`, { headers });
+    if (!resp.ok) throw new Error(`Не удалось выгрузить звонки (${resp.status})`);
+    const name =
+      /filename="([^"]+)"/.exec(resp.headers.get("Content-Disposition") ?? "")?.[1] ?? "calls.csv";
+    const url = URL.createObjectURL(await resp.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  callRunsForRecording: (recordingId: string) =>
+    request<Page<CallRun>>(`/api/playbook/call-runs/by-recording/${recordingId}`),
+  saveCallTarget: (target: number | null) =>
+    request<void>("/api/playbook/call-target", { method: "PUT", body: JSON.stringify({ target }) }),
+  callbacks: (sectionId?: string) =>
+    request<Callback[]>(`/api/playbook/callbacks${query({ section: sectionId })}`),
+  patchCallback: (id: string, body: { done: boolean; callback_at?: string | null }) =>
+    request<void>(`/api/playbook/callbacks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   saveCallFlow: (sectionId: string, flow: CallFlow, changeNote: string) =>
     request<ScriptSection>(`/api/playbook/sections/${sectionId}/flow`, {
       method: "PUT",

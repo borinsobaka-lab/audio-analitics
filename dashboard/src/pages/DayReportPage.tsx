@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   api,
+  CallRun,
+  OUTCOME_LABELS,
+  plural,
   DayReport,
   Dialog,
   DialogDetail,
@@ -47,6 +50,10 @@ export default function DayReportPage() {
   const [reprocessing, setReprocessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const deck = useRef<DeckHandle>(null);
+  // ?t=секунды — пришли из журнала звонков: сразу на момент звонка.
+  const [params] = useSearchParams();
+  const startAt = Number(params.get("t"));
+  const jumped = useRef(false);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -65,6 +72,12 @@ export default function DayReportPage() {
   }, [id, load]);
 
   const seek = (seconds: number) => deck.current?.seek(seconds);
+
+  useEffect(() => {
+    if (jumped.current || !audioUrl || !report || !Number.isFinite(startAt) || startAt <= 0) return;
+    jumped.current = true;
+    requestAnimationFrame(() => deck.current?.seek(startAt));
+  }, [audioUrl, report, startAt]);
   const refreshSrc = useCallback(
     () => (id ? api.dayAudioUrl(id).then((r) => r.url) : Promise.reject(new Error("no id"))),
     [id]
@@ -279,6 +292,8 @@ export default function DayReportPage() {
           />
         ))}
       </Section>
+
+      <ShiftCalls recordingId={recording.id} dayStartMs={dayStartMs} onSeek={seek} />
 
       {audioUrl && (
         <Deck
@@ -524,5 +539,79 @@ function DialogCard({
         </div>
       )}
     </div>
+  );
+}
+
+/** Звонки, которые сотрудник смены вёл по сценарию в «Скриптах»: время на
+ *  часах, итог и путь — и кнопка, чтобы послушать сам разговор в записи. */
+function ShiftCalls({
+  recordingId,
+  dayStartMs,
+  onSeek,
+}: {
+  recordingId: string;
+  dayStartMs: number | null;
+  onSeek: (seconds: number) => void;
+}) {
+  const [runs, setRuns] = useState<CallRun[]>([]);
+  const [open, setOpen] = useState("");
+  useEffect(() => {
+    api
+      .callRunsForRecording(recordingId)
+      .then((p) => setRuns(p.items))
+      .catch(() => setRuns([]));
+  }, [recordingId]);
+  if (!runs.length) return null;
+  const booked = runs.filter((r) => r.outcome === "booked").length;
+  return (
+    <Section
+      title="Звонки по сценарию"
+      hint={`${runs.length} ${plural(runs.length, "звонок", "звонка", "звонков")} · записались ${booked} · ▶ — послушать разговор`}
+    >
+      <div className="sheet journal">
+        {runs.map((r) => {
+          const offset = r.recording_offset_s ?? 0;
+          const cls = r.outcome || (r.status === "live" ? "live" : "none");
+          const isOpen = open === r.id;
+          return (
+            <div key={r.id} className={`journal-item${isOpen ? " open" : ""}`}>
+              <div className="shift-call-row">
+                <button type="button" className="ghost small shift-call-play" title="Послушать с этого места"
+                  onClick={() => onSeek(Math.max(0, offset - 15))}>
+                  <IconPlay /> {dayStartMs ? clockAt(dayStartMs, offset) : fmtTs(offset)}
+                </button>
+                <button type="button" className="journal-row shift-call-main" aria-expanded={isOpen}
+                  onClick={() => setOpen(isOpen ? "" : r.id)}>
+                  <span className="journal-who">
+                    {r.section_title}
+                    {r.client_name && <span className="journal-client"> · {r.client_name}</span>}
+                  </span>
+                  <span className={`journal-outcome outcome-pill outcome-${cls}`}>
+                    {r.outcome ? OUTCOME_LABELS[r.outcome as keyof typeof OUTCOME_LABELS] : "Без итога"}
+                  </span>
+                  <span className="journal-last">
+                    <span className="muted">{r.outcome === "booked" ? "до" : "на"}</span> {r.last_node_title}
+                  </span>
+                  <span className="journal-meta muted num">
+                    {r.steps} {plural(r.steps, "шаг", "шага", "шагов")}
+                  </span>
+                </button>
+              </div>
+              {isOpen && (
+                <ol className="journal-path">
+                  {r.path.map((p, i) => (
+                    <li key={i} className={p.group === "objection" ? "objection" : ""}>
+                      <span className="journal-step">{p.title}</span>
+                      {p.answer && <span className="journal-answer">{p.answer}</span>}
+                      {p.gap && <span className="journal-gap">нет ответа: «{p.gap}»</span>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
   );
 }
