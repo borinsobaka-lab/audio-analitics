@@ -1,17 +1,15 @@
 /** Карточка скрипта.
  *
- *  Свёрнутая — название и первое сообщение целиком, на подложке и с кнопкой
- *  «Копировать»: обрезанный текст заставлял раскрывать карточку только ради
- *  того, чтобы его дочитать, а копировать вслепую то, чего не видно, нельзя.
- *  Раскрытая — всё, что было в документе вокруг текста: когда отправлять,
- *  ветки «если выбирают…», варианты по студиям и что сделать после отправки.
+ *  Всегда раскрыта — по просьбе владельца сворачивания нет: всё, что было в
+ *  документе вокруг текста, видно сразу — когда отправлять, ветки «если
+ *  выбирают…», варианты по студиям и что сделать после отправки. Каждое
+ *  сообщение — целиком, на подложке и с кнопкой «Копировать».
  *
  *  Внизу всегда полоса: кто, когда и что изменил в последний раз. Скрипт
  *  меняется у всех сразу, и у стойки должно быть видно, почему текст другой.
  */
 import { useEffect, useRef, useState } from "react";
 import { fmtWhen, ScriptItem, ScriptLang, ScriptMessage, ScriptSection } from "../api";
-import { ConfirmAction } from "../components/ui";
 import {
   copyText,
   KIND_LABELS,
@@ -35,14 +33,6 @@ const IconCheck = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M4.5 12.5l5 5 10-11" />
-  </svg>
-);
-
-const IconChevron = ({ open }: { open: boolean }) => (
-  <svg className={`chev${open ? " open" : ""}`} width="16" height="16" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
-    strokeLinejoin="round" aria-hidden="true">
-    <path d="M6 9l6 6 6-6" />
   </svg>
 );
 
@@ -121,8 +111,6 @@ export default function ScriptCard({
   section,
   showSection,
   terms,
-  expanded,
-  onToggle,
   lang,
   studio,
   onStudio,
@@ -132,7 +120,6 @@ export default function ScriptCard({
   canEdit,
   onEdit,
   onMove,
-  onDelete,
   isFirst,
   isLast,
 }: {
@@ -140,8 +127,6 @@ export default function ScriptCard({
   section: ScriptSection;
   showSection: boolean;
   terms: string[];
-  expanded: boolean;
-  onToggle: () => void;
   lang: ScriptLang;
   studio: string;
   onStudio: (label: string) => void;
@@ -151,66 +136,37 @@ export default function ScriptCard({
   canEdit: boolean;
   onEdit: () => void;
   onMove: (delta: -1 | 1) => void;
-  onDelete: () => void;
   isFirst: boolean;
   isLast: boolean;
 }) {
   const variant = pickVariant(item, studio);
   const messages = variant.messages;
-  const shownMessages = expanded ? messages : messages.slice(0, 1);
-  const more = messages.length - 1;
-  const hasExtras = more > 0 || Boolean(item.note) || Boolean(item.follow_up) || item.variants.length > 1;
-  const bodyId = `script-body-${item.id}`;
 
   return (
-    <article id={`script-${item.id}`} className={`script${expanded ? " open" : ""}${flash ? " flash" : ""}`}>
-      <div className="script-top">
-        <button
-          type="button"
-          className="script-toggle"
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          onClick={onToggle}
-        >
+    <article id={`script-${item.id}`} className={`script${flash ? " flash" : ""}`}>
+      <header className="script-top">
+        <div className="script-head">
           {/* Тип — цветной меткой справа от названия: отдельная строка под
               метку съедала высоту каждой карточки. */}
           <span className="script-title-row">
-            <span className="script-title">
+            <h3 className="script-title">
               <Highlight text={item.title} terms={terms} />
-            </span>
+            </h3>
             <span className={`kind kind-${item.kind}`}>{KIND_LABELS[item.kind]}</span>
           </span>
-          {(showSection || (variant.label && item.variants.length > 1) || (!expanded && more > 0)) && (
+          {(showSection || (variant.label && item.variants.length > 1)) && (
             <span className="script-meta">
               {showSection && <span className="script-section">{section.title}</span>}
               {variant.label && item.variants.length > 1 && (
                 <span className="script-section">{variant.label}</span>
               )}
-              {!expanded && more > 0 && (
-                <span className="script-more">
-                  ещё {more} {more === 1 ? "сообщение" : more < 5 ? "сообщения" : "сообщений"}
-                </span>
-              )}
             </span>
           )}
-        </button>
-        {hasExtras && (
-          <button
-            type="button"
-            className="ghost small icon-btn"
-            onClick={onToggle}
-            aria-label={expanded ? "Свернуть" : "Развернуть: пояснения, все сообщения, что дальше"}
-            title={expanded ? "Свернуть" : "Пояснения, все сообщения, что дальше"}
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-          >
-            <IconChevron open={expanded} />
-          </button>
-        )}
-      </div>
+        </div>
+      </header>
 
-      <div className="script-body" id={bodyId}>
-        {expanded && item.note && (
+      <div className="script-body">
+        {item.note && (
           <div className="script-note">
             <span className="script-note-title">Как использовать</span>
             <p>
@@ -219,7 +175,7 @@ export default function ScriptCard({
           </div>
         )}
 
-        {expanded && item.variants.length > 1 && (
+        {item.variants.length > 1 && (
           <div className="script-variants">
             <span className="label">Студия</span>
             <div className="seg" role="group" aria-label="Вариант для студии">
@@ -238,7 +194,7 @@ export default function ScriptCard({
           </div>
         )}
 
-        {shownMessages.map((message, i) => (
+        {messages.map((message, i) => (
           <MessageBlock
             key={i}
             message={message}
@@ -250,7 +206,7 @@ export default function ScriptCard({
           />
         ))}
 
-        {expanded && item.follow_up && (
+        {item.follow_up && (
           <div className="script-after">
             <span className="script-after-title">❗ Дальше</span>
             <p>
@@ -269,19 +225,16 @@ export default function ScriptCard({
         </span>
         {canEdit && (
           <span className="script-actions">
-            {expanded && (
-              <>
-                <button type="button" className="ghost small" disabled={isFirst}
-                  onClick={() => onMove(-1)} aria-label="Выше" title="Выше">
-                  ↑
-                </button>
-                <button type="button" className="ghost small" disabled={isLast}
-                  onClick={() => onMove(1)} aria-label="Ниже" title="Ниже">
-                  ↓
-                </button>
-                <ConfirmAction small label="Удалить" confirmLabel="Удалить скрипт" onConfirm={onDelete} />
-              </>
-            )}
+            <button type="button" className="ghost small" disabled={isFirst}
+              onClick={() => onMove(-1)} aria-label="Выше" title="Выше">
+              ↑
+            </button>
+            <button type="button" className="ghost small" disabled={isLast}
+              onClick={() => onMove(1)} aria-label="Ниже" title="Ниже">
+              ↓
+            </button>
+            {/* Удаление — в правке, рядом с «Сохранить», с двойным
+                подтверждением: здесь оно было бы в одном промахе от «Изменить». */}
             <button type="button" className="ghost small" onClick={onEdit}>
               Изменить
             </button>

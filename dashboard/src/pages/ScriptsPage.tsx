@@ -36,9 +36,6 @@ const IconSearch = () => (
   </svg>
 );
 
-/** Сколько найденных скриптов раскрывать сразу: один-три — это ответ на
- *  вопрос, его хочется видеть целиком; больше — это список, его листают. */
-const AUTO_OPEN = 3;
 
 export default function ScriptsPage() {
   const me = useSession();
@@ -52,8 +49,6 @@ export default function ScriptsPage() {
   const { lang, setLang, studio, setStudio } = useScriptPrefs();
 
   const [query, setQuery] = useState("");
-  // Явные раскрытия и сворачивания; чего здесь нет — решает правило по умолчанию.
-  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -109,10 +104,9 @@ export default function ScriptsPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Ссылка на конкретный скрипт: раскрыть, докрутить и коротко подсветить.
+  // Ссылка на конкретный скрипт: докрутить и коротко подсветить.
   useEffect(() => {
     if (!focusId || !playbook) return;
-    setToggled((t) => ({ ...t, [focusId]: true }));
     setFlash(focusId);
     const frame = requestAnimationFrame(() =>
       document.getElementById(`script-${focusId}`)?.scrollIntoView({ block: "start" })
@@ -196,8 +190,7 @@ export default function ScriptsPage() {
     );
   }
 
-  function renderCard(item: ScriptItem, sec: ScriptSection, index: number, autoOpen: boolean,
-    showSection: boolean) {
+  function renderCard(item: ScriptItem, sec: ScriptSection, index: number, showSection: boolean) {
     if (editing === item.id) {
       return (
         <ScriptEditor
@@ -209,6 +202,11 @@ export default function ScriptsPage() {
           isNew={false}
           onSave={(draft, note) => saveItem(item, draft, note)}
           onCancel={() => setEditing(null)}
+          onDelete={async () => {
+            await api.deleteScript(item.id);
+            await reload();
+            setEditing(null);
+          }}
         />
       );
     }
@@ -219,10 +217,6 @@ export default function ScriptsPage() {
         section={sec}
         showSection={showSection}
         terms={terms}
-        expanded={toggled[item.id] ?? autoOpen}
-        onToggle={() =>
-          setToggled((t) => ({ ...t, [item.id]: !(t[item.id] ?? autoOpen) }))
-        }
         lang={lang}
         studio={activeStudio}
         onStudio={setStudio}
@@ -232,18 +226,16 @@ export default function ScriptsPage() {
         canEdit={canEdit}
         onEdit={() => setEditing(item.id)}
         onMove={(delta) => moveItem(sec, index, delta)}
-        onDelete={() => run(() => api.deleteScript(item.id))}
         isFirst={index === 0}
         isLast={index === sec.items.length - 1}
       />
     );
   }
 
-  function renderSection(sec: ScriptSection, asPage: boolean) {
-    const autoOpen = asPage && sec.items.length <= AUTO_OPEN;
+  function renderSection(sec: ScriptSection) {
     return (
       <div className="script-list">
-        {sec.items.map((item, i) => renderCard(item, sec, i, autoOpen, false))}
+        {sec.items.map((item, i) => renderCard(item, sec, i, false))}
         {editing === `new:${sec.id}` && (
           <ScriptEditor
             initial={emptyDraft(sec.id)}
@@ -403,7 +395,7 @@ export default function ScriptsPage() {
         hits.length ? (
           <div className="script-list">
             {hits.map(({ item, section: sec }) =>
-              renderCard(item, sec, sec.items.indexOf(item), hits.length <= AUTO_OPEN, true)
+              renderCard(item, sec, sec.items.indexOf(item), true)
             )}
           </div>
         ) : (
@@ -413,7 +405,7 @@ export default function ScriptsPage() {
           </Empty>
         )
       ) : section ? (
-        renderSection(section, true)
+        renderSection(section)
       ) : sectionId ? (
         <Empty title="Раздел не найден">Его могли удалить. Откройте «Все скрипты».</Empty>
       ) : sections.length ? (
@@ -427,7 +419,7 @@ export default function ScriptsPage() {
               </h3>
               <span className="count">{sec.items.length}</span>
             </div>
-            {renderSection(sec, false)}
+            {renderSection(sec)}
           </div>
         ))
       ) : (

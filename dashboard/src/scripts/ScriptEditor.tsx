@@ -46,6 +46,7 @@ export default function ScriptEditor({
   variables,
   onSave,
   onCancel,
+  onDelete,
 }: {
   initial: ScriptItemDraft;
   sections: ScriptSection[];
@@ -56,6 +57,8 @@ export default function ScriptEditor({
   variables: { key: string; description: string }[];
   onSave: (draft: ScriptItemDraft, changeNote: string) => Promise<void>;
   onCancel: () => void;
+  /** Удаление — только у существующего скрипта. */
+  onDelete?: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ScriptItemDraft>(() => clone(initial));
   const [saving, setSaving] = useState(false);
@@ -63,6 +66,22 @@ export default function ScriptEditor({
   // Сохранение правки — в два шага: сначала «что изменили», потом запись.
   const [asking, setAsking] = useState(false);
   const [changeNote, setChangeNote] = useState("");
+  // Удаление — после двух подтверждений: 0 — кнопка, 1 — первый вопрос,
+  // 2 — последний. Скрипт пропадает у всех сразу и не восстанавливается.
+  const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0);
+
+  async function remove() {
+    if (!onDelete) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (e) {
+      setError((e as Error).message);
+      setSaving(false);
+      setDeleteStep(0);
+    }
+  }
   // Поле, в котором стоял курсор: туда вставляется переменная по кнопке.
   const lastField = useRef<string | null>(null);
   const byStudio = draft.variants.length > 1;
@@ -425,7 +444,7 @@ export default function ScriptEditor({
                 Назад к правке
               </button>
             </>
-          ) : (
+          ) : deleteStep === 0 ? (
             <>
               <button type="button" onClick={requestSave} disabled={saving}>
                 {saving ? "Сохраняем…" : isNew ? "Добавить скрипт" : "Сохранить"}
@@ -433,7 +452,37 @@ export default function ScriptEditor({
               <button type="button" className="ghost" onClick={onCancel} disabled={saving}>
                 Отмена
               </button>
+              {onDelete && (
+                <button
+                  type="button"
+                  className="danger delete-start"
+                  onClick={() => setDeleteStep(1)}
+                  disabled={saving}
+                >
+                  Удалить
+                </button>
+              )}
             </>
+          ) : (
+            <div className="delete-confirm" role="alertdialog" aria-live="assertive">
+              <span className="delete-question">
+                {deleteStep === 1
+                  ? `Удалить скрипт «${draft.title || initial.title}»?`
+                  : "Точно удалить? Скрипт пропадёт у всех, вернуть его будет нельзя."}
+              </span>
+              <button
+                type="button"
+                className="danger"
+                autoFocus
+                disabled={saving}
+                onClick={() => (deleteStep === 1 ? setDeleteStep(2) : remove())}
+              >
+                {deleteStep === 1 ? "Да, удалить" : saving ? "Удаляем…" : "Удалить навсегда"}
+              </button>
+              <button type="button" className="ghost" disabled={saving} onClick={() => setDeleteStep(0)}>
+                Не удалять
+              </button>
+            </div>
           )}
         </div>
       </div>
