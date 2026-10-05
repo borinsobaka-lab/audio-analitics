@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, getToken, Location, Me, onSessionExpired, plural, setToken } from "./api";
 import Logo from "./components/Logo";
 import { Skeleton } from "./components/ui";
@@ -39,6 +39,7 @@ function preloadPages() {
 import { totalScripts } from "./scripts/logic";
 import { PlaybookProvider, usePlaybook } from "./scripts/store";
 import { SessionContext, StudioContext } from "./session";
+import { IconSparkle } from "./scripts/AssistDialog";
 import { clearCache, readCache, take, writeCache } from "./boot";
 
 const STUDIO_KEY = "aa_studios";
@@ -203,6 +204,84 @@ function ScriptsNav() {
   );
 }
 
+/** Нижняя панель скриптов на телефоне: слева «ИИ-помощник», справа —
+ *  разделы. Пальцу до низа экрана ближе, чем до шапки, а меню разделов
+ *  раскрывается вверх и выглядит как боковое меню на компьютере. */
+function MobileScriptsBar() {
+  const { playbook, unread, setAssistPending } = usePlaybook();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const onAssist = () => {
+    // Окно ИИ живёт на странице скриптов: из настроек — сначала туда.
+    if (location.pathname.startsWith("/scripts/settings")) navigate("/scripts");
+    setAssistPending(true);
+  };
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const sections = playbook?.sections ?? [];
+
+  // Выбрали раздел — меню закрывается само.
+  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const sectionId = location.pathname.match(/^\/scripts\/([^/]+)/)?.[1];
+  const current =
+    sectionId === "settings"
+      ? { title: "Настройки", icon: NavIcons.settings }
+      : (() => {
+          const sec = sections.find((s) => s.id === sectionId);
+          return sec
+            ? { title: sec.title, icon: sectionIcon(sec.icon) }
+            : { title: "Все скрипты", icon: NavIcons.allScripts };
+        })();
+
+  return (
+    <div className="mobile-bottom">
+      <button type="button" className="mb-assist" onClick={onAssist}>
+        <IconSparkle size={18} /> ИИ-помощник
+      </button>
+      <div className="mb-sections" ref={ref}>
+        {open && (
+          <div className="mb-menu" role="menu">
+            <ScriptsNav />
+          </div>
+        )}
+        <button
+          type="button"
+          className={`mb-current${open ? " on" : ""}`}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <NavIcon icon={current.icon} />
+          <span className="mb-current-title">{current.title}</span>
+          {unread > 0 && <span className="nav-badge num">{unread}</span>}
+          <span className="mb-caret" aria-hidden="true">{open ? "▾" : "▴"}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const IconMenu = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+
 export default function App() {
   // null — не вошли; undefined — ещё проверяем сохранённый токен. С токеном
   // и сохранённым «кто я» админка рисуется сразу, а проверка идёт в фоне.
@@ -279,6 +358,9 @@ export default function App() {
   const selectAll = useCallback(() => remember([]), [remember]);
 
   const location = useLocation();
+  // Меню-гамбургер на телефоне: закрывается при любом переходе.
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => setDrawer(false), [location.pathname]);
   const lastPath = useRef<Record<Product, string>>({
     scripts: "/scripts",
     analytics: "/analytics",
@@ -333,8 +415,30 @@ export default function App() {
     <SessionContext.Provider value={me}>
       <StudioContext.Provider value={studio}>
         <PlaybookProvider enabled={product === "scripts"} watchSuggestions={product === "scripts"}>
-          <div className="layout">
-            <nav className="sidebar">
+          <div className={`layout${product === "scripts" && !shared ? " has-bottom" : ""}`}>
+            {/* Шапка телефона: логотип, продукты и гамбургер. Остальное меню —
+                в выезжающей панели (это та же боковая панель компьютера). */}
+            <header className="mobile-top">
+              <Link to="/" className="brand" aria-label="Lady Stretch — на главную">
+                <Logo className="brand-logo" />
+              </Link>
+              <ProductSwitch
+                product={product}
+                lastPath={lastPath.current}
+                onProductPage={!shared}
+              />
+              <button
+                type="button"
+                className="menu-toggle"
+                aria-label="Меню"
+                aria-expanded={drawer}
+                onClick={() => setDrawer((v) => !v)}
+              >
+                <IconMenu />
+              </button>
+            </header>
+            {drawer && <div className="drawer-backdrop" onClick={() => setDrawer(false)} />}
+            <nav className={`sidebar${drawer ? " open" : ""}`}>
               {/* Логотип ведёт на главную — в скрипты, как после входа. */}
               <Link to="/" className="brand" aria-label="Lady Stretch — на главную">
                 <Logo className="brand-logo" />
@@ -446,6 +550,9 @@ export default function App() {
               </Suspense>
               </ErrorBoundary>
             </main>
+            {product === "scripts" && !shared && (
+              <MobileScriptsBar />
+            )}
           </div>
         </PlaybookProvider>
       </StudioContext.Provider>

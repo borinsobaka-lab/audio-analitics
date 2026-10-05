@@ -29,6 +29,10 @@ interface PlaybookState {
   /** Новые предложения сотрудников, которых этот администратор не видел. */
   unread: number;
   setUnread: (count: number) => void;
+  /** Открыть ИИ-помощника извне страницы скриптов — из нижней панели на
+   *  телефоне. Страница скриптов откроет окно и снимет флаг. */
+  assistPending: boolean;
+  setAssistPending: (value: boolean) => void;
 }
 
 const PlaybookContext = createContext<PlaybookState>({
@@ -39,6 +43,8 @@ const PlaybookContext = createContext<PlaybookState>({
   reload: async () => {},
   unread: 0,
   setUnread: () => {},
+  assistPending: false,
+  setAssistPending: () => {},
 });
 
 /** Как часто проверять новые предложения: раз в минуту хватает, чтобы
@@ -57,6 +63,7 @@ export function PlaybookProvider({
   children: ReactNode;
 }) {
   const [unread, setUnread] = useState(0);
+  const [assistPending, setAssistPending] = useState(false);
   // Сохранённое с прошлого раза — сразу на экран; свежее придёт следом.
   const [playbook, setPlaybook] = useState<Playbook | null>(() => readCache<Playbook>("playbook"));
   const [settings, setSettingsState] = useState<PlaybookSettings | null>(() =>
@@ -113,8 +120,18 @@ export function PlaybookProvider({
   }, [watchSuggestions]);
 
   const value = useMemo(
-    () => ({ playbook, settings, setSettings, error, reload, unread, setUnread }),
-    [playbook, settings, error, reload, unread]
+    () => ({
+      playbook,
+      settings,
+      setSettings,
+      error,
+      reload,
+      unread,
+      setUnread,
+      assistPending,
+      setAssistPending,
+    }),
+    [playbook, settings, setSettings, error, reload, unread, assistPending]
   );
   return <PlaybookContext.Provider value={value}>{children}</PlaybookContext.Provider>;
 }

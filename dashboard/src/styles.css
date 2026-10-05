@@ -2828,39 +2828,43 @@ button.fmt-btn:hover {
   .layout {
     flex-direction: column;
   }
+  /* Боковая панель на телефоне — выезжающее справа меню (гамбургер):
+     «Сотрудники», кто вошёл, «Выйти», а в «Аналитике» — и её разделы.
+     Логотип и продукты — в шапке, разделы скриптов — в нижней панели. */
   .sidebar {
-    width: 100%;
-    height: auto;
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 30;
-    background: var(--nav);
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--nav-edge);
-    overflow-x: auto;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    width: min(320px, 86vw);
+    height: 100dvh;
+    padding: 20px 14px calc(16px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    box-shadow: var(--sh-deck);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 240ms var(--ease), visibility 0s linear 240ms;
   }
-  .brand {
-    padding: 0 12px 0 2px;
+  .sidebar.open {
+    transform: none;
+    visibility: visible;
+    transition: transform 240ms var(--ease);
   }
-  .brand-logo {
-    width: auto;
-    height: 30px;
+  .sidebar > .brand,
+  .sidebar > .product-switch,
+  .sidebar > .nav-sections {
+    display: none;
   }
   .sidebar-foot {
-    margin: 0 0 0 auto;
-    padding: 0 0 0 12px;
+    margin-top: 0;
+    padding-top: 0;
     border-top: none;
-    /* В горизонтальной полосе имя и «Выйти» встают в строку: блочная
-       вёрстка бокового меню растянула бы кнопку на всю ширину полосы. */
-    display: flex;
-    align-items: center;
-    gap: 10px;
   }
-  .who-row {
-    padding: 0;
+  .sidebar > .nav-link + .sidebar-foot {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--nav-edge);
   }
   .content {
     padding: 20px 16px 40px;
@@ -2895,13 +2899,147 @@ button.fmt-btn:hover {
     width: 100%;
     overflow-x: auto;
   }
-  /* Полоса меню: переключатель продуктов встаёт в строку, разделы
-     скриптов уходят в ленту на странице. */
-  .product-switch {
-    margin: 0 4px 0 0;
+  /* Шапка: логотип, «Скрипты / Аналитика», гамбургер — без прокрутки. */
+  .mobile-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--nav);
+    color: var(--nav-ink);
   }
-  .nav-sections {
-    display: none;
+  .mobile-top .brand {
+    padding: 0;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .mobile-top .brand-logo {
+    width: auto;
+    height: 28px;
+    max-width: 100%;
+  }
+  .mobile-top .product-switch {
+    margin: 0 0 0 auto;
+  }
+  .menu-toggle {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-sm);
+    background: var(--nav-fill);
+    color: var(--nav-ink);
+    box-shadow: none;
+  }
+  .menu-toggle[aria-expanded="true"] {
+    background: var(--nav-fill-2);
+  }
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(11, 13, 22, 0.5);
+    animation: backdrop-in 200ms ease;
+  }
+  /* Нижняя панель скриптов: слева ИИ, справа разделы. */
+  .mobile-bottom {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    gap: 8px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: var(--nav);
+    border-top: 1px solid var(--nav-edge);
+  }
+  .layout.has-bottom .content {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  .mb-assist {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 44px;
+    min-height: 0;
+    padding: 0 14px;
+    border: 1.5px solid transparent;
+    border-radius: var(--r-sm);
+    background:
+      linear-gradient(var(--nav), var(--nav)) padding-box,
+      var(--ai-grad) border-box;
+    color: var(--nav-ink-hi);
+    box-shadow: 0 0 14px -4px var(--ai-glow);
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .mb-sections {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  .mb-current {
+    width: 100%;
+    height: 44px;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--r-sm);
+    background: var(--nav-fill);
+    color: var(--nav-ink-hi);
+    box-shadow: none;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mb-current.on {
+    background: var(--nav-fill-2);
+  }
+  .mb-current-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  .mb-caret {
+    color: var(--nav-ink-2);
+    font-size: 12px;
+  }
+  /* Разделы раскрываются вверх — как боковое меню компьютера. */
+  .mb-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    width: min(340px, calc(100vw - 24px));
+    max-height: 68dvh;
+    overflow-y: auto;
+    padding: 8px;
+    border-radius: var(--r-md);
+    background: var(--nav);
+    box-shadow: var(--sh-deck), 0 0 0 1px var(--nav-edge);
+    transform-origin: bottom right;
+    animation: mb-menu-in 200ms var(--ease);
+  }
+  .mb-menu .nav-sections {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .mb-menu .nav-settings {
+    margin-top: 6px;
   }
   /* На телефоне клавиатуры с «/» нет — подсказка только отнимала бы место. */
   .search-hint {
@@ -2910,12 +3048,27 @@ button.fmt-btn:hover {
   .search input[type="text"] {
     padding-right: 44px;
   }
+  /* Поиск, языки и студии закреплены сверху при прокрутке; «+ Скрипт» —
+     справа от поиска, ИИ — в нижней панели. */
   .script-toolbar {
-    position: static;
-    margin: 0 0 12px;
-    padding: 0;
+    margin: -20px -16px 12px;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .script-toolbar .search {
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .script-toolbar .add-script-btn {
+    order: 2;
+    padding: 0 12px;
+  }
+  .script-toolbar .assist-btn {
+    display: none;
   }
   .script-prefs {
+    order: 3;
     width: 100%;
   }
   .script-prefs .seg {
@@ -4380,9 +4533,6 @@ button.change-title:hover {
   .script-suggest-label {
     display: none;
   }
-  .add-script-btn {
-    width: 100%;
-  }
 }
 .section-head .section-menu {
   align-self: center;
@@ -4390,9 +4540,6 @@ button.change-title:hover {
 }
 @media (max-width: 900px) {
   /* На телефоне панель не закреплена — и отделять её не от чего. */
-  .script-toolbar::before {
-    display: none;
-  }
 }
 
 /* --- ИИ-помощник ---------------------------------------------------------- */
@@ -4865,9 +5012,6 @@ button.ai-primary:disabled {
 }
 
 @media (max-width: 900px) {
-  .assist-btn {
-    flex: 1;
-  }
   .stats-tiles {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -5040,4 +5184,25 @@ button.ai-primary:disabled {
 }
 .ai-modal .modal-body > .note:last-child {
   margin-bottom: 24px;
+}
+
+/* Шапка, гамбургер и нижняя панель — только на телефоне. */
+@media (min-width: 901px) {
+  .mobile-top,
+  .menu-toggle,
+  .drawer-backdrop,
+  .mobile-bottom {
+    display: none;
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mb-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }

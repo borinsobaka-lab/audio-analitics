@@ -48,7 +48,7 @@ export default function ScriptsPage() {
   const focusId = params.get("item");
   const navigate = useNavigate();
   const location = useLocation();
-  const { playbook, settings, error, reload } = usePlaybook();
+  const { playbook, settings, error, reload, assistPending, setAssistPending } = usePlaybook();
   const { locations } = useStudio();
   const { lang, setLang, studio, setStudio } = useScriptPrefs();
 
@@ -110,6 +110,13 @@ export default function ScriptsPage() {
     ],
     [settings]
   );
+
+  // «ИИ-помощник» из нижней панели на телефоне.
+  useEffect(() => {
+    if (!assistPending) return;
+    setAssistPending(false);
+    setAssisting(true);
+  }, [assistPending, setAssistPending]);
 
   // Переход в другой раздел — это просмотр, а не поиск: запрос сбрасывается.
   useEffect(() => {
@@ -464,21 +471,7 @@ export default function ScriptsPage() {
         />
       )}
 
-      {/* На телефоне боковое меню — узкая полоса, и разделы в ней не
-          поместятся: там они живут здесь, лентой над списком. */}
-      <nav className="script-chips" aria-label="Разделы скриптов">
-        <NavLink to="/scripts" end className="chip">
-          Все
-        </NavLink>
-        {sections.map((s) => (
-          <NavLink key={s.id} to={`/scripts/${s.id}`} className="chip">
-            {s.title}
-          </NavLink>
-        ))}
-        <NavLink to="/scripts/settings" className="chip">
-          Настройки
-        </NavLink>
-      </nav>
+      {/* На телефоне разделы — в нижней панели (App → MobileScriptsBar). */}
 
       <PageHead
         title={
