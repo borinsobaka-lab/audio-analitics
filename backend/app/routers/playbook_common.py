@@ -50,16 +50,18 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         raise HTTPException(400, "Неверный курсор") from None
 
 
-async def page_by_time(db: AsyncSession, q, model, cursor: str, limit: int) -> tuple[list, str]:
+async def page_by_time(
+    db: AsyncSession, q, model, cursor: str, limit: int, time_field: str = "created_at"
+) -> tuple[list, str]:
     """Порция записей от новых к старым и курсор следующей (пусто — конец).
-    У model должны быть created_at и id."""
+    У model должны быть id и колонка времени time_field."""
     limit = max(1, min(limit, 50))
+    col = getattr(model, time_field)
     if cursor:
         at, row_id = decode_cursor(cursor)
-        q = q.where((model.created_at < at) | ((model.created_at == at) & (model.id < row_id)))
-    rows = (
-        await db.scalars(q.order_by(model.created_at.desc(), model.id.desc()).limit(limit + 1))
-    ).all()
+        q = q.where((col < at) | ((col == at) & (model.id < row_id)))
+    rows = (await db.scalars(q.order_by(col.desc(), model.id.desc()).limit(limit + 1))).all()
     more = len(rows) > limit
     rows = rows[:limit]
-    return rows, encode_cursor(rows[-1].created_at, rows[-1].id) if more and rows else ""
+    last = rows[-1] if rows else None
+    return rows, encode_cursor(getattr(last, time_field), last.id) if more and last else ""

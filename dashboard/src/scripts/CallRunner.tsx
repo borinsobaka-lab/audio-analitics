@@ -15,6 +15,9 @@
  *  Место в сценарии и имя живут в sessionStorage вкладки: случайный переход
  *  в другой раздел посреди звонка не сбрасывает разговор.
  *
+ *  «Тест» — пробный прогон: проходится так же, но в статистику не уходит;
+ *  «Закончить тест» возвращает к обычному звонку с начала.
+ *
  *  Путь по блокам тихо уходит в аналитику («Аналитика» → «Звонки»): докуда
  *  дошёл разговор и на каком блоке закончился — чтобы видеть, где сценарий
  *  теряет клиентов. Администратору ничего нажимать не нужно.
@@ -33,10 +36,12 @@ interface Saved {
   name: string;
   /** id звонка в аналитике: повторная отправка — обновление, не дубль. */
   runId?: string;
+  /** Тестовый прогон — в статистику не уходит. */
+  test?: boolean;
 }
 
-function fresh(start: string): Saved {
-  return { path: [{ id: start, at: new Date().toISOString() }], name: "", runId: newRunId() };
+function fresh(start: string, test = false): Saved {
+  return { path: [{ id: start, at: new Date().toISOString() }], name: "", runId: newRunId(), test };
 }
 
 function storageKey(sectionId: string) {
@@ -128,13 +133,29 @@ export default function CallRunner({
     }));
 
   // Путь звонка тихо уходит в аналитику; конец сценария — блок без ответов.
-  const endRun = useCallRun(section.id, byId, validPath, state.runId, current.answers.length === 0);
+  // Без id звонок не отправляется — так тестовый прогон не попадает в статистику.
+  const endRun = useCallRun(
+    section.id,
+    byId,
+    validPath,
+    state.test ? undefined : state.runId,
+    current.answers.length === 0
+  );
 
-  /** «Новый звонок»: прежний звонок закончился на текущем блоке. */
+  /** «Новый звонок»: прежний звонок закончился на текущем блоке. В тесте —
+   *  новый тестовый прогон. */
   const restart = () => {
     endRun();
-    setState(fresh(flow.start));
+    setState(fresh(flow.start, state.test));
   };
+
+  /** Тест начинается с начала сценария; начатый звонок заканчивается там,
+   *  где его оставили, — как по «Новый звонок». */
+  const startTest = () => {
+    endRun();
+    setState(fresh(flow.start, true));
+  };
+  const endTest = () => setState(fresh(flow.start));
 
   // {имя} — имя клиента из поля сверху; остальные переменные — как везде.
   const callVar: VarResolver = useCallback(
@@ -182,7 +203,17 @@ export default function CallRunner({
   const objections = flow.nodes.filter((n) => n.group === "objection");
 
   return (
-    <div className="call">
+    <div className={`call${state.test ? " testing" : ""}`}>
+      {state.test && (
+        <div className="call-test-banner" role="status">
+          <strong>Тестовый прогон</strong>
+          <span>в статистику звонков не попадает</span>
+          <span className="grow" />
+          <button type="button" onClick={endTest}>
+            Закончить тест
+          </button>
+        </div>
+      )}
       <div className="call-bar">
         <label className="call-name">
           <span>Имя клиента</span>
@@ -196,8 +227,14 @@ export default function CallRunner({
         <span className="grow" />
         <span className="call-keys muted">1–9 — ответ клиента · Backspace — назад</span>
         <button type="button" className="secondary" onClick={restart}>
-          Новый звонок
+          {state.test ? "Заново" : "Новый звонок"}
         </button>
+        {!state.test && (
+          <button type="button" className="ghost" onClick={startTest}
+            title="Пробный прогон сценария — в статистику не попадёт">
+            Тест
+          </button>
+        )}
         {canEdit && (
           <button type="button" className="ghost" onClick={onEdit}>
             Редактировать сценарий

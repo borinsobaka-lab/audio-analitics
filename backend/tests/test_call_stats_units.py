@@ -52,3 +52,17 @@ def test_deleted_script_nodes_are_not_script_ends():
     nodes = [{"id": "greet", "title": "Приветствие", "group": "main"}]
     (end,) = aggregate([run(["greet"])], nodes, NOW)["ends"]
     assert not end.script_end
+
+
+def test_run_progress_furthest_stage_and_end():
+    from app.routers.playbook_calls import run_progress
+
+    # Дошёл до «Цель» (2 из 3), закончил на возражении.
+    p = run_progress(run(["greet", "goal", "obj_price"]).path, NODES)
+    assert (p["reached"], p["stages"], p["reached_title"]) == (2, 3, "Цель")
+    assert (p["last_title"], p["last_group"], p["script_end"]) == ("Сколько стоит", "objection", False)
+    # Прошёл весь сценарий.
+    p = run_progress(run(["greet", "goal", "booked"]).path, NODES)
+    assert (p["reached"], p["script_end"]) == (3, True)
+    # Пустой путь не падает.
+    assert run_progress([], NODES)["reached"] == 0
