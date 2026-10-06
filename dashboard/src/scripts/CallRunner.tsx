@@ -238,7 +238,10 @@ export default function CallRunner({
                   Текста на {langInfo(lang).inName} нет — показан русский.
                 </p>
               )}
-              <div className="call-say" lang={shown.fallback ? "ru" : lang}>
+              <div className="script-msg-head">
+                <span className="script-msg-label">Что сказать</span>
+              </div>
+              <div className="script-text call-say" lang={shown.fallback ? "ru" : lang}>
                 <Formatted
                   text={shown.text}
                   terms={[]}

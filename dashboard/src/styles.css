@@ -5397,10 +5397,14 @@ button.ai-primary:disabled {
   padding: 20px 22px 6px;
 }
 /* Реплика — крупно: её читают вслух, не отрываясь от разговора. */
+/* Реплика — в том же вдавленном поле, что текст обычного скрипта (общий
+   класс script-text): то, что уходит клиенту, везде выглядит одинаково.
+   Только крупнее — её читают вслух, не отрываясь от разговора. */
 .call-say {
   font-size: 18px;
-  line-height: 1.6;
-  color: var(--ink);
+}
+.call-card-body .script-msg-head {
+  margin-bottom: -6px;
 }
 .call-say .fmt strong {
   font-weight: 650;
