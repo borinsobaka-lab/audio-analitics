@@ -130,6 +130,7 @@ async def apply_batch(db: AsyncSession, org: Organization, body: CrmIngestIn) ->
             ("title", d.title),
             ("contact_name", d.contact_name),
             ("contact_phone", d.contact_phone),
+            ("contact_key", d.contact_id),
             ("pipeline", d.pipeline),
             ("stage", d.stage),
             ("status", deal_status(d.status) if d.status is not None else None),
@@ -220,6 +221,10 @@ async def apply_batch(db: AsyncSession, org: Organization, body: CrmIngestIn) ->
         if ext:
             known_ext.add(ext)
         bump(deal, at)
+        # Источник сделки, если CRM его не прислала, — канал первого
+        # сообщения клиента: Instagram, WhatsApp, Telegram.
+        if m.direction == "in" and not deal.source and m.channel.strip():
+            deal.source = m.channel.strip().lower()
         out.messages_added += 1
 
     # --- События ---

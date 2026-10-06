@@ -853,6 +853,56 @@ export interface CrmIngestResult {
   events_skipped: number;
 }
 
+// --- amoCRM ---
+
+export interface AmoPipeline {
+  id: string;
+  name: string;
+  stages: string[];
+}
+
+export interface AmoStatus {
+  connected: boolean;
+  enabled: boolean;
+  subdomain: string;
+  domain: string;
+  account_name: string;
+  /** token — долгосрочный токен; oauth — код авторизации с обновлением. */
+  auth: string;
+  token_hint: string;
+  token_expires_at: string | null;
+  sync_every_minutes: number;
+  lookback_days: number;
+  last_sync_at: string | null;
+  last_sync_result: string;
+  last_error: string;
+  last_error_at: string | null;
+  last_webhook_at: string | null;
+  webhooks_received: number;
+  webhook_url: string;
+  webhook_events: string[];
+  pipelines: AmoPipeline[];
+  users: number;
+}
+
+export interface AmoConnectIn {
+  subdomain: string;
+  domain: "amocrm.ru" | "kommo.com" | "amocrm.com";
+  token: string;
+  client_id: string;
+  client_secret: string;
+  redirect_uri: string;
+  code: string;
+  enabled: boolean;
+  sync_every_minutes: number;
+  lookback_days: number;
+}
+
+export interface AmoSyncResult {
+  result: string;
+  applied: CrmIngestResult;
+}
+
 /* Ответы ИИ-помощника — с запасом на рассинхрон версий: админка
  * обновляется сама, а бэкенд — по Redeploy. Поле, которого старый сервер
  * не знает, получает значение по умолчанию, а не роняет страницу. */
@@ -1199,6 +1249,11 @@ export const api = {
   /** Импорт файла выгрузки — тот же формат, что принимает интеграция. */
   importCrm: (body: unknown) =>
     request<CrmIngestResult>("/api/crm/import", { method: "POST", body: JSON.stringify(body) }),
+  amoStatus: () => request<AmoStatus>("/api/crm/amo"),
+  connectAmo: (body: AmoConnectIn) =>
+    request<AmoStatus>("/api/crm/amo", { method: "PUT", body: JSON.stringify(body) }),
+  syncAmo: () => request<AmoSyncResult>("/api/crm/amo/sync", { method: "POST" }),
+  disconnectAmo: () => request<AmoStatus>("/api/crm/amo", { method: "DELETE" }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

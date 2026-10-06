@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 
-from . import crm_ai
+from . import amo, amo_sync, crm_ai
 from .db import async_session_factory
 from .models import CrmEvent, CrmMessage, CrmRun, CrmSettings, Organization
 
@@ -69,8 +69,23 @@ def enqueue(run_id) -> None:
     analyze_crm_day.delay(str(run_id))
 
 
+async def sync_amo(db, org, row, data, *, force: bool) -> None:
+    """Синхронизация с amoCRM по расписанию (или принудительно — перед
+    разбором дня). Ошибка — в настройки, видна в админке; тик не падает."""
+    a = amo_sync.section(data)
+    if not (a.get("enabled") and a.get("access_token")):
+        return
+    if not force and not amo.sync_due(a, datetime.now(timezone.utc)):
+        return
+    try:
+        await amo_sync.sync_org(db, org, row, data)
+    except amo.AmoError as e:
+        log.warning("amoCRM sync (%s): %s", org.name, e)
+
+
 async def tick(now_utc: datetime | None = None) -> int:
-    """Один проход: по каждой организации — пора ли и есть ли что разбирать."""
+    """Один проход: по каждой организации — синхронизация с amoCRM, если
+    пора, и разбор вчерашнего дня, если наступил час и есть что разбирать."""
     now_utc = now_utc or datetime.now(timezone.utc)
     started = 0
     async with async_session_factory() as db:
@@ -78,6 +93,7 @@ async def tick(now_utc: datetime | None = None) -> int:
         for org in orgs:
             row = await db.get(CrmSettings, org.id)
             data = dict((row.data if row else None) or {})
+            await sync_amo(db, org, row, data, force=False)
             day = due_date(data, now_utc)
             if not day:
                 continue
@@ -86,6 +102,9 @@ async def tick(now_utc: datetime | None = None) -> int:
             )
             if exists:
                 continue
+            # Перед разбором — свежие данные: вчерашний вечер мог ещё не
+            # дойти по расписанию.
+            await sync_amo(db, org, row, data, force=True)
             tz = ZoneInfo(data.get("timezone") or DEFAULT_TZ)
             if not await has_activity(db, org.id, day, tz):
                 continue

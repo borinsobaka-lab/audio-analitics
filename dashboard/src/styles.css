@@ -6270,6 +6270,67 @@ tr.empty td {
   margin-top: 12px;
   align-items: center;
 }
+/* Подключение amoCRM: состояние строкой, форма, вебхук отдельной карточкой. */
+.crm-amo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.crm-amo-state,
+.crm-amo-sync {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13.5px;
+}
+.crm-amo-sync {
+  margin-top: -6px;
+}
+.crm-amo-actions {
+  margin-top: 4px;
+}
+.crm-details {
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+  padding: 10px 14px;
+}
+.crm-details > summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.crm-details[open] > summary {
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.crm-details .field-row + .field-row {
+  margin-top: 10px;
+}
+.crm-amo-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.crm-amo-url {
+  margin-top: 12px;
+}
+.crm-amo-url code {
+  word-break: break-all;
+  user-select: all;
+  font-size: 13px;
+}
+.crm-amo-events,
+.crm-amo-pipelines {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.crm-amo-events li + li,
+.crm-amo-pipelines li + li {
+  margin-top: 3px;
+}
 
 @media (max-width: 900px) {
   .crm-criteria-head {

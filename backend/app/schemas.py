@@ -1061,6 +1061,7 @@ class CrmDealOut(BaseModel):
     title: str = ""
     contact_name: str = ""
     contact_phone: str = ""
+    contact_key: str = ""
     pipeline: str = ""
     stage: str = ""
     status: str = "open"
@@ -1265,6 +1266,8 @@ class CrmDealIn(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     contact_name: str | None = Field(default=None, max_length=255)
     contact_phone: str | None = Field(default=None, max_length=64)
+    # id контакта в CRM — чтобы сообщение без сделки нашло её по контакту.
+    contact_id: str | None = Field(default=None, max_length=64)
     pipeline: str | None = Field(default=None, max_length=120)
     stage: str | None = Field(default=None, max_length=120)
     # open | won | lost; чужие названия статусов приводятся к этим трём
@@ -1322,3 +1325,56 @@ class CrmIngestOut(BaseModel):
     messages_skipped: int = 0
     events_added: int = 0
     events_skipped: int = 0
+
+
+# --- amoCRM ---
+
+class AmoPipelineOut(BaseModel):
+    id: str
+    name: str
+    stages: list[str] = []
+
+
+class AmoStatusOut(BaseModel):
+    connected: bool = False
+    enabled: bool = True
+    subdomain: str = ""
+    domain: str = "amocrm.ru"
+    account_name: str = ""
+    # token — долгосрочный токен; oauth — код авторизации с обновлением.
+    auth: str = ""
+    token_hint: str = ""
+    token_expires_at: str | None = None
+    sync_every_minutes: int = 15
+    lookback_days: int = 7
+    last_sync_at: str | None = None
+    last_sync_result: str = ""
+    last_error: str = ""
+    last_error_at: str | None = None
+    last_webhook_at: str | None = None
+    webhooks_received: int = 0
+    webhook_url: str = ""
+    webhook_events: list[str] = []
+    pipelines: list[AmoPipelineOut] = []
+    users: int = 0
+
+
+class AmoConnectIn(BaseModel):
+    subdomain: str = Field(min_length=1, max_length=200)
+    domain: Literal["amocrm.ru", "kommo.com", "amocrm.com"] = "amocrm.ru"
+    # Долгосрочный токен приватной интеграции — самый простой способ.
+    token: str = Field(default="", max_length=4000)
+    # Или код авторизации OAuth с реквизитами интеграции.
+    client_id: str = Field(default="", max_length=120)
+    client_secret: str = Field(default="", max_length=400)
+    redirect_uri: str = Field(default="", max_length=512)
+    code: str = Field(default="", max_length=4000)
+    enabled: bool = True
+    sync_every_minutes: int = Field(default=15, ge=5, le=240)
+    lookback_days: int = Field(default=7, ge=1, le=60)
+
+
+class AmoSyncOut(BaseModel):
+    result: str = ""
+    applied: CrmIngestOut = CrmIngestOut()
+

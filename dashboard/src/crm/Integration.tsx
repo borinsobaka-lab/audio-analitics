@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, CrmIngestResult, CrmSettings, CrmSettingsIn, Employee, plural } from "../api";
 import { ConfirmAction, Note, Section, Skeleton, TableCard } from "../components/ui";
+import AmoConnect from "./AmoConnect";
 
 const EXAMPLE = `{
   "deals": [
@@ -127,7 +128,9 @@ export default function Integration() {
       {error && <Note kind="error">{error}</Note>}
       {notice && <Note kind="success">{notice}</Note>}
 
-      <Section title="Ключ интеграции" hint="им CRM или сценарий n8n/Make подписывает каждый пакет данных">
+      <AmoConnect />
+
+      <Section title="Другая CRM или свой сценарий" hint="ключ, которым CRM или сценарий n8n/Make подписывает каждый пакет данных">
         <div className="sheet sheet-pad crm-key-card">
           <div className="creds-body">
             <div className="creds-pair">

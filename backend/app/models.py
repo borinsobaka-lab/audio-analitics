@@ -717,6 +717,9 @@ class CrmDeal(UUIDMixin, Base):
     title: Mapped[str] = mapped_column(String(255), default="")
     contact_name: Mapped[str] = mapped_column(String(255), default="")
     contact_phone: Mapped[str] = mapped_column(String(64), default="")
+    # id контакта в CRM: по нему находят сделку для сообщения, которое
+    # пришло без сделки (amoCRM, «Неразобранное»).
+    contact_key: Mapped[str] = mapped_column(String(64), default="")
     pipeline: Mapped[str] = mapped_column(String(120), default="")
     stage: Mapped[str] = mapped_column(String(120), default="")
     # open | won | lost

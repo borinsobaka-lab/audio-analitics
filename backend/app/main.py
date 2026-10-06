@@ -14,6 +14,7 @@ from .routers import (
     audio,
     auth_router,
     crm,
+    crm_amo,
     crm_ingest,
     crm_stats,
     employees,
@@ -87,6 +88,7 @@ app.include_router(playbook_settings.router)
 app.include_router(crm.router)
 app.include_router(crm_stats.router)
 app.include_router(crm_ingest.router)
+app.include_router(crm_amo.router)
 
 
 @app.get("/health")
