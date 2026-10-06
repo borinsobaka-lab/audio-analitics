@@ -21,6 +21,10 @@ const pageLoaders = {
   locations: () => import("./pages/LocationsPage"),
   metrics: () => import("./pages/MetricsPage"),
   scriptsSettings: () => import("./pages/ScriptsSettingsPage"),
+  crm: () => import("./pages/CrmPage"),
+  crmDay: () => import("./pages/CrmDayPage"),
+  crmStats: () => import("./pages/CrmStatsPage"),
+  crmSettings: () => import("./pages/CrmSettingsPage"),
 };
 const DashboardPage = lazy(pageLoaders.dashboard);
 const DaysPage = lazy(pageLoaders.days);
@@ -30,6 +34,10 @@ const AppPage = lazy(pageLoaders.app);
 const LocationsPage = lazy(pageLoaders.locations);
 const MetricsPage = lazy(pageLoaders.metrics);
 const ScriptsSettingsPage = lazy(pageLoaders.scriptsSettings);
+const CrmPage = lazy(pageLoaders.crm);
+const CrmDayPage = lazy(pageLoaders.crmDay);
+const CrmStatsPage = lazy(pageLoaders.crmStats);
+const CrmSettingsPage = lazy(pageLoaders.crmSettings);
 
 function preloadPages() {
   const run = () => Object.values(pageLoaders).forEach((load) => load().catch(() => {}));
@@ -128,14 +136,20 @@ function StudioPicker({
   );
 }
 
-type Product = "scripts" | "analytics";
+type Product = "scripts" | "analytics" | "crm";
+
+const PRODUCTS: { key: Product; label: string }[] = [
+  { key: "scripts", label: "Скрипты" },
+  { key: "analytics", label: "Аналитика" },
+  { key: "crm", label: "CRM" },
+];
 
 /** Переключатель продуктов в шапке меню.
  *
- *  Два продукта — две кнопки, а не выпадающий список: выбор виден сразу и
+ *  Три продукта — три кнопки, а не выпадающий список: выбор виден сразу и
  *  делается одним нажатием, на телефоне тоже. Каждая кнопка возвращает туда,
  *  где человек был в этом продукте в последний раз, — переключение не должно
- *  сбрасывать открытую смену или раздел скриптов.
+ *  сбрасывать открытую смену, раздел скриптов или день CRM.
  */
 function ProductSwitch({
   product,
@@ -149,21 +163,40 @@ function ProductSwitch({
 }) {
   return (
     <div className="product-switch" role="group" aria-label="Продукт">
-      <Link
-        to={lastPath.scripts}
-        className={`product-btn${product === "scripts" ? " on" : ""}`}
-        aria-current={onProductPage && product === "scripts" ? "page" : undefined}
-      >
-        Скрипты
-      </Link>
-      <Link
-        to={lastPath.analytics}
-        className={`product-btn${product === "analytics" ? " on" : ""}`}
-        aria-current={onProductPage && product === "analytics" ? "page" : undefined}
-      >
-        Аналитика
-      </Link>
+      {PRODUCTS.map((p) => (
+        <Link
+          key={p.key}
+          to={lastPath[p.key]}
+          className={`product-btn${product === p.key ? " on" : ""}`}
+          aria-current={onProductPage && product === p.key ? "page" : undefined}
+        >
+          {p.label}
+        </Link>
+      ))}
     </div>
+  );
+}
+
+/** Разделы продукта «CRM»: разборы по дням, статистика по менеджерам и —
+ *  тем, кому открыты все сделки, — настройки: критерии, промпт, интеграция. */
+function CrmNav({ me }: { me: Me }) {
+  return (
+    <>
+      <NavLink to="/crm" end className="nav-link">
+        <NavIcon icon={NavIcons.crmReviews} />
+        Разборы
+      </NavLink>
+      <NavLink to="/crm/stats" className="nav-link">
+        <NavIcon icon={NavIcons.crmStats} />
+        Статистика
+      </NavLink>
+      {me.can_manage_crm && (
+        <NavLink to="/crm/settings" className="nav-link">
+          <NavIcon icon={NavIcons.settings} />
+          Настройки
+        </NavLink>
+      )}
+    </>
   );
 }
 
@@ -368,6 +401,7 @@ export default function App() {
   const lastPath = useRef<Record<Product, string>>({
     scripts: "/scripts",
     analytics: "/analytics",
+    crm: "/crm",
   });
   const lastProduct = useRef<Product>("scripts");
   // Сотрудники — общий раздел, не продукт: пока он открыт, меню остаётся в
@@ -377,7 +411,9 @@ export default function App() {
     ? lastProduct.current
     : location.pathname.startsWith("/scripts") || location.pathname === "/"
       ? "scripts"
-      : "analytics";
+      : location.pathname.startsWith("/crm")
+        ? "crm"
+        : "analytics";
   if (!shared && location.pathname !== "/") {
     lastPath.current[product] = location.pathname + location.search;
     lastProduct.current = product;
@@ -455,6 +491,8 @@ export default function App() {
 
               {product === "scripts" ? (
                 <ScriptsNav />
+              ) : product === "crm" ? (
+                <CrmNav me={me} />
               ) : (
                 <>
                   <NavLink to="/analytics" className="nav-link">
@@ -521,7 +559,7 @@ export default function App() {
                         ? "владелец"
                         : `${me.can_edit_scripts ? "правит скрипты" : "читает скрипты"} · ${
                             me.can_view_all ? "все смены" : "свои смены"
-                          }`}
+                          } · ${me.can_view_all_crm ? "вся CRM" : "свои сделки"}`}
                     </span>
                   </div>
                   <button className="ghost small who-signout" onClick={signOut}>
@@ -549,6 +587,10 @@ export default function App() {
                 <Route path="/employees" element={<Navigate to="/users" replace />} />
                 {me.can_manage && <Route path="/locations" element={<LocationsPage />} />}
                 {me.can_manage && <Route path="/app" element={<AppPage />} />}
+                <Route path="/crm" element={<CrmPage />} />
+                <Route path="/crm/stats" element={<CrmStatsPage />} />
+                {me.can_manage_crm && <Route path="/crm/settings" element={<CrmSettingsPage />} />}
+                <Route path="/crm/days/:day" element={<CrmDayPage />} />
                 <Route path="*" element={<Navigate to="/scripts" replace />} />
               </Routes>
               </Suspense>

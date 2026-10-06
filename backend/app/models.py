@@ -99,6 +99,10 @@ class Employee(UUIDMixin, Base):
     # администратор ресепшена может править скрипты, не видя чужих смен, а
     # аналитик — видеть все смены, не трогая тексты.
     scripts_access: Mapped[str] = mapped_column(String(16), default="read")
+    # own | all — право в продукте «CRM»: свои сделки или все сделки и
+    # настройка продукта (критерии, промпт, интеграция). Независимо от двух
+    # других прав, по той же причине.
+    crm_access: Mapped[str] = mapped_column(String(16), default="own")
 
 
 class DayRecording(UUIDMixin, Base):
@@ -668,3 +672,230 @@ class PlaybookCallRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # Звонок завершён: дошли до конца сценария или нажали «Новый звонок».
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# --- CRM: ежедневный разбор переписок и движения сделок ---------------------
+
+
+class CrmSettings(Base):
+    """Настройки продукта «CRM» одной строкой JSON на организацию:
+
+        {"prompt": "…", "summary_prompt": "…", "model": "",
+         "pipeline_rules": "…", "timezone": "Asia/Tbilisi",
+         "auto_run": true, "run_hour": 9,
+         "integration_key": "…",
+         "manager_map": {"<crm manager key>": "<employee_id>"}}
+
+    Как и настройки скриптов — читается и сохраняется целиком.
+    """
+
+    __tablename__ = "crm_settings"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), primary_key=True
+    )
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+
+
+class CrmDeal(UUIDMixin, Base):
+    """Сделка (лид) из CRM — какой её прислала интеграция.
+
+    Сама CRM здесь не выбрана намеренно: данные приходят в одном формате
+    через ключ интеграции (из CRM напрямую, через n8n/Make или файлом), а
+    разбор, критерии и статистика от конкретной CRM не зависят.
+    """
+
+    __tablename__ = "crm_deals"
+    __table_args__ = (
+        UniqueConstraint("org_id", "external_id", name="uq_crm_deal_external"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    external_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255), default="")
+    contact_name: Mapped[str] = mapped_column(String(255), default="")
+    contact_phone: Mapped[str] = mapped_column(String(64), default="")
+    # id контакта в CRM: по нему находят сделку для сообщения, которое
+    # пришло без сделки (amoCRM, «Неразобранное»).
+    contact_key: Mapped[str] = mapped_column(String(64), default="")
+    pipeline: Mapped[str] = mapped_column(String(120), default="")
+    stage: Mapped[str] = mapped_column(String(120), default="")
+    # open | won | lost
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    source: Mapped[str] = mapped_column(String(120), default="")
+    # Ответственный в CRM: ключ и имя как в CRM; employee_id — сопоставленный
+    # сотрудник админки (по настройке или по совпадению имени).
+    manager_key: Mapped[str] = mapped_column(String(64), default="")
+    manager_name: Mapped[str] = mapped_column(String(255), default="")
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True
+    )
+    url: Mapped[str] = mapped_column(String(512), default="")
+    budget: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at_crm: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at_crm: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CrmMessage(UUIDMixin, Base):
+    """Одно сообщение переписки по сделке: от клиента (in) или от
+    администратора (out)."""
+
+    __tablename__ = "crm_messages"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_deals.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    direction: Mapped[str] = mapped_column(String(8))
+    channel: Mapped[str] = mapped_column(String(40), default="")
+    author_key: Mapped[str] = mapped_column(String(64), default="")
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CrmEvent(UUIDMixin, Base):
+    """Событие по сделке: смена этапа или статуса, заметка, задача, звонок."""
+
+    __tablename__ = "crm_events"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_deals.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    from_value: Mapped[str] = mapped_column(String(255), default="")
+    to_value: Mapped[str] = mapped_column(String(255), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    author_key: Mapped[str] = mapped_column(String(64), default="")
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CrmCriterion(UUIDMixin, Base):
+    """Критерий оценки сделки за день: название, что проверять, шкала.
+
+    Критерии заводятся полями, как метрики в аналитике, и по ним же строится
+    статистика по менеджерам: каждой сделке дня ИИ ставит оценку по каждому
+    активному критерию (или говорит, что критерий к ней не применим).
+    """
+
+    __tablename__ = "crm_criteria"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    scale_max: Mapped[int] = mapped_column(Integer, default=10)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CrmRun(UUIDMixin, Base):
+    """Разбор одного дня: все сделки, по которым в этот день была переписка
+    или движение. Один на дату: повторный запуск заменяет прошлый разбор."""
+
+    __tablename__ = "crm_runs"
+    __table_args__ = (UniqueConstraint("org_id", "date", name="uq_crm_run_date"),)
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    # queued | processing | done | error
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    status_detail: Mapped[str] = mapped_column(Text, default="")
+    status_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # manual | schedule
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")
+    deals_total: Mapped[int] = mapped_column(Integer, default=0)
+    reviews_done: Mapped[int] = mapped_column(Integer, default=0)
+    problems_count: Mapped[int] = mapped_column(Integer, default=0)
+    llm_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def set_status(self, status: str | None = None, detail: str | None = None) -> None:
+        if status is not None:
+            self.status = status
+        if detail is not None:
+            self.status_detail = detail
+        self.status_changed_at = utcnow()
+
+
+class CrmReview(UUIDMixin, Base):
+    """Разбор одной сделки за день: класс переписки, проблемная ли, что не
+    так, что хорошо, что делать, как соотносится со скриптами и воронкой."""
+
+    __tablename__ = "crm_reviews"
+    __table_args__ = (
+        UniqueConstraint("run_id", "deal_id", name="uq_crm_review_run_deal"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_runs.id", ondelete="CASCADE"), index=True
+    )
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_deals.id", ondelete="CASCADE"), index=True
+    )
+    date: Mapped[date] = mapped_column(Date, index=True)
+    # Кто вёл сделку в этот день: сотрудник админки, если сопоставлен, и
+    # имя из CRM в любом случае — чтобы статистика читалась и без сопоставления.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
+    manager_key: Mapped[str] = mapped_column(String(64), default="")
+    manager_name: Mapped[str] = mapped_column(String(255), default="")
+    category: Mapped[str] = mapped_column(String(40), default="other")
+    # ok | warning | critical
+    severity: Mapped[str] = mapped_column(String(16), default="ok")
+    problem: Mapped[bool] = mapped_column(Boolean, default=False)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    # [{"kind": "chat|pipeline|speed", "text": "…", "quote": "…"}]
+    problems_json: Mapped[list] = mapped_column(JSONB, default=list)
+    good_json: Mapped[list] = mapped_column(JSONB, default=list)
+    recommendations_json: Mapped[list] = mapped_column(JSONB, default=list)
+    # {"used": ["название скрипта"], "deviations": ["…"]}
+    scripts_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # {"ok": true, "expected_stage": "…", "comment": "…"}
+    pipeline_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    messages_in: Mapped[int] = mapped_column(Integer, default=0)
+    messages_out: Mapped[int] = mapped_column(Integer, default=0)
+    events_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Скорость ответа считается по времени сообщений, а не моделью.
+    first_reply_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_reply_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Последнее слово за день осталось за клиентом — ответа не было.
+    unanswered: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CrmReviewScore(UUIDMixin, Base):
+    """Оценка одной сделки по одному критерию."""
+
+    __tablename__ = "crm_review_scores"
+    __table_args__ = (
+        UniqueConstraint("review_id", "criterion_id", name="uq_crm_score"),
+    )
+
+    review_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_reviews.id", ondelete="CASCADE"), index=True
+    )
+    criterion_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("crm_criteria.id", ondelete="CASCADE"), index=True
+    )
+    applicable: Mapped[bool] = mapped_column(Boolean, default=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str] = mapped_column(Text, default="")

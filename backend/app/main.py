@@ -1,7 +1,11 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from . import crm_scheduler
 from .config import get_settings
 from .routers import (
     agreements,
@@ -9,6 +13,10 @@ from .routers import (
     app_releases,
     audio,
     auth_router,
+    crm,
+    crm_amo,
+    crm_ingest,
+    crm_stats,
     employees,
     feedback,
     locations,
@@ -25,7 +33,19 @@ from .routers import (
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Разбор CRM за вчера запускается по расписанию из самого API: отдельный
+    # процесс под расписание означал бы ещё одну строку в деплое.
+    scheduler = asyncio.create_task(crm_scheduler.loop())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +85,10 @@ app.include_router(playbook_insights.router)
 app.include_router(playbook_calls.router)
 app.include_router(playbook_history.router)
 app.include_router(playbook_settings.router)
+app.include_router(crm.router)
+app.include_router(crm_stats.router)
+app.include_router(crm_ingest.router)
+app.include_router(crm_amo.router)
 
 
 @app.get("/health")

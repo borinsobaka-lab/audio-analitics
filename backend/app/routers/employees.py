@@ -129,6 +129,7 @@ async def create_employee(
         login=login,
         access_scope=body.access_scope,
         scripts_access=body.scripts_access,
+        crm_access=body.crm_access,
     )
     db.add(employee)
     await db.commit()
@@ -167,6 +168,8 @@ async def update_employee(
         employee.access_scope = body.access_scope
     if body.scripts_access is not None:
         employee.scripts_access = body.scripts_access
+    if body.crm_access is not None:
+        employee.crm_access = body.crm_access
 
     password = ""
     if body.login is not None:

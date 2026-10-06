@@ -78,7 +78,8 @@ let prefetched: Prefetched = {};
 export function startPrefetch(path = window.location.pathname): void {
   if (!getToken()) return;
   const scripts = !path.startsWith("/analytics") && !path.startsWith("/days") &&
-    !path.startsWith("/metrics") && !path.startsWith("/locations") && !path.startsWith("/app");
+    !path.startsWith("/metrics") && !path.startsWith("/locations") && !path.startsWith("/app") &&
+    !path.startsWith("/crm");
   prefetched = {
     me: api.me(),
     playbook: scripts ? api.playbook() : undefined,

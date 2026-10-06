@@ -4,7 +4,8 @@
  *  у продуктов свои и настраиваются по отдельности:
  *  - Скрипты — читать и копировать или ещё и править;
  *  - Аналитика — чьи смены видно: только свои или все (и тогда человек
- *    администратор: сотрудники, метрики, точки, приложение).
+ *    администратор: сотрудники, метрики, точки, приложение);
+ *  - CRM — разборы своих сделок или все сделки и настройка продукта.
  *
  *  Та же строка — и имя в приложении записи на ресепшене: доступ «вижу только
  *  свои смены» держится на том, что вошедший — тот самый менеджер, чьё имя
@@ -14,7 +15,7 @@
  *  пароль были раскиданы кнопками по ячейкам таблицы, и строка расползалась.
  */
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { api, Employee, EmployeeCredentials, fmtWhen, ScriptsAccess } from "../api";
+import { api, CrmAccess, Employee, EmployeeCredentials, fmtWhen, ScriptsAccess } from "../api";
 import { NavIcons } from "../components/navIcons";
 import { ConfirmAction, Empty, Note, PageHead, Skeleton, TableCard } from "../components/ui";
 import { useSession } from "../session";
@@ -51,7 +52,7 @@ export default function EmployeesPage() {
     <div>
       <PageHead
         title="Сотрудники"
-        hint="Один вход — во все продукты. Права у каждого продукта свои: в скриптах — читать или править, в аналитике — чьи смены видно. Активные сотрудники появляются в приложении записи на всех студиях."
+        hint="Один вход — во все продукты. Права у каждого продукта свои: в скриптах — читать или править, в аналитике — чьи смены видно, в CRM — чьи сделки. Активные сотрудники появляются в приложении записи на всех студиях."
       >
         <button type="button" onClick={() => setOpen("new")}>
           Добавить сотрудника
@@ -81,6 +82,7 @@ export default function EmployeesPage() {
             { label: "Сотрудник", className: "col-name" },
             { label: "Скрипты" },
             { label: "Аналитика" },
+            { label: "CRM" },
             { label: "Статус" },
             { label: "", className: "col-row-actions" },
           ]}
@@ -122,6 +124,13 @@ export default function EmployeesPage() {
               <td>
                 {employee.login ? (
                   <ScopeChip value={employee.access_scope} />
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
+              <td>
+                {employee.login ? (
+                  <CrmChip value={employee.crm_access ?? "own"} />
                 ) : (
                   <span className="muted">—</span>
                 )}
@@ -169,6 +178,14 @@ function ScriptsChip({ value }: { value: ScriptsAccess }) {
   );
 }
 
+function CrmChip({ value }: { value: CrmAccess }) {
+  return value === "all" ? (
+    <span className="access-chip on">Все сделки · настройки</span>
+  ) : (
+    <span className="access-chip">Свои сделки</span>
+  );
+}
+
 function ScopeChip({ value }: { value: Scope }) {
   return value === "all" ? (
     <span className="access-chip on">Все смены · админ</span>
@@ -186,6 +203,7 @@ interface Draft {
   login: string;
   scripts_access: ScriptsAccess;
   access_scope: Scope;
+  crm_access: CrmAccess;
 }
 
 function draftOf(employee: Employee | null): Draft {
@@ -196,6 +214,7 @@ function draftOf(employee: Employee | null): Draft {
     login: employee?.login ?? "",
     scripts_access: employee?.scripts_access ?? "read",
     access_scope: employee?.access_scope ?? "own",
+    crm_access: employee?.crm_access ?? "own",
   };
 }
 
@@ -269,6 +288,7 @@ function AccessDialog({
           login: draft.hasLogin ? login : null,
           access_scope: draft.access_scope,
           scripts_access: draft.scripts_access,
+          crm_access: draft.crm_access,
         })
       );
       return;
@@ -279,6 +299,7 @@ function AccessDialog({
     if (draft.active !== base.active) body.active = draft.active;
     if (draft.scripts_access !== base.scripts_access) body.scripts_access = draft.scripts_access;
     if (draft.access_scope !== base.access_scope) body.access_scope = draft.access_scope;
+    if (draft.crm_access !== base.crm_access) body.crm_access = draft.crm_access;
     const nextLogin = draft.hasLogin ? login : "";
     if (nextLogin !== (current?.login ?? "")) body.login = nextLogin;
     if (!Object.keys(body).length) {
@@ -446,6 +467,26 @@ function AccessDialog({
                   value: "all",
                   title: "Все смены · администратор",
                   text: "Видит все смены и настраивает систему: сотрудники, метрики, точки, приложение.",
+                },
+              ]}
+            />
+
+            <ProductAccess
+              icon={<NavIcons.crm size={22} />}
+              title="CRM"
+              name="crm_access"
+              value={draft.crm_access}
+              onChange={(v) => set({ crm_access: v as CrmAccess })}
+              options={[
+                {
+                  value: "own",
+                  title: "Только свои сделки",
+                  text: "Видит разборы сделок, которые вёл сам, и свою статистику.",
+                },
+                {
+                  value: "all",
+                  title: "Все сделки · настройки",
+                  text: "Видит все разборы и итоги дня, настраивает критерии, промпт и интеграцию.",
                 },
               ]}
             />

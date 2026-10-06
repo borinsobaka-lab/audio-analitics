@@ -65,6 +65,10 @@ class MeOut(BaseModel):
     can_view_all: bool = False
     can_manage: bool = False
     can_edit_scripts: bool = False
+    # Право в продукте «CRM»: own — свои сделки, all — все и настройка.
+    crm_scope: str = "own"
+    can_view_all_crm: bool = False
+    can_manage_crm: bool = False
     is_owner: bool = False
 
 
@@ -149,6 +153,7 @@ class EmployeeOut(BaseModel):
     login: str | None = None
     access_scope: str = "own"
     scripts_access: str = "read"
+    crm_access: str = "own"
     has_password: bool = False
     last_login_at: datetime | None = None
 
@@ -175,6 +180,7 @@ class EmployeeCreate(BaseModel):
     login: str | None = Field(default=None, max_length=64)
     access_scope: str = Field(default="own", pattern="^(own|all)$")
     scripts_access: str = Field(default="read", pattern="^(read|edit)$")
+    crm_access: str = Field(default="own", pattern="^(own|all)$")
 
 
 class EmployeeUpdate(BaseModel):
@@ -183,6 +189,7 @@ class EmployeeUpdate(BaseModel):
     login: str | None = Field(default=None, max_length=64)
     access_scope: str | None = Field(default=None, pattern="^(own|all)$")
     scripts_access: str | None = Field(default=None, pattern="^(read|edit)$")
+    crm_access: str | None = Field(default=None, pattern="^(own|all)$")
 
 
 class EmployeeCredentialsOut(BaseModel):
@@ -950,3 +957,441 @@ class CallStatsOut(BaseModel):
     totals: CallStatTotals = CallStatTotals()
     funnel: list[CallFunnelStep] = []
     ends: list[CallEndStat] = []
+
+
+# --- CRM: разбор переписок и движения сделок --------------------------------
+
+CrmScope = Literal["own", "all"]
+
+
+class CrmCriterionOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    prompt: str = ""
+    scale_max: int = 10
+    active: bool = True
+    position: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class CrmCriterionCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    prompt: str = Field(default="", max_length=10000)
+    scale_max: int = Field(default=10, ge=2, le=10)
+
+
+class CrmCriterionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    prompt: str | None = Field(default=None, max_length=10000)
+    scale_max: int | None = Field(default=None, ge=2, le=10)
+    active: bool | None = None
+    position: int | None = None
+
+
+class CrmManagerOut(BaseModel):
+    """Менеджер, встретившийся в данных CRM: ключ и имя как в CRM, сколько
+    сделок за ним и какому сотруднику админки он сопоставлен."""
+
+    key: str
+    name: str = ""
+    deals: int = 0
+    employee_id: uuid.UUID | None = None
+    # Сопоставлен явно в настройках (иначе — по совпадению имени или никак).
+    mapped: bool = False
+
+
+class CrmSettingsOut(BaseModel):
+    prompt: str
+    default_prompt: str
+    is_default: bool
+    summary_prompt: str
+    default_summary_prompt: str
+    summary_is_default: bool
+    pipeline_rules: str
+    default_pipeline_rules: str
+    pipeline_is_default: bool
+    # Модель, которой идёт разбор: заданная в админке или LLM_MODEL_STAGE2.
+    model: str
+    model_saved: str = ""
+    model_default: str = ""
+    timezone: str = "Asia/Tbilisi"
+    auto_run: bool = True
+    run_hour: int = 20
+    max_deals: int = 400
+    integration_key: str = ""
+    ingest_url: str = ""
+    manager_map: dict[str, uuid.UUID | None] = {}
+    known_managers: list[CrmManagerOut] = []
+    # На сервере задан ANTHROPIC_API_KEY.
+    configured: bool = False
+    # Сводка в Telegram: на сервере заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.
+    telegram_configured: bool = False
+    dashboard_url: str = ""
+    updated_at: datetime | None = None
+    updated_by: str = ""
+
+
+class CrmSettingsIn(BaseModel):
+    # Пусто — стандартный текст.
+    prompt: str = Field(default="", max_length=30000)
+    summary_prompt: str = Field(default="", max_length=10000)
+    pipeline_rules: str = Field(default="", max_length=30000)
+    # Пусто — модель с сервера.
+    model: str = Field(default="", max_length=120)
+    timezone: str = Field(default="Asia/Tbilisi", max_length=64)
+    auto_run: bool = True
+    run_hour: int = Field(default=20, ge=0, le=23)
+    max_deals: int = Field(default=400, ge=1, le=2000)
+    manager_map: dict[str, uuid.UUID | None] = {}
+
+    @field_validator("timezone")
+    @classmethod
+    def known_timezone(cls, value: str) -> str:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        value = value.strip() or "Asia/Tbilisi"
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError(f"Неизвестный часовой пояс: {value}") from None
+        return value
+
+
+class CrmDealOut(BaseModel):
+    id: uuid.UUID
+    external_id: str
+    title: str = ""
+    contact_name: str = ""
+    contact_phone: str = ""
+    contact_key: str = ""
+    pipeline: str = ""
+    stage: str = ""
+    status: str = "open"
+    source: str = ""
+    manager_key: str = ""
+    manager_name: str = ""
+    employee_id: uuid.UUID | None = None
+    url: str = ""
+    budget: float | None = None
+    created_at_crm: datetime | None = None
+    last_activity_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class CrmProblem(BaseModel):
+    kind: Literal["chat", "pipeline", "speed"] = "chat"
+    text: str
+    quote: str = ""
+
+
+class CrmScriptsCheck(BaseModel):
+    used: list[str] = []
+    deviations: list[str] = []
+
+
+class CrmPipelineCheck(BaseModel):
+    ok: bool = True
+    expected_stage: str = ""
+    comment: str = ""
+
+
+class CrmScoreOut(BaseModel):
+    criterion_id: uuid.UUID
+    name: str = ""
+    scale_max: int = 10
+    applicable: bool = False
+    score: int | None = None
+    comment: str = ""
+
+
+class CrmReviewOut(BaseModel):
+    id: uuid.UUID
+    run_id: uuid.UUID
+    date: date
+    deal: CrmDealOut
+    employee_id: uuid.UUID | None = None
+    employee_name: str = ""
+    manager_key: str = ""
+    manager_name: str = ""
+    category: str = "other"
+    severity: Literal["ok", "warning", "critical"] = "ok"
+    problem: bool = False
+    summary: str = ""
+    problems: list[CrmProblem] = []
+    good: list[str] = []
+    recommendations: list[str] = []
+    scripts: CrmScriptsCheck = CrmScriptsCheck()
+    pipeline: CrmPipelineCheck = CrmPipelineCheck()
+    messages_in: int = 0
+    messages_out: int = 0
+    events_count: int = 0
+    first_reply_minutes: float | None = None
+    max_reply_minutes: float | None = None
+    unanswered: bool = False
+    scores: list[CrmScoreOut] = []
+
+
+class CrmMessageOut(BaseModel):
+    id: uuid.UUID
+    direction: str
+    channel: str = ""
+    author_name: str = ""
+    text: str = ""
+    at: datetime
+    # Внутри разбираемого дня; иначе — контекст до него.
+    in_day: bool = True
+
+
+class CrmEventOut(BaseModel):
+    id: uuid.UUID
+    kind: str
+    from_value: str = ""
+    to_value: str = ""
+    text: str = ""
+    author_name: str = ""
+    at: datetime
+    in_day: bool = True
+
+
+class CrmReviewDetailOut(CrmReviewOut):
+    messages: list[CrmMessageOut] = []
+    events: list[CrmEventOut] = []
+
+
+class CrmRunOut(BaseModel):
+    id: uuid.UUID
+    date: date
+    status: str
+    status_detail: str = ""
+    # В очереди или обрабатывается, но статус давно не двигался — воркер
+    # потерял разбор; «Разобрать заново» снова доступна.
+    stale: bool = False
+    trigger: str = "manual"
+    deals_total: int = 0
+    reviews_done: int = 0
+    problems_count: int = 0
+    llm_input_tokens: int = 0
+    llm_output_tokens: int = 0
+    llm_calls: int = 0
+    cost_usd: float | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class CrmRunsOut(BaseModel):
+    runs: list[CrmRunOut] = []
+    # Дни с перепиской или движением, которые ещё не разбирали.
+    pending_dates: list[date] = []
+    # В базе есть хоть одна сделка — интеграция присылает данные.
+    has_data: bool = False
+    # Отчётный день, который идёт сейчас (его ещё можно разобрать частично).
+    today: date
+    # Час окончания отчётного дня; 0 — календарный день.
+    day_end_hour: int = 0
+
+
+class CrmRunReportOut(BaseModel):
+    run: CrmRunOut
+    summary: dict | None = None
+    stats: dict | None = None
+    reviews: list[CrmReviewOut] = []
+    criteria: list[CrmCriterionOut] = []
+    # Границы отчётного дня — при часе окончания 20:00 он захватывает две даты.
+    window_from: datetime | None = None
+    window_to: datetime | None = None
+    day_end_hour: int = 0
+    telegram_configured: bool = False
+
+
+class CrmNotifyOut(BaseModel):
+    delivered: int = 0
+    chats: int = 0
+    preview: str = ""
+
+
+# --- Статистика CRM за период ---
+
+class CrmTotals(BaseModel):
+    deals: int = 0
+    problems: int = 0
+    critical: int = 0
+    unanswered: int = 0
+    problem_share: float | None = None
+    avg_first_reply_minutes: float | None = None
+    # Дней с разбором и их стоимость — только в общих итогах.
+    runs: int = 0
+    cost_usd: float = 0.0
+
+
+class CrmCriterionStat(BaseModel):
+    criterion_id: uuid.UUID
+    name: str
+    scale_max: int = 10
+    count: int = 0
+    avg_score: float | None = None
+    prev_avg_score: float | None = None
+
+
+class CrmCategoryStat(BaseModel):
+    category: str
+    count: int = 0
+    problems: int = 0
+
+
+class CrmManagerStat(BaseModel):
+    employee_id: uuid.UUID | None = None
+    manager_key: str = ""
+    name: str
+    totals: CrmTotals
+    previous: CrmTotals
+    criteria: list[CrmCriterionStat] = []
+    categories: list[CrmCategoryStat] = []
+
+
+class CrmTrendPoint(BaseModel):
+    date: date
+    deals: int = 0
+    problems: int = 0
+    problem_share: float | None = None
+    # criterion_id (строкой) -> средняя оценка за день
+    avg_scores: dict[str, float] = {}
+
+
+class CrmStatsOut(BaseModel):
+    date_from: date
+    date_to: date
+    prev_date_from: date
+    prev_date_to: date
+    totals: CrmTotals
+    previous: CrmTotals
+    criteria: list[CrmCriterionStat] = []
+    managers: list[CrmManagerStat] = []
+    categories: list[CrmCategoryStat] = []
+    trend: list[CrmTrendPoint] = []
+
+
+# --- Приём данных из CRM ---
+
+class CrmDealIn(BaseModel):
+    """Сделка как её присылает интеграция. Поля, кроме id, необязательны:
+    то, чего в пакете нет, в базе не трогается — можно прислать только
+    смену этапа."""
+
+    id: str = Field(min_length=1, max_length=64)
+    title: str | None = Field(default=None, max_length=255)
+    contact_name: str | None = Field(default=None, max_length=255)
+    contact_phone: str | None = Field(default=None, max_length=64)
+    # id контакта в CRM — чтобы сообщение без сделки нашло её по контакту.
+    contact_id: str | None = Field(default=None, max_length=64)
+    pipeline: str | None = Field(default=None, max_length=120)
+    stage: str | None = Field(default=None, max_length=120)
+    # open | won | lost; чужие названия статусов приводятся к этим трём
+    # (success → won, failed → lost, остальное — open), а не роняют пакет.
+    status: str | None = Field(default=None, max_length=32)
+    source: str | None = Field(default=None, max_length=120)
+    manager_id: str | None = Field(default=None, max_length=64)
+    manager_name: str | None = Field(default=None, max_length=255)
+    url: str | None = Field(default=None, max_length=512)
+    budget: float | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CrmMessageIn(BaseModel):
+    id: str | None = Field(default=None, max_length=64)
+    deal_id: str = Field(min_length=1, max_length=64)
+    # in — от клиента, out — от администратора.
+    direction: Literal["in", "out"]
+    channel: str = Field(default="", max_length=40)
+    author_id: str = Field(default="", max_length=64)
+    author_name: str = Field(default="", max_length=255)
+    text: str = Field(default="", max_length=20000)
+    at: datetime
+
+
+class CrmEventIn(BaseModel):
+    id: str | None = Field(default=None, max_length=64)
+    deal_id: str = Field(min_length=1, max_length=64)
+    # stage_change | status_change | note | task | task_done | field_change | call
+    kind: str = Field(min_length=1, max_length=32)
+    from_value: str = Field(default="", max_length=255, alias="from")
+    to_value: str = Field(default="", max_length=255, alias="to")
+    text: str = Field(default="", max_length=20000)
+    author_id: str = Field(default="", max_length=64)
+    author_name: str = Field(default="", max_length=255)
+    at: datetime
+
+    model_config = {"populate_by_name": True}
+
+
+class CrmIngestIn(BaseModel):
+    deals: list[CrmDealIn] = Field(default=[], max_length=2000)
+    messages: list[CrmMessageIn] = Field(default=[], max_length=5000)
+    events: list[CrmEventIn] = Field(default=[], max_length=5000)
+
+
+class CrmIngestOut(BaseModel):
+    deals_created: int = 0
+    deals_updated: int = 0
+    # Сообщение или событие пришло по сделке, которой ещё нет: заведена
+    # заглушка с этим id, чтобы ничего не потерять.
+    deals_stubbed: int = 0
+    messages_added: int = 0
+    messages_skipped: int = 0
+    events_added: int = 0
+    events_skipped: int = 0
+
+
+# --- amoCRM ---
+
+class AmoPipelineOut(BaseModel):
+    id: str
+    name: str
+    stages: list[str] = []
+
+
+class AmoStatusOut(BaseModel):
+    connected: bool = False
+    enabled: bool = True
+    subdomain: str = ""
+    domain: str = "amocrm.ru"
+    account_name: str = ""
+    # token — долгосрочный токен; oauth — код авторизации с обновлением.
+    auth: str = ""
+    token_hint: str = ""
+    token_expires_at: str | None = None
+    sync_every_minutes: int = 15
+    lookback_days: int = 7
+    last_sync_at: str | None = None
+    last_sync_result: str = ""
+    last_error: str = ""
+    last_error_at: str | None = None
+    last_webhook_at: str | None = None
+    webhooks_received: int = 0
+    webhook_url: str = ""
+    webhook_events: list[str] = []
+    pipelines: list[AmoPipelineOut] = []
+    users: int = 0
+
+
+class AmoConnectIn(BaseModel):
+    subdomain: str = Field(min_length=1, max_length=200)
+    domain: Literal["amocrm.ru", "kommo.com", "amocrm.com"] = "amocrm.ru"
+    # Долгосрочный токен приватной интеграции — самый простой способ.
+    token: str = Field(default="", max_length=4000)
+    # Или код авторизации OAuth с реквизитами интеграции.
+    client_id: str = Field(default="", max_length=120)
+    client_secret: str = Field(default="", max_length=400)
+    redirect_uri: str = Field(default="", max_length=512)
+    code: str = Field(default="", max_length=4000)
+    enabled: bool = True
+    sync_every_minutes: int = Field(default=15, ge=5, le=240)
+    lookback_days: int = Field(default=7, ge=1, le=60)
+
+
+class AmoSyncOut(BaseModel):
+    result: str = ""
+    applied: CrmIngestOut = CrmIngestOut()
+

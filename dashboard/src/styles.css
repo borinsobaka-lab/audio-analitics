@@ -1445,7 +1445,8 @@ tbody tr:hover {
    активный пункт, второй акцентный блок рядом спорил бы с ним за взгляд. */
 .product-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Три продукта в ряд: «Скрипты», «Аналитика», «CRM». */
+  grid-template-columns: repeat(3, 1fr);
   gap: 2px;
   padding: 3px;
   margin: 0 0 18px;
@@ -1458,10 +1459,12 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   min-height: 34px;
-  padding: 0 12px;
+  /* Три кнопки в колонке 244px: уже отступы и чуть мельче кегль, чтобы
+     «Аналитика» не ломалась на две строки. */
+  padding: 0 6px;
   border-radius: 5px;
   color: var(--nav-ink-2);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -6025,5 +6028,334 @@ tr.empty td {
   .end-track {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* --- CRM: разборы переписок и движения сделок ------------------------------ */
+
+/* Шапка «Разборов»: поле даты и «Разобрать день» одной строкой. */
+.crm-run-any {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Дни с данными без разбора — карточка с кнопками по дню. */
+.crm-pending {
+  margin-bottom: 14px;
+}
+.crm-pending-head {
+  margin-bottom: 10px;
+}
+.crm-pending-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.crm-run-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.crm-run-counts b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.crm-count-bad b {
+  color: var(--red-ink);
+}
+
+/* Карточка сделки — та же карточка, что у разговора смены; серьёзность
+   дублируется полосой слева, как у живой смены: проблемные видны при
+   прокрутке длинного списка до чтения меток. */
+.crm-review {
+  position: relative;
+}
+.crm-review.critical::before,
+.crm-review.warning::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--red);
+}
+.crm-review.warning::before {
+  background: var(--amber);
+}
+.crm-deal-title {
+  font-weight: 600;
+  min-width: 0;
+}
+.crm-deal-title a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--edge-strong);
+  text-underline-offset: 3px;
+}
+.crm-deal-title a:hover {
+  text-decoration-color: var(--accent-ink);
+}
+.crm-meta {
+  font-size: 13px;
+}
+/* Ожидание ответа — тихая метка; долгое или без ответа — красная. */
+.crm-wait {
+  display: inline-flex;
+  align-items: center;
+  height: 23px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.crm-wait.bad {
+  background: var(--red-tint);
+  color: var(--red-ink);
+}
+.crm-problems {
+  padding: 0 16px 14px;
+}
+/* Вид проблемы — микроподпись перед текстом: общение, сделка, скорость. */
+.crm-kind {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.crm-quote {
+  display: block;
+  margin-top: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--edge-strong);
+  color: var(--ink-2);
+  font-style: italic;
+  quotes: "«" "»";
+}
+.crm-panel-text {
+  margin: 0;
+  font-size: 13.5px;
+}
+.crm-evals {
+  margin-top: 10px;
+}
+.crm-evals .eval + .eval {
+  margin-top: 10px;
+}
+.crm-turns {
+  max-height: 520px;
+}
+.crm-time {
+  flex-shrink: 0;
+  min-width: 46px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+/* Сообщения до разбираемого дня — контекст, приглушены. */
+.turn.context,
+.crm-event.context {
+  opacity: 0.62;
+}
+.crm-events {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge-soft);
+}
+.crm-event {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+  align-items: baseline;
+  color: var(--ink-2);
+}
+.crm-event .who {
+  font-weight: 600;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.crm-filters {
+  margin-bottom: 14px;
+}
+.crm-unmapped {
+  font-size: 12.5px;
+}
+
+/* Настройки: критерии. */
+.crm-criteria-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.crm-criteria-head .tab-hint {
+  margin: 0;
+}
+.crm-examples {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.crm-example-text {
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  max-width: 90ch;
+}
+.crm-criterion-prompt {
+  min-height: 160px;
+}
+.crm-criterion-preview {
+  max-height: none;
+}
+/* Настройки: расписание — переключатель и два поля в ряд. */
+.crm-schedule {
+  align-items: flex-end;
+}
+.crm-schedule .toggle {
+  flex: 1 1 320px;
+}
+.crm-schedule .field input,
+.crm-schedule .field select {
+  width: auto;
+  min-width: 160px;
+}
+/* Сводка в Telegram — строка состояния с проверкой одним нажатием. */
+.crm-telegram {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+  font-size: 13.5px;
+}
+.crm-telegram .muted {
+  flex: 1 1 320px;
+}
+/* Настройки: интеграция. */
+.crm-integration .section:first-child {
+  margin-top: 0;
+}
+.crm-key-card .creds-body + .creds-body {
+  margin-top: 10px;
+}
+.crm-key {
+  letter-spacing: 0.02em;
+}
+.crm-json {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+.crm-format-notes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.crm-format-notes li + li {
+  margin-top: 4px;
+}
+.crm-format-notes code,
+.crm-integration .form-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--sunk);
+}
+.crm-map-actions {
+  margin-top: 12px;
+  align-items: center;
+}
+/* Подключение amoCRM: состояние строкой, форма, вебхук отдельной карточкой. */
+.crm-amo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.crm-amo-state,
+.crm-amo-sync {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13.5px;
+}
+.crm-amo-sync {
+  margin-top: -6px;
+}
+.crm-amo-actions {
+  margin-top: 4px;
+}
+.crm-details {
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+  padding: 10px 14px;
+}
+.crm-details > summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.crm-details[open] > summary {
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.crm-details .field-row + .field-row {
+  margin-top: 10px;
+}
+.crm-amo-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.crm-amo-url {
+  margin-top: 12px;
+}
+.crm-amo-url code {
+  word-break: break-all;
+  user-select: all;
+  font-size: 13px;
+}
+.crm-amo-events,
+.crm-amo-pipelines {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.crm-amo-events li + li,
+.crm-amo-pipelines li + li {
+  margin-top: 3px;
+}
+
+@media (max-width: 900px) {
+  .crm-criteria-head {
+    flex-direction: column;
+  }
+  .crm-review.critical::before,
+  .crm-review.warning::before {
+    width: 3px;
   }
 }
