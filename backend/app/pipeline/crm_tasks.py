@@ -1,9 +1,12 @@
-"""Celery: разбор одного дня CRM.
+"""Разбор одного дня CRM.
 
-Все сделки, по которым за день была переписка или движение, по одной
-уходят в модель вместе с базой знаний студии. База — один и тот же
+Все сделки, по которым за отчётный день была переписка или движение, по
+одной уходят в модель вместе с базой знаний студии. База — один и тот же
 системный блок на весь день с кэшированием у провайдера: сделок за день
 десятки, а база — десять тысяч токенов, платить за неё каждый раз незачем.
+
+Выполняется в потоке внутри API (crm_runner.py), а не в воркере Celery:
+старт ровно в назначенный час не должен ждать обработку аудио смены.
 """
 import logging
 import traceback
@@ -12,8 +15,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from .. import crm_ai, playbook_ai
-from ..celery_app import celery
+from .. import crm_ai, crm_notify, playbook_ai
 from ..config import get_settings
 from ..db import get_sync_db
 from ..models import (
@@ -43,19 +45,35 @@ DEFAULT_TZ = "Asia/Tbilisi"
 DEFAULT_MAX_DEALS = 400
 
 
-@celery.task(name="crm.analyze_day", bind=True)
-def analyze_crm_day(self, run_id: str) -> str:
+def end_hour_of(data: dict) -> int:
+    try:
+        return max(0, min(23, int(data.get("run_hour", 20))))
+    except (TypeError, ValueError):
+        return 20
+
+
+def execute(run_id: str) -> str:
+    """Разобрать день: статусы, ошибки и сводка в Telegram — здесь."""
     db = get_sync_db()
+    window = ""
     try:
         run = db.get(CrmRun, uuid.UUID(run_id))
         if not run:
             return f"crm run {run_id} not found"
+        row = db.get(CrmSettings, run.org_id)
+        data = dict((row.data if row else None) or {})
+        hour = end_hour_of(data)
+        window = crm_ai.day_label(run.date, hour) if hour else ""
         run.set_status("processing", "подготовка данных")
         db.commit()
-        result = _run(db, run)
+        result = _run(db, run, data)
         run.set_status("done")
         run.finished_at = utcnow()
         db.commit()
+        # Сводка в чат — только у разбора по расписанию: повторный запуск
+        # руками не должен слать её заново.
+        if run.trigger == "schedule":
+            crm_notify.notify_run(run, window=window)
         return result
     except Exception as e:  # noqa: BLE001 — ошибка уходит в статус разбора
         db.rollback()
@@ -64,6 +82,8 @@ def analyze_crm_day(self, run_id: str) -> str:
             run.set_status("error", f"{e}\n{traceback.format_exc()[-1500:]}")
             run.finished_at = utcnow()
             db.commit()
+            if run.trigger == "schedule":
+                crm_notify.notify_run(run, error=str(e), window=window)
         raise
     finally:
         db.close()
@@ -189,13 +209,12 @@ def _finish_cost(db, run: CrmRun, llm: LlmClient | None) -> float:
     return cost.total_usd
 
 
-def _run(db, run: CrmRun) -> str:
+def _run(db, run: CrmRun, data: dict) -> str:
     settings = get_settings()
-    row = db.get(CrmSettings, run.org_id)
-    data = dict((row.data if row else None) or {})
     tz = ZoneInfo(data.get("timezone") or DEFAULT_TZ)
-    day_start, day_end = crm_ai.day_bounds(run.date, tz)
-    date_label = day_start.strftime("%d.%m.%Y")
+    hour = end_hour_of(data)
+    day_start, day_end = crm_ai.day_bounds(run.date, tz, hour)
+    date_label = crm_ai.day_label(run.date, hour)
 
     # Повторный запуск заменяет прошлый разбор целиком.
     for old in db.scalars(select(CrmReview).where(CrmReview.run_id == run.id)):
@@ -304,7 +323,7 @@ def _run(db, run: CrmRun) -> str:
             date_label=date_label,
             instructions=instructions,
             criteria=criteria,
-            deal_text=crm_ai.render_deal(deal_dict, messages, events, day_start, day_end, tz),
+            deal_text=crm_ai.render_deal(deal_dict, messages, events, day_start, day_end, tz, date_label),
         )
         # Одна упавшая сделка не должна стоить всего дня.
         try:

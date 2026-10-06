@@ -627,6 +627,9 @@ export interface CrmSettings {
   known_managers: CrmManager[];
   /** На сервере задан ANTHROPIC_API_KEY. */
   configured: boolean;
+  /** Сводка в Telegram: на сервере заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID. */
+  telegram_configured: boolean;
+  dashboard_url: string;
   updated_at: string | null;
   updated_by: string;
 }
@@ -754,7 +757,10 @@ export interface CrmRuns {
   /** Дни с данными из CRM, которые ещё не разбирали. */
   pending_dates: string[];
   has_data: boolean;
+  /** Отчётный день, который идёт сейчас. */
   today: string;
+  /** Час окончания отчётного дня; 0 — календарный день. */
+  day_end_hour: number;
 }
 
 export interface CrmDaySummary {
@@ -784,6 +790,17 @@ export interface CrmRunReport {
   stats: CrmDayStats | null;
   reviews: CrmReview[];
   criteria: CrmCriterion[];
+  /** Границы отчётного дня: при часе окончания 20:00 — две даты. */
+  window_from: string | null;
+  window_to: string | null;
+  day_end_hour: number;
+  telegram_configured: boolean;
+}
+
+export interface CrmNotifyResult {
+  delivered: number;
+  chats: number;
+  preview: string;
 }
 
 export interface CrmTotals {
@@ -1243,6 +1260,10 @@ export const api = {
   startCrmRun: (day: string) => request<CrmRun>(`/api/crm/runs/${day}`, { method: "POST" }),
   deleteCrmRun: (day: string) => request<void>(`/api/crm/runs/${day}`, { method: "DELETE" }),
   crmRunReport: (day: string) => request<CrmRunReport>(`/api/crm/runs/${day}`),
+  /** Сводка по разбору в Telegram — руками; по расписанию уходит сама. */
+  notifyCrmRun: (day: string) =>
+    request<CrmNotifyResult>(`/api/crm/runs/${day}/notify`, { method: "POST" }),
+  testCrmNotify: () => request<CrmNotifyResult>("/api/crm/notify/test", { method: "POST" }),
   crmReview: (id: string) => request<CrmReviewDetail>(`/api/crm/reviews/${id}`),
   crmStats: (params: { date_from: string; date_to: string; employee_id?: string }) =>
     request<CrmStats>(`/api/crm/stats${query(params)}`),

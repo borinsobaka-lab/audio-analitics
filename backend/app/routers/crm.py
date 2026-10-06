@@ -15,7 +15,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import crm_ai, crm_scheduler
+import asyncio
+
+from .. import crm_ai, crm_notify, crm_scheduler
 from ..auth import UserContext, require_crm_manage, require_user
 from ..config import get_settings
 from ..db import get_db
@@ -40,6 +42,7 @@ from ..schemas import (
     CrmEventOut,
     CrmManagerOut,
     CrmMessageOut,
+    CrmNotifyOut,
     CrmPipelineCheck,
     CrmProblem,
     CrmReviewDetailOut,
@@ -72,6 +75,16 @@ def tz_of(data: dict) -> ZoneInfo:
         return ZoneInfo((data.get("timezone") or "").strip() or DEFAULT_TZ)
     except Exception:  # noqa: BLE001
         return ZoneInfo(DEFAULT_TZ)
+
+
+def end_hour_of(data: dict) -> int:
+    return crm_scheduler.run_hour_of(data)
+
+
+def current_day(data: dict) -> date:
+    """Отчётный день, который идёт сейчас: при часе 20 после 20:00 это уже
+    завтрашняя дата — сегодняшний день закрыт и разобран."""
+    return crm_ai.report_day(datetime.now(timezone.utc), tz_of(data), end_hour_of(data))
 
 
 async def settings_data(db: AsyncSession, org_id) -> tuple[CrmSettings | None, dict]:
@@ -222,13 +235,15 @@ def settings_out(data: dict, managers: list[CrmManagerOut], row: CrmSettings | N
         model_default=settings.llm_model_stage2,
         timezone=(data.get("timezone") or "").strip() or DEFAULT_TZ,
         auto_run=bool(data.get("auto_run", True)),
-        run_hour=int(data.get("run_hour", crm_scheduler.DEFAULT_RUN_HOUR)),
+        run_hour=crm_scheduler.run_hour_of(data),
         max_deals=int(data.get("max_deals") or 400),
         integration_key=data.get("integration_key") or "",
         ingest_url=f"{settings.api_base_url.rstrip('/')}/api/crm/ingest",
         manager_map=manager_map,
         known_managers=managers,
         configured=bool(settings.anthropic_api_key),
+        telegram_configured=crm_notify.configured(),
+        dashboard_url=crm_notify.dashboard_base(),
         updated_at=row.updated_at if row else None,
         updated_by=row.updated_by if row else "",
     )
@@ -385,11 +400,18 @@ async def delete_criterion(
 # --- Разборы по дням ------------------------------------------------------
 
 
-async def activity_dates(db: AsyncSession, org_id, tz_name: str, since: date) -> set[date]:
-    """Дни (по часам студии), в которые в CRM что-то происходило."""
+async def activity_dates(
+    db: AsyncSession, org_id, tz_name: str, since: date, end_hour: int = 0
+) -> set[date]:
+    """Отчётные дни, в которые в CRM что-то происходило. При часе окончания
+    20:00 событие в 21:00 относится к следующему дню — сдвиг на 24−20 часов."""
     days: set[date] = set()
+    shift = (24 - end_hour) % 24
     for model in (CrmMessage, CrmEvent):
-        local_day = func.date(func.timezone(tz_name, model.at))
+        local = func.timezone(tz_name, model.at)
+        if shift:
+            local = local + timedelta(hours=shift)
+        local_day = func.date(local)
         rows = await db.execute(
             select(local_day)
             .where(model.org_id == org_id, model.at >= datetime.combine(since, datetime.min.time(), tzinfo=timezone.utc) - timedelta(days=1))
@@ -409,7 +431,8 @@ async def list_runs(
     org = await current_org(db)
     _, data = await settings_data(db, org.id)
     tz = tz_of(data)
-    today = datetime.now(tz).date()
+    hour = end_hour_of(data)
+    today = current_day(data)
     try:
         runs = (
             await db.scalars(
@@ -449,10 +472,12 @@ async def list_runs(
     if user.can_manage_crm:
         since = today - timedelta(days=PENDING_DAYS)
         done = {r.date for r in runs}
-        active = await activity_dates(db, org.id, str(tz), since)
+        active = await activity_dates(db, org.id, str(tz), since, hour)
         pending = sorted((d for d in active if d < today and d not in done), reverse=True)
 
-    return CrmRunsOut(runs=out_runs, pending_dates=pending, has_data=has_data, today=today)
+    return CrmRunsOut(
+        runs=out_runs, pending_dates=pending, has_data=has_data, today=today, day_end_hour=hour
+    )
 
 
 @router.post("/runs/{day}", response_model=CrmRunOut)
@@ -464,9 +489,9 @@ async def start_run(
     """Разобрать день — или разобрать заново: прошлый разбор заменяется."""
     org = await current_org(db)
     _, data = await settings_data(db, org.id)
-    today = datetime.now(tz_of(data)).date()
+    today = current_day(data)
     if day > today:
-        raise HTTPException(400, "Этот день ещё не наступил")
+        raise HTTPException(400, "Этот отчётный день ещё не наступил")
     if day < today - timedelta(days=366):
         raise HTTPException(400, "Разбор доступен за последний год")
 
@@ -491,11 +516,59 @@ async def start_run(
     await db.refresh(run)
     try:
         crm_scheduler.enqueue(run.id)
-    except Exception as e:  # noqa: BLE001 — нет брокера: честно сказать
-        run.set_status("error", f"не удалось поставить в очередь: {e}")
+    except Exception as e:  # noqa: BLE001 — честно сказать
+        run.set_status("error", f"не удалось запустить разбор: {e}")
         await db.commit()
-        raise HTTPException(503, f"Очередь разбора недоступна: {e}") from e
+        raise HTTPException(503, f"Разбор не запустился: {e}") from e
     return run_out(run)
+
+
+@router.post("/runs/{day}/notify", response_model=CrmNotifyOut)
+async def notify_run(
+    day: date,
+    user: UserContext = Depends(require_crm_manage),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправить сводку по разбору в Telegram руками — по расписанию она
+    уходит сама."""
+    org = await current_org(db)
+    _, data = await settings_data(db, org.id)
+    run = await db.scalar(select(CrmRun).where(CrmRun.org_id == org.id, CrmRun.date == day))
+    if not run:
+        raise HTTPException(404, "Разбор за этот день не найден")
+    if run.status != "done":
+        raise HTTPException(409, "Разбор ещё не готов")
+    summary = dict(run.summary_json or {})
+    stats = summary.pop("stats", None) or {}
+    hour = end_hour_of(data)
+    text = crm_notify.build_message(
+        day=run.date,
+        stats=stats,
+        summary=summary,
+        url=crm_notify.day_url(run.date),
+        window=crm_ai.day_label(run.date, hour) if hour else "",
+    )
+    try:
+        delivered = await asyncio.to_thread(crm_notify.send, text)
+    except crm_notify.NotifyError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return CrmNotifyOut(delivered=delivered, chats=len(crm_notify.chat_ids()), preview=text)
+
+
+@router.post("/notify/test", response_model=CrmNotifyOut)
+async def notify_test(user: UserContext = Depends(require_crm_manage)):
+    """Проверка бота и чата: пробное сообщение."""
+    url = crm_notify.dashboard_base()
+    text = (
+        "<b>CRM — проверка связи</b>\nСюда будет приходить сводка разбора переписок: "
+        "сколько сделок разобрано, сколько с замечаниями, на что обратить внимание."
+        + (f'\n<a href="{url}/crm">Открыть CRM</a>' if url else "")
+    )
+    try:
+        delivered = await asyncio.to_thread(crm_notify.send, text)
+    except crm_notify.NotifyError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return CrmNotifyOut(delivered=delivered, chats=len(crm_notify.chat_ids()), preview=text)
 
 
 @router.delete("/runs/{day}", status_code=204)
@@ -648,12 +721,19 @@ async def run_report(
         # открыты все сделки. Свои разборы сотрудник видит и так.
         summary, stats = {}, None
     counts = (len(out), sum(1 for r in out if r.problem)) if not user.can_view_all_crm else (None, None)
+    _, data = await settings_data(db, org.id)
+    hour = end_hour_of(data)
+    window_from, window_to = crm_ai.day_bounds(run.date, tz_of(data), hour)
     return CrmRunReportOut(
         run=run_out(run, *counts),
         summary=summary or None,
         stats=stats,
         reviews=out,
         criteria=list(criteria),
+        window_from=window_from,
+        window_to=window_to,
+        day_end_hour=hour,
+        telegram_configured=crm_notify.configured() if user.can_manage_crm else False,
     )
 
 
@@ -676,7 +756,7 @@ async def review_detail(
         raise HTTPException(404, "Разбор не найден")
     (base,) = await load_reviews(db, [review])
     _, data = await settings_data(db, org.id)
-    day_start, day_end = crm_ai.day_bounds(review.date, tz_of(data))
+    day_start, day_end = crm_ai.day_bounds(review.date, tz_of(data), end_hour_of(data))
 
     messages = (
         await db.scalars(

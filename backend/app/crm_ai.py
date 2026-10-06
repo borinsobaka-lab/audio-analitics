@@ -235,9 +235,13 @@ def render_deal(
     day_start: datetime,
     day_end: datetime,
     tz: tzinfo,
+    label: str = "",
 ) -> str:
     """Карточка сделки, контекст до дня и всё, что было в день разбора."""
-    day_label = day_start.astimezone(tz).strftime("%d.%m.%Y")
+    day_label = label or day_start.astimezone(tz).strftime("%d.%m.%Y")
+    # Отчётный день, сдвинутый на вечер, захватывает две даты — тогда у
+    # сообщений дня пишется и дата, иначе «21:00» и «09:00» не различить.
+    spans = day_start.astimezone(tz).date() != (day_end - timedelta(seconds=1)).astimezone(tz).date()
     created = deal.get("created_at_crm")
     head = [
         f"Сделка #{deal.get('external_id', '')}: {deal.get('title') or 'без названия'}",
@@ -265,11 +269,11 @@ def render_deal(
         out.append("\n".join(block))
     out.append(
         f"ПЕРЕПИСКА ЗА {day_label}:\n"
-        + ("\n".join(render_message(m, tz, False) for m in day_m) if day_m else "(сообщений за день не было)")
+        + ("\n".join(render_message(m, tz, spans) for m in day_m) if day_m else "(сообщений за день не было)")
     )
     out.append(
         f"СОБЫТИЯ ПО СДЕЛКЕ ЗА {day_label} — этапы, задачи, заметки:\n"
-        + ("\n".join(render_event(e, tz, False) for e in day_e) if day_e else "(событий за день не было)")
+        + ("\n".join(render_event(e, tz, spans) for e in day_e) if day_e else "(событий за день не было)")
     )
     return "\n\n".join(out)
 
@@ -550,7 +554,33 @@ def day_stats(reviews: list[dict], criteria: list[dict]) -> dict:
     }
 
 
-def day_bounds(day, tz: tzinfo) -> tuple[datetime, datetime]:
-    """Границы календарного дня студии в виде aware-datetime."""
-    start = datetime(day.year, day.month, day.day, tzinfo=tz)
-    return start, start + timedelta(days=1)
+def day_bounds(day, tz: tzinfo, end_hour: int = 0) -> tuple[datetime, datetime]:
+    """Границы отчётного дня в виде aware-datetime.
+
+    end_hour = 0 — календарный день студии. Иначе отчётный день D — сутки
+    до этого часа: с D−1 end_hour:00 до D end_hour:00. Так разбор в 20:00
+    захватывает вечер накануне, и ни одно сообщение не выпадает между
+    отчётами.
+    """
+    midnight = datetime(day.year, day.month, day.day, tzinfo=tz)
+    if not end_hour:
+        return midnight, midnight + timedelta(days=1)
+    end = midnight + timedelta(hours=int(end_hour))
+    return end - timedelta(days=1), end
+
+
+def day_label(day, end_hour: int = 0) -> str:
+    """Подпись отчётного дня для промпта: дата и, если день сдвинут, окно."""
+    if not end_hour:
+        return day.strftime("%d.%m.%Y")
+    prev = day - timedelta(days=1)
+    return f"{day.strftime('%d.%m.%Y')} (с {prev.strftime('%d.%m')} {end_hour:02d}:00 до {day.strftime('%d.%m')} {end_hour:02d}:00)"
+
+
+def report_day(at: datetime, tz: tzinfo, end_hour: int = 0):
+    """К какому отчётному дню относится момент: при end_hour=20 событие в
+    21:00 5-го числа — это уже день 6-го."""
+    local = at.astimezone(tz)
+    if end_hour and local.hour >= int(end_hour):
+        return (local + timedelta(days=1)).date()
+    return local.date()

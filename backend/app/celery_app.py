@@ -8,7 +8,7 @@ celery = Celery(
     "audio_analytics",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.pipeline.tasks", "app.pipeline.crm_tasks"],
+    include=["app.pipeline.tasks"],
 )
 
 celery.conf.update(

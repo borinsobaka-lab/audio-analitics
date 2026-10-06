@@ -235,16 +235,47 @@ def test_normalize_summary_and_day_stats():
 # --- Расписание ---
 
 
-def test_due_date_waits_for_run_hour_in_studio_time():
-    # 05:30 UTC = 09:30 в Тбилиси: час запуска 9 наступил — вчерашний день.
-    now = datetime(2026, 10, 5, 5, 30, tzinfo=timezone.utc)
-    assert crm_scheduler.due_date({}, now) == date(2026, 10, 4)
-    assert crm_scheduler.due_date({"run_hour": 10}, now) is None
-    assert crm_scheduler.due_date({"auto_run": False}, now) is None
-    # В 20:30 UTC в Тбилиси уже 00:30 следующего дня — «вчера» сдвигается.
-    late = datetime(2026, 10, 5, 20, 30, tzinfo=timezone.utc)
-    assert crm_scheduler.due_date({"run_hour": 0}, late) == date(2026, 10, 5)
-    assert crm_scheduler.due_date({"timezone": "junk", "run_hour": "x"}, now) == date(2026, 10, 4)
+def test_due_date_is_today_once_the_end_hour_strikes():
+    # 16:00 UTC = 20:00 в Тбилиси: отчётный день 5-го закрыт — разбираем его.
+    at_eight = datetime(2026, 10, 5, 16, 0, tzinfo=timezone.utc)
+    assert crm_scheduler.due_date({}, at_eight) == date(2026, 10, 5)
+    # 19:59 по Тбилиси — рано, не раньше восьми.
+    assert crm_scheduler.due_date({}, at_eight - timedelta(minutes=1)) is None
+    assert crm_scheduler.due_date({"run_hour": 21}, at_eight) is None
+    assert crm_scheduler.due_date({"auto_run": False}, at_eight) is None
+    # Час 0 — календарный день, разбираемый после полуночи: в 00:30 6-го — день 5-го.
+    after_midnight = datetime(2026, 10, 5, 20, 30, tzinfo=timezone.utc)
+    assert crm_scheduler.due_date({"run_hour": 0}, after_midnight) == date(2026, 10, 5)
+    assert crm_scheduler.due_date({"timezone": "junk", "run_hour": "x"}, at_eight) == date(2026, 10, 5)
+
+
+def test_report_day_window_ends_at_the_run_hour():
+    start, end = crm_ai.day_bounds(DAY, TZ, 20)
+    assert start == datetime(2026, 10, 3, 20, 0, tzinfo=TZ) and end == datetime(2026, 10, 4, 20, 0, tzinfo=TZ)
+    assert crm_ai.day_bounds(DAY, TZ, 0) == (START, END)
+    # Сообщение в 21:00 5-го — уже отчётный день 6-го; в 19:59 — ещё 5-го.
+    assert crm_ai.report_day(datetime(2026, 10, 5, 21, 0, tzinfo=TZ), TZ, 20) == date(2026, 10, 6)
+    assert crm_ai.report_day(datetime(2026, 10, 5, 19, 59, tzinfo=TZ), TZ, 20) == date(2026, 10, 5)
+    assert crm_ai.report_day(datetime(2026, 10, 5, 21, 0, tzinfo=TZ), TZ, 0) == date(2026, 10, 5)
+    assert crm_ai.day_label(DAY, 20) == "04.10.2026 (с 03.10 20:00 до 04.10 20:00)"
+    assert crm_ai.day_label(DAY, 0) == "04.10.2026"
+
+
+def test_scheduler_sleeps_to_the_next_whole_minute():
+    now = datetime(2026, 10, 5, 16, 0, 42, 500_000, tzinfo=timezone.utc)
+    assert abs(crm_scheduler.seconds_to_next_minute(now) - 17.7) < 1e-6
+    assert 0.2 <= crm_scheduler.seconds_to_next_minute(now.replace(second=59, microsecond=900_000)) < 0.4
+
+
+def test_render_deal_dates_messages_when_window_spans_two_days():
+    start, end = crm_ai.day_bounds(DAY, TZ, 20)
+    messages = [
+        {"direction": "in", "channel": "", "author_key": "", "author_name": "", "text": "Вечером", "at": datetime(2026, 10, 3, 21, 0, tzinfo=TZ)},
+        {"direction": "out", "channel": "", "author_key": "7", "author_name": "Мария", "text": "Утром", "at": datetime(2026, 10, 4, 9, 0, tzinfo=TZ)},
+    ]
+    text = crm_ai.render_deal({"external_id": "1", "title": "x"}, messages, [], start, end, TZ, "04.10.2026 (окно)")
+    assert "ПЕРЕПИСКА ЗА 04.10.2026 (окно)" in text
+    assert "[03.10 21:00] Клиент: Вечером" in text and "[04.10 09:00] Администратор Мария: Утром" in text
 
 
 # --- Схемы ---
@@ -324,3 +355,35 @@ def test_aggregate_groups_by_employee_or_crm_key():
     assert [c.category for c in out.categories] == ["booking", "service"]
     assert [t.date for t in out.trend] == [date(2026, 10, 1), date(2026, 10, 2)]
     assert out.trend[0].avg_scores == {str(c1): 7.0} and out.trend[1].problem_share == 1.0
+
+
+# --- Запуск разбора в потоке API ---
+
+
+def test_runner_executes_in_a_thread_and_reports_failures(monkeypatch):
+    import asyncio
+    import threading
+
+    from app import crm_runner
+    from app.pipeline import crm_tasks
+
+    seen = {}
+
+    def fake_execute(run_id):
+        seen["run_id"] = run_id
+        seen["thread"] = threading.current_thread().name
+        return "ok"
+
+    monkeypatch.setattr(crm_tasks, "execute", fake_execute)
+
+    async def go():
+        crm_runner.launch(uuid.UUID(int=5))
+        # Задача хранится, пока идёт, и отпускается после.
+        assert len(crm_runner._running) == 1
+        await asyncio.gather(*crm_runner._running)
+        await asyncio.sleep(0)
+        assert not crm_runner._running
+
+    asyncio.run(go())
+    assert seen["run_id"] == str(uuid.UUID(int=5))
+    assert seen["thread"] != threading.main_thread().name

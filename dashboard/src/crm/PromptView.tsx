@@ -7,7 +7,7 @@
  *  сервером: правки промпта их не ломают.
  */
 import { useEffect, useState } from "react";
-import { api, CrmSettings, CrmSettingsIn, fmtWhen } from "../api";
+import { api, CrmSettings, CrmSettingsIn, fmtWhen, plural } from "../api";
 import { Note, Skeleton } from "../components/ui";
 
 function draftOf(s: CrmSettings): CrmSettingsIn {
@@ -30,6 +30,8 @@ export default function PromptView() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testNote, setTestNote] = useState("");
 
   useEffect(() => {
     api
@@ -66,6 +68,22 @@ export default function PromptView() {
 
   const reset = () =>
     save({ ...draft, prompt: data.default_prompt, pipeline_rules: data.default_pipeline_rules, summary_prompt: data.default_summary_prompt });
+
+  const testTelegram = async () => {
+    setTesting(true);
+    setTestNote("");
+    try {
+      const res = await api.testCrmNotify();
+      setTestNote(`Отправлено в ${res.delivered} ${plural(res.delivered, "чат", "чата", "чатов")} — проверьте Telegram.`);
+    } catch (e) {
+      setTestNote(String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const hour = String(draft.run_hour).padStart(2, "0");
+  const prevHour = draft.run_hour ? `${hour}:00 накануне` : "00:00";
 
   const isDefault = (text: string, def: string) => text.trim() === def.trim();
 
@@ -171,16 +189,16 @@ export default function PromptView() {
               onChange={(e) => set({ auto_run: e.target.checked })}
             />
             <span>
-              <span className="toggle-title">Разбирать вчерашний день сам</span>
+              <span className="toggle-title">Разбирать день сам — ежедневно в {hour}:00</span>
               <span className="toggle-hint">
                 {draft.auto_run
-                  ? "Каждое утро, когда наступит выбранный час по времени студии."
+                  ? `Ровно в ${hour}:00 по времени студии, не раньше и не позже. Отчётный день — с ${prevHour} до ${hour}:00: вечерние сообщения попадают в следующий разбор, ничего не теряется. Разбор занимает несколько минут.`
                   : "Только по кнопке «Разобрать день»."}
               </span>
             </span>
           </label>
           <label className="field">
-            <span className="label">Час запуска</span>
+            <span className="label">Час разбора</span>
             <select value={draft.run_hour} onChange={(e) => set({ run_hour: Number(e.target.value) })}>
               {Array.from({ length: 24 }, (_, h) => (
                 <option key={h} value={h}>
@@ -199,6 +217,26 @@ export default function PromptView() {
               onChange={(e) => set({ timezone: e.target.value })}
             />
           </label>
+        </div>
+
+        {/* Сводка в чат: бот и чат задаются переменными окружения бэкенда,
+            здесь только видно, настроены ли они, и проверка одним нажатием. */}
+        <div className="crm-telegram">
+          <span className={`status ${data.telegram_configured ? "done" : "error"}`}>
+            <span className="dot" />
+            {data.telegram_configured ? "Сводка в Telegram настроена" : "Сводка в Telegram не настроена"}
+          </span>
+          <span className="muted">
+            {data.telegram_configured
+              ? "После разбора по расписанию в чат уходит короткая сводка: сколько сделок, сколько с замечаниями, на что обратить внимание и ссылка на день."
+              : "Задайте TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в окружении бэкенда (и DASHBOARD_URL — адрес админки для ссылки)."}
+          </span>
+          {data.telegram_configured && (
+            <button type="button" className="secondary small" disabled={testing} onClick={testTelegram}>
+              {testing ? "Отправляем…" : "Отправить пробное"}
+            </button>
+          )}
+          {testNote && <span className="muted">{testNote}</span>}
         </div>
 
         {error && <Note kind="error">{error}</Note>}

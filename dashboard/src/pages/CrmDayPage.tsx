@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, CrmRunReport, fmtDate, fmtUsd, plural } from "../api";
+import { api, CrmRunReport, fmtDate, fmtUsd, fmtWhen, plural } from "../api";
 import { Slider } from "../components/Slider";
 import { ConfirmAction, Empty, Note, PageHead, Panel, Section, Skeleton, Stat } from "../components/ui";
 import { RunStatus } from "./CrmPage";
@@ -27,6 +27,7 @@ export default function CrmDayPage() {
   const [manager, setManager] = useState("");
   const [category, setCategory] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const load = useCallback(() => {
     if (!day) return;
@@ -88,11 +89,28 @@ export default function CrmDayPage() {
     }
   };
 
+  const sendTelegram = async () => {
+    setSending(true);
+    setError("");
+    try {
+      const res = await api.notifyCrmRun(day);
+      setNotice(`Сводка отправлена в ${res.delivered} ${plural(res.delivered, "чат", "чата", "чатов")}.`);
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (error && !report) return <Note kind="error">{error}</Note>;
   if (!report) return <Skeleton count={3} height={92} />;
 
   const { run, summary, stats } = report;
   const { day: dayLabel, weekday } = fmtDate(run.date);
+  const window =
+    report.day_end_hour && report.window_from && report.window_to
+      ? `с ${fmtWhen(report.window_from)} до ${fmtWhen(report.window_to)}`
+      : "";
   const problems = report.reviews.filter((r) => r.problem).length;
   const critical = report.reviews.filter((r) => r.severity === "critical").length;
   const unanswered = report.reviews.filter((r) => r.unanswered).length;
@@ -105,13 +123,25 @@ export default function CrmDayPage() {
         title={`CRM за ${dayLabel}`}
         hint={
           <>
-            {weekday} · <Link to="/crm">все разборы</Link>
+            {weekday}
+            {window && ` · отчётный день ${window}`} · <Link to="/crm">все разборы</Link>
             {me.can_view_all_crm && run.status_detail && ` · ${run.status_detail}`}
           </>
         }
       >
         <div className="actions end">
           <RunStatus run={run} />
+          {me.can_manage_crm && run.status === "done" && report.telegram_configured && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={sending}
+              title="Отправить краткую сводку этого разбора в Telegram-чат ещё раз"
+              onClick={sendTelegram}
+            >
+              {sending ? "Отправляем…" : "В Telegram"}
+            </button>
+          )}
           {me.can_manage_crm && !inFlight && (
             <ConfirmAction
               label="Разобрать заново"

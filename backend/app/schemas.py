@@ -1017,7 +1017,7 @@ class CrmSettingsOut(BaseModel):
     model_default: str = ""
     timezone: str = "Asia/Tbilisi"
     auto_run: bool = True
-    run_hour: int = 9
+    run_hour: int = 20
     max_deals: int = 400
     integration_key: str = ""
     ingest_url: str = ""
@@ -1025,6 +1025,9 @@ class CrmSettingsOut(BaseModel):
     known_managers: list[CrmManagerOut] = []
     # На сервере задан ANTHROPIC_API_KEY.
     configured: bool = False
+    # Сводка в Telegram: на сервере заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.
+    telegram_configured: bool = False
+    dashboard_url: str = ""
     updated_at: datetime | None = None
     updated_by: str = ""
 
@@ -1038,7 +1041,7 @@ class CrmSettingsIn(BaseModel):
     model: str = Field(default="", max_length=120)
     timezone: str = Field(default="Asia/Tbilisi", max_length=64)
     auto_run: bool = True
-    run_hour: int = Field(default=9, ge=0, le=23)
+    run_hour: int = Field(default=20, ge=0, le=23)
     max_deals: int = Field(default=400, ge=1, le=2000)
     manager_map: dict[str, uuid.UUID | None] = {}
 
@@ -1183,7 +1186,10 @@ class CrmRunsOut(BaseModel):
     pending_dates: list[date] = []
     # В базе есть хоть одна сделка — интеграция присылает данные.
     has_data: bool = False
+    # Отчётный день, который идёт сейчас (его ещё можно разобрать частично).
     today: date
+    # Час окончания отчётного дня; 0 — календарный день.
+    day_end_hour: int = 0
 
 
 class CrmRunReportOut(BaseModel):
@@ -1192,6 +1198,17 @@ class CrmRunReportOut(BaseModel):
     stats: dict | None = None
     reviews: list[CrmReviewOut] = []
     criteria: list[CrmCriterionOut] = []
+    # Границы отчётного дня — при часе окончания 20:00 он захватывает две даты.
+    window_from: datetime | None = None
+    window_to: datetime | None = None
+    day_end_hour: int = 0
+    telegram_configured: bool = False
+
+
+class CrmNotifyOut(BaseModel):
+    delivered: int = 0
+    chats: int = 0
+    preview: str = ""
 
 
 # --- Статистика CRM за период ---

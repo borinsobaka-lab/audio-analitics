@@ -51,7 +51,7 @@ export default function CrmPage() {
         setError("");
       })
       .catch((e) => {
-        setData((d) => d ?? { runs: [], pending_dates: [], has_data: false, today: toApiDate(new Date()) });
+        setData((d) => d ?? { runs: [], pending_dates: [], has_data: false, today: toApiDate(new Date()), day_end_hour: 0 });
         setError(String(e).replace(/^Error:\s*/, ""));
       });
   }, []);
@@ -87,7 +87,11 @@ export default function CrmPage() {
     <div>
       <PageHead
         title="Разборы CRM"
-        hint="Каждый день ИИ читает переписку по всем сделкам, которые в этот день двигались, и отмечает ошибки общения и движения по воронке. Вчерашний день разбирается сам утром; любой другой — по кнопке."
+        hint={
+          data?.day_end_hour
+            ? `Каждый день в ${String(data.day_end_hour).padStart(2, "0")}:00 ИИ читает переписку по всем сделкам за прошедшие сутки и отмечает ошибки общения и движения по воронке. Любой другой день — по кнопке.`
+            : "Каждый день ИИ читает переписку по всем сделкам, которые в этот день двигались, и отмечает ошибки общения и движения по воронке. Разбор по расписанию — после полуночи; любой другой день — по кнопке."
+        }
       >
         {me.can_manage_crm && (
           <div className="crm-run-any">
