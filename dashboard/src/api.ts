@@ -621,6 +621,17 @@ export interface CrmSettings {
   auto_run: boolean;
   run_hour: number;
   max_deals: number;
+  /** Рабочее время студии «HH:MM»: по нему считается скорость ответа. */
+  work_start: string;
+  work_end: string;
+  /** 0 — понедельник … 6 — воскресенье. */
+  work_days: number[];
+  slow_reply_minutes: number;
+  exclude_pipelines: string[];
+  exclude_stages: CrmStageRef[];
+  exclude_managers: string[];
+  /** Воронки и этапы из данных и словарей amoCRM — для выбора. */
+  known_pipelines: { name: string; stages: string[] }[];
   integration_key: string;
   ingest_url: string;
   manager_map: Record<string, string | null>;
@@ -634,6 +645,12 @@ export interface CrmSettings {
   updated_by: string;
 }
 
+export interface CrmStageRef {
+  pipeline: string;
+  stage: string;
+}
+
+/** Сохраняются только присланные поля — каждая вкладка шлёт своё. */
 export interface CrmSettingsIn {
   prompt: string;
   summary_prompt: string;
@@ -644,6 +661,13 @@ export interface CrmSettingsIn {
   run_hour: number;
   max_deals: number;
   manager_map: Record<string, string | null>;
+  work_start: string;
+  work_end: string;
+  work_days: number[];
+  slow_reply_minutes: number;
+  exclude_pipelines: string[];
+  exclude_stages: CrmStageRef[];
+  exclude_managers: string[];
 }
 
 export interface CrmDeal {
@@ -795,6 +819,22 @@ export interface CrmRunReport {
   window_to: string | null;
   day_end_hour: number;
   telegram_configured: boolean;
+  /** Ответ дольше — медленный, рабочих минут. */
+  slow_reply_minutes: number;
+  work_hours: string;
+  amo_connected: boolean;
+  /** Задачи в amoCRM, уже поставленные по этому дню: id сделки → id задачи. */
+  amo_tasks: Record<string, string>;
+  amo_tasks_error: string;
+}
+
+export interface AmoTasksResult {
+  created: number;
+  already: number;
+  below: number;
+  no_user: number;
+  not_amo: number;
+  errors: string[];
 }
 
 export interface CrmNotifyResult {
@@ -900,6 +940,9 @@ export interface AmoStatus {
   webhook_events: string[];
   pipelines: AmoPipeline[];
   users: number;
+  tasks_enabled: boolean;
+  tasks_min_severity: "warning" | "critical";
+  tasks_due_hours: number;
 }
 
 export interface AmoConnectIn {
@@ -913,6 +956,9 @@ export interface AmoConnectIn {
   enabled: boolean;
   sync_every_minutes: number;
   lookback_days: number;
+  tasks_enabled: boolean;
+  tasks_min_severity: "warning" | "critical";
+  tasks_due_hours: number;
 }
 
 export interface AmoSyncResult {
@@ -1238,7 +1284,7 @@ export const api = {
     }).then(normalizeAssist),
   // --- CRM ---
   crmSettings: () => request<CrmSettings>("/api/crm/settings"),
-  saveCrmSettings: (body: CrmSettingsIn) =>
+  saveCrmSettings: (body: Partial<CrmSettingsIn>) =>
     request<CrmSettings>("/api/crm/settings", { method: "PUT", body: JSON.stringify(body) }),
   rotateCrmKey: () =>
     request<CrmSettings>("/api/crm/settings/rotate-key", { method: "POST" }),
@@ -1275,6 +1321,8 @@ export const api = {
     request<AmoStatus>("/api/crm/amo", { method: "PUT", body: JSON.stringify(body) }),
   syncAmo: () => request<AmoSyncResult>("/api/crm/amo/sync", { method: "POST" }),
   disconnectAmo: () => request<AmoStatus>("/api/crm/amo", { method: "DELETE" }),
+  /** Задачи менеджерам в amoCRM по разбору дня; уже поставленные не дублируются. */
+  amoTasks: (day: string) => request<AmoTasksResult>(`/api/crm/amo/tasks/${day}`, { method: "POST" }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),
   savePlaybookSettings: (body: {
     studios: Record<string, LangText>;

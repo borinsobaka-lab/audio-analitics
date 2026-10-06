@@ -105,6 +105,7 @@ def build_message(
     url: str,
     window: str = "",
     error: str = "",
+    tasks_created: int | None = None,
 ) -> str:
     """Текст сводки (HTML Telegram). Всё, что пришло от модели или из CRM,
     экранируется: имя администратора с «<» не должно ломать разметку."""
@@ -168,6 +169,10 @@ def build_message(
         lines.append(f"<b>По администраторам:</b> {html.escape('; '.join(parts))}")
 
     lines.append(f"<b>Внимание:</b> {label}")
+    if tasks_created:
+        lines.append(
+            f"Поставлено задач менеджерам в amoCRM: <b>{tasks_created}</b>"
+        )
     top = [t for t in ((summary or {}).get("top_problems") or []) if str(t).strip()][:4]
     if top and level != "low":
         lines.append("<b>Главное:</b>")
@@ -221,12 +226,14 @@ def send(text: str) -> int:
     return delivered
 
 
-def notify_run(run, *, error: str = "", window: str = "") -> None:
+def notify_run(run, *, error: str = "", window: str = "", tasks_created: int | None = None) -> None:
     """Сводка по готовому (или упавшему) разбору — тихо: без исключений."""
     if not configured():
         return
     summary = dict(run.summary_json or {})
     stats = summary.pop("stats", None) or {}
+    summary.pop("amo_tasks", None)
+    summary.pop("amo_tasks_error", None)
     try:
         send(
             build_message(
@@ -236,6 +243,7 @@ def notify_run(run, *, error: str = "", window: str = "") -> None:
                 url=day_url(run.date),
                 window=window,
                 error=error,
+                tasks_created=tasks_created,
             )
         )
     except NotifyError as exc:

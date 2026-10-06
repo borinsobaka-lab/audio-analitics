@@ -28,6 +28,7 @@ export default function CrmDayPage() {
   const [category, setCategory] = useState("");
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
+  const [tasking, setTasking] = useState(false);
 
   const load = useCallback(() => {
     if (!day) return;
@@ -102,6 +103,24 @@ export default function CrmDayPage() {
     }
   };
 
+  const pushTasks = async () => {
+    setTasking(true);
+    setError("");
+    try {
+      const res = await api.amoTasks(day);
+      const parts = [`поставлено ${res.created} ${plural(res.created, "задача", "задачи", "задач")}`];
+      if (res.already) parts.push(`уже были: ${res.already}`);
+      if (res.no_user) parts.push(`без ответственного в amoCRM: ${res.no_user}`);
+      if (res.errors.length) setError(`amoCRM: ${res.errors.join("; ")}`);
+      setNotice(`Задачи в amoCRM: ${parts.join(", ")}.`);
+      load();
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setTasking(false);
+    }
+  };
+
   if (error && !report) return <Note kind="error">{error}</Note>;
   if (!report) return <Skeleton count={3} height={92} />;
 
@@ -131,6 +150,17 @@ export default function CrmDayPage() {
       >
         <div className="actions end">
           <RunStatus run={run} />
+          {me.can_manage_crm && run.status === "done" && report.amo_connected && problems > 0 && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={tasking}
+              title="Поставить ответственным задачи «Связаться» по сделкам с замечаниями. Уже поставленные по этому дню не дублируются."
+              onClick={pushTasks}
+            >
+              {tasking ? "Ставим…" : "Задачи в amoCRM"}
+            </button>
+          )}
           {me.can_manage_crm && run.status === "done" && report.telegram_configured && (
             <button
               type="button"
@@ -164,6 +194,9 @@ export default function CrmDayPage() {
       {run.status === "error" && (
         <Note kind="error">Разбор не удался: {run.status_detail.split("\n")[0]}</Note>
       )}
+      {report.amo_tasks_error && (
+        <Note kind="error">Не все задачи ушли в amoCRM: {report.amo_tasks_error}</Note>
+      )}
 
       <div className="stats">
         <Stat
@@ -173,7 +206,11 @@ export default function CrmDayPage() {
         />
         <Stat value={String(critical)} label="Критичных" />
         <Stat value={String(unanswered)} label="Без ответа клиенту" />
-        <Stat value={fmtMinutes(avgReply)} label="Ответ клиенту в среднем" />
+        <Stat
+          value={fmtMinutes(avgReply)}
+          label="Ответ клиенту в среднем"
+          title={report.work_hours ? `По рабочему времени студии: ${report.work_hours}` : undefined}
+        />
         {me.can_manage_crm && (
           <Stat
             value={fmtUsd(run.cost_usd)}
@@ -321,7 +358,12 @@ export default function CrmDayPage() {
           <Empty title="Под фильтр ничего не попало">Снимите фильтр или выберите другой.</Empty>
         )}
         {shown.map((r) => (
-          <ReviewCard key={r.id} review={r} />
+          <ReviewCard
+            key={r.id}
+            review={r}
+            slowMinutes={report.slow_reply_minutes}
+            taskId={report.amo_tasks[r.deal.external_id]}
+          />
         ))}
       </Section>
     </div>

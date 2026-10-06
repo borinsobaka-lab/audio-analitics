@@ -1019,6 +1019,18 @@ class CrmSettingsOut(BaseModel):
     auto_run: bool = True
     run_hour: int = 20
     max_deals: int = 400
+    # Рабочее время студии: по нему считается скорость ответа.
+    work_start: str = "09:00"
+    work_end: str = "21:00"
+    # 0 — понедельник … 6 — воскресенье.
+    work_days: list[int] = [0, 1, 2, 3, 4, 5, 6]
+    slow_reply_minutes: int = 60
+    # Что не разбирать.
+    exclude_pipelines: list[str] = []
+    exclude_stages: list["CrmStageRef"] = []
+    exclude_managers: list[str] = []
+    # Воронки и этапы, встреченные в данных и в словарях amoCRM, — для выбора.
+    known_pipelines: list["CrmPipelineRef"] = []
     integration_key: str = ""
     ingest_url: str = ""
     manager_map: dict[str, uuid.UUID | None] = {}
@@ -1032,7 +1044,20 @@ class CrmSettingsOut(BaseModel):
     updated_by: str = ""
 
 
+class CrmStageRef(BaseModel):
+    pipeline: str = Field(default="", max_length=120)
+    stage: str = Field(min_length=1, max_length=120)
+
+
+class CrmPipelineRef(BaseModel):
+    name: str
+    stages: list[str] = []
+
+
 class CrmSettingsIn(BaseModel):
+    """Сохраняются только присланные поля: каждая вкладка настроек шлёт
+    своё и не затирает соседние."""
+
     # Пусто — стандартный текст.
     prompt: str = Field(default="", max_length=30000)
     summary_prompt: str = Field(default="", max_length=10000)
@@ -1044,6 +1069,32 @@ class CrmSettingsIn(BaseModel):
     run_hour: int = Field(default=20, ge=0, le=23)
     max_deals: int = Field(default=400, ge=1, le=2000)
     manager_map: dict[str, uuid.UUID | None] = {}
+    work_start: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    work_end: str = Field(default="21:00", pattern=r"^\d{2}:\d{2}$")
+    work_days: list[int] = Field(default=[0, 1, 2, 3, 4, 5, 6], min_length=1, max_length=7)
+    slow_reply_minutes: int = Field(default=60, ge=5, le=1440)
+    exclude_pipelines: list[str] = Field(default=[], max_length=200)
+    exclude_stages: list[CrmStageRef] = Field(default=[], max_length=500)
+    exclude_managers: list[str] = Field(default=[], max_length=500)
+
+    @field_validator("work_days")
+    @classmethod
+    def valid_days(cls, days: list[int]) -> list[int]:
+        if any(d < 0 or d > 6 for d in days):
+            raise ValueError("Дни недели — от 0 (понедельник) до 6 (воскресенье)")
+        return sorted(set(days))
+
+    @model_validator(mode="after")
+    def hours_in_order(self) -> "CrmSettingsIn":
+        def minutes(value: str) -> int:
+            h, m = (int(x) for x in value.split(":"))
+            if m > 59 or h > 24 or (h == 24 and m):
+                raise ValueError(f"Неверное время: {value}")
+            return h * 60 + m
+
+        if minutes(self.work_end) <= minutes(self.work_start):
+            raise ValueError("Конец рабочего дня должен быть позже начала")
+        return self
 
     @field_validator("timezone")
     @classmethod
@@ -1203,6 +1254,13 @@ class CrmRunReportOut(BaseModel):
     window_to: datetime | None = None
     day_end_hour: int = 0
     telegram_configured: bool = False
+    # Ответ дольше — медленный (рабочих минут).
+    slow_reply_minutes: int = 60
+    work_hours: str = ""
+    # amoCRM подключена; задачи, уже поставленные по этому дню: id сделки → id задачи.
+    amo_connected: bool = False
+    amo_tasks: dict[str, str] = {}
+    amo_tasks_error: str = ""
 
 
 class CrmNotifyOut(BaseModel):
@@ -1374,6 +1432,10 @@ class AmoStatusOut(BaseModel):
     webhook_events: list[str] = []
     pipelines: list[AmoPipelineOut] = []
     users: int = 0
+    # Задачи менеджерам по итогам разбора.
+    tasks_enabled: bool = False
+    tasks_min_severity: Literal["warning", "critical"] = "warning"
+    tasks_due_hours: int = 2
 
 
 class AmoConnectIn(BaseModel):
@@ -1389,6 +1451,20 @@ class AmoConnectIn(BaseModel):
     enabled: bool = True
     sync_every_minutes: int = Field(default=15, ge=5, le=240)
     lookback_days: int = Field(default=7, ge=1, le=60)
+    tasks_enabled: bool = False
+    tasks_min_severity: Literal["warning", "critical"] = "warning"
+    tasks_due_hours: int = Field(default=2, ge=1, le=72)
+
+
+class AmoTasksOut(BaseModel):
+    created: int = 0
+    # Уже были поставлены раньше по этому дню.
+    already: int = 0
+    # Ниже порога серьёзности, без ответственного в amoCRM, не из amoCRM.
+    below: int = 0
+    no_user: int = 0
+    not_amo: int = 0
+    errors: list[str] = []
 
 
 class AmoSyncOut(BaseModel):

@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from .. import crm_ai, crm_notify, playbook_ai
+from .. import amo_tasks, crm_ai, crm_notify, playbook_ai
 from ..config import get_settings
 from ..db import get_sync_db
 from ..models import (
@@ -70,10 +70,16 @@ def execute(run_id: str) -> str:
         run.set_status("done")
         run.finished_at = utcnow()
         db.commit()
-        # Сводка в чат — только у разбора по расписанию: повторный запуск
-        # руками не должен слать её заново.
+        # Задачи в amoCRM и сводка в чат — только у разбора по расписанию:
+        # повторный запуск руками не должен слать их заново.
         if run.trigger == "schedule":
-            crm_notify.notify_run(run, window=window)
+            try:
+                tasks = amo_tasks.push_for_run_sync(db, run, data)
+            except Exception as exc:  # noqa: BLE001 — задачи не ценнее разбора
+                logger.warning("amoCRM tasks: %s", exc)
+                db.rollback()
+                tasks = None
+            crm_notify.notify_run(run, window=window, tasks_created=tasks)
         return result
     except Exception as e:  # noqa: BLE001 — ошибка уходит в статус разбора
         db.rollback()
@@ -216,10 +222,16 @@ def _run(db, run: CrmRun, data: dict) -> str:
     day_start, day_end = crm_ai.day_bounds(run.date, tz, hour)
     date_label = crm_ai.day_label(run.date, hour)
 
-    # Повторный запуск заменяет прошлый разбор целиком.
+    hours = crm_ai.work_hours_of(data, tz)
+    slow = int(data.get("slow_reply_minutes") or crm_ai.DEFAULT_SLOW_REPLY_MINUTES)
+    hours_label = crm_ai.describe_hours(hours)
+
+    # Повторный запуск заменяет прошлый разбор целиком — кроме списка
+    # поставленных задач в amoCRM: он защищает от дублей.
+    amo_tasks_done = (run.summary_json or {}).get("amo_tasks") or {}
     for old in db.scalars(select(CrmReview).where(CrmReview.run_id == run.id)):
         db.delete(old)
-    run.summary_json = None
+    run.summary_json = {"amo_tasks": amo_tasks_done} if amo_tasks_done else None
     run.reviews_done = 0
     run.problems_count = 0
     db.commit()
@@ -256,10 +268,12 @@ def _run(db, run: CrmRun, data: dict) -> str:
         if touched
         else []
     )
+    # Лимит считается по разобранным сделкам: исключённые настройками
+    # «Что разбирать» его не съедают.
     max_deals = max(1, int(data.get("max_deals") or DEFAULT_MAX_DEALS))
-    skipped = max(0, len(deals) - max_deals)
-    deals = deals[:max_deals]
-    run.deals_total = len(deals) + skipped
+    skipped = 0
+    excluded: dict[str, int] = {}
+    run.deals_total = len(deals)
     db.commit()
 
     if not deals:
@@ -315,8 +329,20 @@ def _run(db, run: CrmRun, data: dict) -> str:
         day_m = [m for m in messages if m["at"] >= day_start]
         day_e = [e for e in events if e["at"] >= day_start]
         deal_dict = _deal_dict(deal)
-        speed = crm_ai.reply_stats(messages, day_start, day_end)
         manager_key, manager_name = crm_ai.day_manager(deal_dict, day_m, day_e)
+        reason = crm_ai.exclusion_reason(
+            pipeline=deal.pipeline,
+            stage=crm_ai.stage_at(deal.stage, events, day_end),
+            manager_key=manager_key,
+            data=data,
+        )
+        if reason:
+            excluded[reason] = excluded.get(reason, 0) + 1
+            continue
+        if run.reviews_done + failed >= max_deals:
+            skipped += 1
+            continue
+        speed = crm_ai.reply_stats(messages, day_start, day_end, hours, slow)
         employee_id = crm_ai.resolve_employee(manager_key, manager_name, manager_map, employees)
 
         prompt = crm_ai.review_prompt(
@@ -324,6 +350,8 @@ def _run(db, run: CrmRun, data: dict) -> str:
             instructions=instructions,
             criteria=criteria,
             deal_text=crm_ai.render_deal(deal_dict, messages, events, day_start, day_end, tz, date_label),
+            work_hours=hours_label,
+            speed=crm_ai.speed_text(speed, slow),
         )
         # Одна упавшая сделка не должна стоить всего дня.
         try:
@@ -421,7 +449,11 @@ def _run(db, run: CrmRun, data: dict) -> str:
         except Exception as e:  # noqa: BLE001 — разборы ценнее итога
             logger.warning("crm daily summary failed: %s", e)
             summary = {"error": str(e)[:500]}
-    run.summary_json = {**summary, "stats": stats}
+    run.summary_json = {
+        **summary,
+        "stats": stats,
+        **({"amo_tasks": amo_tasks_done} if amo_tasks_done else {}),
+    }
     db.commit()
 
     cost = _finish_cost(db, run, llm)
@@ -434,6 +466,12 @@ def _run(db, run: CrmRun, data: dict) -> str:
     )
     if failed:
         parts.append(f"ошибок разбора: {failed}")
+    if excluded:
+        names = {"воронка": "воронки", "этап": "этапы", "менеджер": "менеджеры"}
+        parts.append(
+            "исключено настройками: "
+            + ", ".join(f"{names.get(k, k)} {v}" for k, v in excluded.items())
+        )
     if skipped:
         parts.append(f"пропущено сделок сверх лимита {max_deals}: {skipped}")
     parts.append(f"стоимость: ${cost:.3f}")

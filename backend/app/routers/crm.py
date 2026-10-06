@@ -43,6 +43,8 @@ from ..schemas import (
     CrmManagerOut,
     CrmMessageOut,
     CrmNotifyOut,
+    CrmPipelineRef,
+    CrmStageRef,
     CrmPipelineCheck,
     CrmProblem,
     CrmReviewDetailOut,
@@ -99,8 +101,15 @@ async def settings_data(db: AsyncSession, org_id) -> tuple[CrmSettings | None, d
 async def save_data(
     db: AsyncSession, org: Organization, row: CrmSettings | None, data: dict, who: str
 ) -> None:
+    """Сохранить настройки, не трогая раздел amoCRM: его пишет синхронизация,
+    и токен OAuth, обновлённый ею секунду назад, нельзя затереть старым."""
     if row:
-        row.data = data
+        await db.refresh(row)
+        fresh_amo = (row.data or {}).get("amo")
+        merged = dict(data)
+        if fresh_amo is not None:
+            merged["amo"] = fresh_amo
+        row.data = merged
         row.updated_at = utcnow()
         row.updated_by = who
     else:
@@ -208,8 +217,38 @@ async def known_managers(db: AsyncSession, org_id, data: dict) -> list[CrmManage
     return out
 
 
-def settings_out(data: dict, managers: list[CrmManagerOut], row: CrmSettings | None) -> CrmSettingsOut:
+async def known_pipelines(db: AsyncSession, org_id, data: dict) -> list[CrmPipelineRef]:
+    """Воронки и этапы для выбора «что не разбирать»: из словарей amoCRM (в
+    их порядке) и из сделок, которые уже пришли."""
+    order: dict[str, list[str]] = {}
+    dicts = (data.get("amo") or {}).get("dicts") or {}
+    for pid, name in (dicts.get("pipelines") or {}).items():
+        stages = order.setdefault(name, [])
+        for s in (dicts.get("statuses") or {}).values():
+            if s.get("pipeline_id") == pid and s.get("name") and s["name"] not in stages:
+                stages.append(s["name"])
+    rows = (
+        await db.execute(
+            select(CrmDeal.pipeline, CrmDeal.stage)
+            .where(CrmDeal.org_id == org_id)
+            .group_by(CrmDeal.pipeline, CrmDeal.stage)
+        )
+    ).all()
+    for pipeline, stage in rows:
+        stages = order.setdefault(pipeline or "", [])
+        if stage and stage not in stages:
+            stages.append(stage)
+    return [CrmPipelineRef(name=name, stages=stages) for name, stages in order.items() if name or stages]
+
+
+def settings_out(
+    data: dict,
+    managers: list[CrmManagerOut],
+    row: CrmSettings | None,
+    pipelines: list[CrmPipelineRef] | None = None,
+) -> CrmSettingsOut:
     settings = get_settings()
+    hours = crm_ai.work_hours_of(data, tz_of(data))
     prompt = (data.get("prompt") or "").strip()
     summary = (data.get("summary_prompt") or "").strip()
     rules = (data.get("pipeline_rules") or "").strip()
@@ -237,6 +276,18 @@ def settings_out(data: dict, managers: list[CrmManagerOut], row: CrmSettings | N
         auto_run=bool(data.get("auto_run", True)),
         run_hour=crm_scheduler.run_hour_of(data),
         max_deals=int(data.get("max_deals") or 400),
+        work_start=crm_ai.fmt_hhmm(hours.start),
+        work_end=crm_ai.fmt_hhmm(hours.end),
+        work_days=sorted(hours.days),
+        slow_reply_minutes=int(data.get("slow_reply_minutes") or crm_ai.DEFAULT_SLOW_REPLY_MINUTES),
+        exclude_pipelines=[str(x) for x in data.get("exclude_pipelines") or []],
+        exclude_stages=[
+            CrmStageRef(pipeline=str(x.get("pipeline") or ""), stage=str(x.get("stage")))
+            for x in data.get("exclude_stages") or []
+            if isinstance(x, dict) and x.get("stage")
+        ],
+        exclude_managers=[str(x) for x in data.get("exclude_managers") or []],
+        known_pipelines=pipelines or [],
         integration_key=data.get("integration_key") or "",
         ingest_url=f"{settings.api_base_url.rstrip('/')}/api/crm/ingest",
         manager_map=manager_map,
@@ -262,7 +313,9 @@ async def get_crm_settings(
         data["integration_key"] = secrets.token_urlsafe(32)
         await save_data(db, org, row, data, author(user))
         row, data = await settings_data(db, org.id)
-    return settings_out(data, await known_managers(db, org.id, data), row)
+    return settings_out(
+        data, await known_managers(db, org.id, data), row, await known_pipelines(db, org.id, data)
+    )
 
 
 @router.put("/settings", response_model=CrmSettingsOut)
@@ -281,18 +334,34 @@ async def save_crm_settings(
         text = text.strip()
         return "" if text == default.strip() else text
 
-    data["prompt"] = keep(body.prompt, crm_ai.DEFAULT_PROMPT)
-    data["summary_prompt"] = keep(body.summary_prompt, crm_ai.DEFAULT_SUMMARY_PROMPT)
-    data["pipeline_rules"] = keep(body.pipeline_rules, crm_ai.DEFAULT_PIPELINE_RULES)
-    data["model"] = body.model.strip()
-    data["timezone"] = body.timezone
-    data["auto_run"] = body.auto_run
-    data["run_hour"] = body.run_hour
-    data["max_deals"] = body.max_deals
-    data["manager_map"] = {k: str(v) for k, v in body.manager_map.items() if v}
+    sent = body.model_fields_set
+    if "prompt" in sent:
+        data["prompt"] = keep(body.prompt, crm_ai.DEFAULT_PROMPT)
+    if "summary_prompt" in sent:
+        data["summary_prompt"] = keep(body.summary_prompt, crm_ai.DEFAULT_SUMMARY_PROMPT)
+    if "pipeline_rules" in sent:
+        data["pipeline_rules"] = keep(body.pipeline_rules, crm_ai.DEFAULT_PIPELINE_RULES)
+    if "model" in sent:
+        data["model"] = body.model.strip()
+    for key in (
+        "timezone", "auto_run", "run_hour", "max_deals", "work_start", "work_end",
+        "work_days", "slow_reply_minutes", "exclude_managers",
+    ):
+        if key in sent:
+            data[key] = getattr(body, key)
+    if "exclude_pipelines" in sent:
+        data["exclude_pipelines"] = [p.strip() for p in body.exclude_pipelines if p.strip()]
+    if "exclude_stages" in sent:
+        data["exclude_stages"] = [
+            {"pipeline": s.pipeline.strip(), "stage": s.stage.strip()} for s in body.exclude_stages
+        ]
+    if "manager_map" in sent:
+        data["manager_map"] = {k: str(v) for k, v in body.manager_map.items() if v}
     await save_data(db, org, row, data, author(user))
     row, data = await settings_data(db, org.id)
-    return settings_out(data, await known_managers(db, org.id, data), row)
+    return settings_out(
+        data, await known_managers(db, org.id, data), row, await known_pipelines(db, org.id, data)
+    )
 
 
 @router.post("/settings/rotate-key", response_model=CrmSettingsOut)
@@ -306,7 +375,9 @@ async def rotate_integration_key(
     data["integration_key"] = secrets.token_urlsafe(32)
     await save_data(db, org, row, data, author(user))
     row, data = await settings_data(db, org.id)
-    return settings_out(data, await known_managers(db, org.id, data), row)
+    return settings_out(
+        data, await known_managers(db, org.id, data), row, await known_pipelines(db, org.id, data)
+    )
 
 
 # --- Критерии -------------------------------------------------------------
@@ -504,7 +575,8 @@ async def start_run(
         run.deals_total = 0
         run.reviews_done = 0
         run.problems_count = 0
-        run.summary_json = None
+        kept = (run.summary_json or {}).get("amo_tasks")
+        run.summary_json = {"amo_tasks": kept} if kept else None
         run.finished_at = None
         run.cost_usd = None
         run.llm_input_tokens = run.llm_output_tokens = run.llm_calls = 0
@@ -716,6 +788,8 @@ async def run_report(
     ).all()
     summary = dict(run.summary_json or {})
     stats = summary.pop("stats", None)
+    amo_tasks = {str(k): str(v) for k, v in (summary.pop("amo_tasks", None) or {}).items()}
+    amo_tasks_error = str(summary.pop("amo_tasks_error", "") or "")
     if not user.can_view_all_crm:
         # Итог дня говорит обо всех администраторах — его видит тот, кому
         # открыты все сделки. Свои разборы сотрудник видит и так.
@@ -734,6 +808,11 @@ async def run_report(
         window_to=window_to,
         day_end_hour=hour,
         telegram_configured=crm_notify.configured() if user.can_manage_crm else False,
+        slow_reply_minutes=int(data.get("slow_reply_minutes") or crm_ai.DEFAULT_SLOW_REPLY_MINUTES),
+        work_hours=crm_ai.describe_hours(crm_ai.work_hours_of(data, tz_of(data))),
+        amo_connected=bool((data.get("amo") or {}).get("access_token")) and user.can_manage_crm,
+        amo_tasks=amo_tasks,
+        amo_tasks_error=amo_tasks_error if user.can_manage_crm else "",
     )
 
 

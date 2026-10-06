@@ -599,6 +599,18 @@ class AmoClient:
             resp = await self.http.get(path, params=params)
         except httpx.HTTPError as exc:
             raise AmoError(f"нет связи с amoCRM: {exc}") from exc
+        return self._parse(resp, path)
+
+    async def post(self, path: str, body) -> dict | None:
+        """POST JSON → JSON. Используется для постановки задач."""
+        try:
+            resp = await self.http.post(path, json=body)
+        except httpx.HTTPError as exc:
+            raise AmoError(f"нет связи с amoCRM: {exc}") from exc
+        return self._parse(resp, path)
+
+    @staticmethod
+    def _parse(resp: httpx.Response, path: str) -> dict | None:
         if resp.status_code == 204:
             return None
         if resp.status_code == 401:

@@ -84,17 +84,7 @@ export default function Integration() {
     }
   };
 
-  const body = (manager_map: Record<string, string | null>): CrmSettingsIn => ({
-    prompt: data.prompt,
-    summary_prompt: data.summary_prompt,
-    pipeline_rules: data.pipeline_rules,
-    model: data.model_saved,
-    timezone: data.timezone,
-    auto_run: data.auto_run,
-    run_hour: data.run_hour,
-    max_deals: data.max_deals,
-    manager_map,
-  });
+  const body = (manager_map: Record<string, string | null>): Partial<CrmSettingsIn> => ({ manager_map });
 
   const mapDirty = data.known_managers.some((m) => (data.manager_map[m.key] ?? "") !== (mapDraft[m.key] ?? ""));
 

@@ -29,8 +29,13 @@ function formOf(s: AmoStatus): AmoConnectIn {
     enabled: s.enabled,
     sync_every_minutes: s.sync_every_minutes,
     lookback_days: s.lookback_days,
+    tasks_enabled: s.tasks_enabled,
+    tasks_min_severity: s.tasks_min_severity,
+    tasks_due_hours: s.tasks_due_hours,
   };
 }
+
+const DUE_HOURS = [1, 2, 3, 4, 8, 12, 24];
 
 export default function AmoConnect() {
   const [status, setStatus] = useState<AmoStatus | null>(null);
@@ -255,6 +260,55 @@ export default function AmoConnect() {
             />
             <span className="muted ai-model-hint">дней назад</span>
           </label>
+        </div>
+
+        {/* Задачи менеджерам — по итогам разбора по расписанию, в amoCRM на
+            ту же сделку. Ставятся один раз: повторный разбор дублей не даёт. */}
+        <div className="crm-amo-tasks">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              role="switch"
+              className="switch"
+              checked={form.tasks_enabled}
+              onChange={(e) => set({ tasks_enabled: e.target.checked })}
+            />
+            <span>
+              <span className="toggle-title">Ставить задачи менеджерам в amoCRM</span>
+              <span className="toggle-hint">
+                После разбора в назначенный час — задача «Связаться» на сделке с замечаниями:
+                что не так и что сделать, со ссылкой на разбор. Ответственный — тот, кто вёл сделку
+                в этот день.
+              </span>
+            </span>
+          </label>
+          <div className="field-row">
+            <label className="field">
+              <span className="label">По каким сделкам</span>
+              <select
+                value={form.tasks_min_severity}
+                disabled={!form.tasks_enabled}
+                onChange={(e) => set({ tasks_min_severity: e.target.value as AmoConnectIn["tasks_min_severity"] })}
+              >
+                <option value="warning">С замечаниями и критичные</option>
+                <option value="critical">Только критичные</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Срок</span>
+              <select
+                value={form.tasks_due_hours}
+                disabled={!form.tasks_enabled}
+                onChange={(e) => set({ tasks_due_hours: Number(e.target.value) })}
+              >
+                {DUE_HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    через {h} {plural(h, "рабочий час", "рабочих часа", "рабочих часов")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="actions crm-amo-actions">

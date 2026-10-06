@@ -2,17 +2,19 @@
 import hmac
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import amo, amo_sync
+from .. import amo, amo_sync, amo_tasks, crm_notify
 from ..auth import UserContext, require_crm_manage
 from ..config import get_settings
 from ..db import get_db
-from ..schemas import AmoConnectIn, AmoPipelineOut, AmoStatusOut, AmoSyncOut
+from ..models import CrmDeal, CrmReview, CrmRun
+from ..schemas import AmoConnectIn, AmoPipelineOut, AmoStatusOut, AmoSyncOut, AmoTasksOut
 from .crm import settings_data
 from .playbook_common import author, current_org, missing_migration
 
@@ -58,6 +60,9 @@ def status_out(data: dict) -> AmoStatusOut:
         webhook_events=list(amo.WEBHOOK_EVENTS),
         pipelines=pipelines,
         users=len(dicts.get("users") or {}),
+        tasks_enabled=amo_tasks.config(a)["enabled"],
+        tasks_min_severity=amo_tasks.config(a)["min_severity"],
+        tasks_due_hours=amo_tasks.config(a)["due_hours"],
     )
 
 
@@ -92,6 +97,11 @@ async def amo_connect(
         enabled=body.enabled,
         sync_every_minutes=body.sync_every_minutes,
         lookback_days=body.lookback_days,
+        tasks={
+            "enabled": body.tasks_enabled,
+            "min_severity": body.tasks_min_severity,
+            "due_hours": body.tasks_due_hours,
+        },
     )
     base = amo.base_url(subdomain, body.domain)
     token = body.token.strip()
@@ -165,12 +175,57 @@ async def amo_disconnect(
     org = await current_org(db)
     row, data = await settings_data(db, org.id)
     a = amo_sync.section(data)
-    kept = {k: a.get(k) for k in ("subdomain", "domain", "sync_every_minutes", "lookback_days", "dicts") if a.get(k)}
+    kept = {
+        k: a.get(k)
+        for k in ("subdomain", "domain", "sync_every_minutes", "lookback_days", "dicts", "tasks")
+        if a.get(k)
+    }
     kept["enabled"] = False
     if row:
         row.updated_by = author(user)
     await amo_sync.save(db, org, row, data, kept)
     return status_out(data)
+
+
+@router.post("/tasks/{day}", response_model=AmoTasksOut)
+async def amo_tasks_for_day(
+    day: date,
+    user: UserContext = Depends(require_crm_manage),
+    db: AsyncSession = Depends(get_db),
+):
+    """Поставить задачи менеджерам по разбору дня — руками. Сделки, которые
+    уже получили задачу по этому дню, пропускаются."""
+    org = await current_org(db)
+    row, data = await settings_data(db, org.id)
+    a = amo_sync.section(data)
+    if not a.get("access_token") or not a.get("subdomain"):
+        raise HTTPException(409, "amoCRM не подключена")
+    run = await db.scalar(select(CrmRun).where(CrmRun.org_id == org.id, CrmRun.date == day))
+    if not run or run.status != "done":
+        raise HTTPException(409, "Разбор за этот день не готов")
+    try:
+        if await amo.ensure_token(a, datetime.now(timezone.utc)):
+            await amo_sync.save(db, org, row, data, a)
+    except amo.AmoError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    cfg = amo_tasks.config(a)
+    reviews = (await db.scalars(select(CrmReview).where(CrmReview.run_id == run.id))).all()
+    deals = (
+        {d.id: d for d in (await db.scalars(select(CrmDeal).where(CrmDeal.id.in_([r.deal_id for r in reviews])))).all()}
+        if reviews
+        else {}
+    )
+    rows = [amo_tasks.row_of(r, deals[r.deal_id]) for r in reviews if r.deal_id in deals]
+    done = (run.summary_json or {}).get("amo_tasks") or {}
+    items, counts = amo_tasks.plan(
+        rows, (a.get("dicts") or {}).get("users") or {}, cfg, done, run.date, crm_notify.day_url(run.date)
+    )
+    created, errors = await amo_tasks.push(
+        amo.base_url(a["subdomain"], a.get("domain", "")), a["access_token"], items, amo_tasks.due_at(data, cfg)
+    )
+    amo_tasks.remember(run, created, errors)
+    await db.commit()
+    return AmoTasksOut(created=len(created), errors=errors, **counts)
 
 
 @router.post("/webhook")

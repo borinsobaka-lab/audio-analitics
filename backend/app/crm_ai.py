@@ -19,6 +19,8 @@ pipeline/crm_tasks.py — так всё это проверяется теста
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
 
 # Классы переписки — набор фиксирован: по нему строится статистика, и он
@@ -47,7 +49,7 @@ MESSAGE_CHARS = 1500
 DEFAULT_PROMPT = """Ты проверяешь, как администраторы студии растяжки Lady Stretch (Тбилиси) ведут клиентов в CRM: переписку в мессенджерах и движение сделок по воронке. Цель — вовремя заметить ошибки общения и ошибки работы со сделками, пока клиент не потерян.
 
 Что считать правильной работой с перепиской:
-- Ответ клиенту — быстро: в рабочее время (9:00–21:00) в течение 15 минут. Дольше часа — проблема; рабочий день без ответа — критично.
+- Ответ клиенту — быстро: в рабочее время студии (указано ниже) в течение 15 минут. Дольше часа рабочего времени — проблема; рабочий день без ответа — критично.
 - Администратор отвечает по скриптам студии из базы знаний: тёплый, человеческий тон, по имени, без канцелярита. Факты — цены, условия абонементов, акции, расписание, адреса — только из базы знаний. Цена, скидка или обещание, которых в базе нет, — грубая ошибка.
 - Каждый ответ ведёт клиента к следующему шагу: записаться на пробное, подтвердить время, прийти, купить абонемент. Ответ без вопроса или предложения в конце — упущенный шаг.
 - Возражения («дорого», «подумаю», «далеко», «нет времени») отрабатываются по скрипту возражений, а не принимаются молча.
@@ -62,7 +64,7 @@ DEFAULT_PROMPT = """Ты проверяешь, как администратор
 Что НЕ считать проблемой:
 - Короткие ответы действующим клиентам по сервисным вопросам (перенос, расписание) — норма, если по делу и вовремя.
 - Отсутствие продажи само по себе: оценивай действия администратора, а не исход.
-- Сообщение клиента в нерабочее время (после 21:00 и до 9:00): ответ утром — норма."""
+- Сообщение клиента в нерабочее время студии: ответ в начале следующего рабочего периода — норма. Скорость ответа уже посчитана по рабочему времени — опирайся на эти цифры."""
 
 DEFAULT_PIPELINE_RULES = """Этапы воронки по порядку и когда сделка должна на них стоять:
 1. Новая заявка — клиент написал или оставил заявку, разговор ещё не начат.
@@ -88,6 +90,8 @@ REVIEW_TEMPLATE = """Ты — контролёр качества работы �
 ИНСТРУКЦИИ ВЛАДЕЛЬЦА — что считать ошибкой и чего ждать от администратора:
 {instructions}
 
+РАБОЧЕЕ ВРЕМЯ СТУДИИ: {work_hours}. Ожидание клиента вне рабочего времени не считается задержкой.
+
 КРИТЕРИИ ОЦЕНКИ — заданы владельцем; каждому поставь оценку или скажи, что он не применим:
 {criteria}
 
@@ -110,6 +114,9 @@ REVIEW_TEMPLATE = """Ты — контролёр качества работы �
  "scripts": {{"used": [], "deviations": []}},
  "pipeline": {{"ok": true, "expected_stage": "...", "comment": "..."}},
  "criteria": [{{"id": "...", "applicable": true, "score": 7, "comment": "..."}}]}}
+
+СКОРОСТЬ ОТВЕТА ЗА ДЕНЬ — посчитана кодом по времени сообщений и рабочему времени студии, верь этим цифрам, а не своей оценке по таймкодам:
+{speed}
 
 СДЕЛКА И ЧТО ПО НЕЙ ПРОИСХОДИЛО:
 {deal}"""
@@ -279,13 +286,21 @@ def render_deal(
 
 
 def review_prompt(
-    *, date_label: str, instructions: str, criteria: list[dict], deal_text: str
+    *,
+    date_label: str,
+    instructions: str,
+    criteria: list[dict],
+    deal_text: str,
+    work_hours: str = "круглосуточно",
+    speed: str = "(не считалась)",
 ) -> str:
     return REVIEW_TEMPLATE.format(
         date=date_label,
         instructions=instructions.strip() or DEFAULT_PROMPT,
         criteria=criteria_block(criteria),
         deal=deal_text,
+        work_hours=work_hours,
+        speed=speed,
     )
 
 
@@ -301,14 +316,129 @@ def summary_prompt(*, date_label: str, instructions: str, stats: dict, reviews: 
 # --- Скорость ответа: считает код, не модель --------------------------------
 
 
-def reply_stats(messages: list[dict], day_start: datetime, day_end: datetime) -> dict:
-    """Сколько клиент ждал ответа в этот день.
+# --- Рабочее время ----------------------------------------------------------
+
+WEEKDAYS_RU = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+DEFAULT_WORK_START = 9 * 60
+DEFAULT_WORK_END = 21 * 60
+DEFAULT_SLOW_REPLY_MINUTES = 60
+_HHMM = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def parse_hhmm(value, default: int) -> int:
+    """«09:30» → 570 минут от полуночи; «24:00» допустимо как конец дня."""
+    match = _HHMM.match(str(value or "").strip())
+    if not match:
+        return default
+    hours, minutes = int(match.group(1)), int(match.group(2))
+    if minutes > 59 or hours > 24 or (hours == 24 and minutes):
+        return default
+    return hours * 60 + minutes
+
+
+def fmt_hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+@dataclass(frozen=True)
+class WorkHours:
+    """Рабочее время студии: с start до end (минуты от полуночи) в дни
+    days (0 — понедельник), по часам tz."""
+
+    tz: tzinfo
+    start: int = DEFAULT_WORK_START
+    end: int = DEFAULT_WORK_END
+    days: frozenset = field(default_factory=lambda: frozenset(range(7)))
+
+    @property
+    def always(self) -> bool:
+        return self.start == 0 and self.end >= 24 * 60 and len(self.days) == 7
+
+    def window(self, day) -> tuple[datetime, datetime] | None:
+        if day.weekday() not in self.days or self.end <= self.start:
+            return None
+        midnight = datetime(day.year, day.month, day.day, tzinfo=self.tz)
+        return midnight + timedelta(minutes=self.start), midnight + timedelta(minutes=self.end)
+
+
+def work_hours_of(data: dict, tz: tzinfo) -> WorkHours:
+    start = parse_hhmm(data.get("work_start"), DEFAULT_WORK_START)
+    end = parse_hhmm(data.get("work_end"), DEFAULT_WORK_END)
+    if end <= start:
+        start, end = DEFAULT_WORK_START, DEFAULT_WORK_END
+    days = data.get("work_days")
+    valid = frozenset(int(d) for d in days if str(d).isdigit() and 0 <= int(d) <= 6) if isinstance(days, list) else None
+    return WorkHours(tz=tz, start=start, end=end, days=valid or frozenset(range(7)))
+
+
+def describe_hours(hours: WorkHours) -> str:
+    """«09:00–21:00, ежедневно» — для промпта и подсказок."""
+    if hours.always:
+        return "круглосуточно"
+    span = f"{fmt_hhmm(hours.start)}–{fmt_hhmm(hours.end)}"
+    if len(hours.days) == 7:
+        return f"{span}, ежедневно"
+    return f"{span}, {', '.join(WEEKDAYS_RU[d] for d in sorted(hours.days))}"
+
+
+def working_minutes(a: datetime, b: datetime, hours: WorkHours | None) -> float:
+    """Сколько рабочих минут между a и b. Без рабочего времени — обычные."""
+    if b <= a:
+        return 0.0
+    if hours is None or hours.always:
+        return (b - a).total_seconds() / 60
+    total = 0.0
+    day = a.astimezone(hours.tz).date() - timedelta(days=1)
+    last = b.astimezone(hours.tz).date()
+    while day <= last:
+        window = hours.window(day)
+        if window:
+            lo, hi = max(a, window[0]), min(b, window[1])
+            if hi > lo:
+                total += (hi - lo).total_seconds() / 60
+        day += timedelta(days=1)
+    return total
+
+
+def add_working_minutes(at: datetime, minutes: float, hours: WorkHours | None) -> datetime:
+    """Момент, когда от at пройдёт столько рабочих минут: срок задачи
+    «через два рабочих часа» после разбора в 20:00 — это утро."""
+    if hours is None or hours.always or not hours.days:
+        return at + timedelta(minutes=minutes)
+    remaining = max(0.0, minutes)
+    day = at.astimezone(hours.tz).date()
+    for _ in range(400):
+        window = hours.window(day)
+        if window:
+            cur = max(at, window[0])
+            if cur < window[1]:
+                available = (window[1] - cur).total_seconds() / 60
+                if remaining <= available:
+                    return cur + timedelta(minutes=remaining)
+                remaining -= available
+        day += timedelta(days=1)
+    return at + timedelta(minutes=minutes)
+
+
+def reply_stats(
+    messages: list[dict],
+    day_start: datetime,
+    day_end: datetime,
+    hours: WorkHours | None = None,
+    slow_minutes: int = DEFAULT_SLOW_REPLY_MINUTES,
+) -> dict:
+    """Сколько клиент ждал ответа в этот день — в рабочих минутах.
 
     Сообщение клиента «висит», пока после него не напишет администратор.
     first_reply_minutes — ожидание первого ответа за день, max_reply_minutes —
-    самое долгое ожидание среди ответов, данных в этот день. unanswered —
-    к концу дня последнее слово осталось за клиентом (в том числе если он
-    написал ещё вчера, а ответа так и нет).
+    самое долгое ожидание среди ответов, данных в этот день. Ночь и выходные
+    студии не считаются: клиент написал в 22:00, ответили в 9:30 при начале
+    работы в 9:00 — это 30 минут, а не одиннадцать с половиной часов.
+
+    unanswered — к концу дня клиент ждёт ответа дольше slow_minutes рабочего
+    времени (в том числе если он написал ещё вчера). Сообщение, пришедшее за
+    пять минут до конца отчётного дня или ночью, — ещё не «без ответа»: если
+    его так и не закроют, оно станет им в следующем разборе.
     """
     ordered = sorted((m for m in messages if m["at"] < day_end), key=lambda m: m["at"])
     pending: datetime | None = None
@@ -320,16 +450,72 @@ def reply_stats(messages: list[dict], day_start: datetime, day_end: datetime) ->
             continue
         if pending is not None:
             if m["at"] >= day_start:
-                delays.append(round((m["at"] - pending).total_seconds() / 60, 1))
+                delays.append(round(working_minutes(pending, m["at"], hours), 1))
             pending = None
     day = [m for m in ordered if m["at"] >= day_start]
+    waiting = round(working_minutes(pending, day_end, hours), 1) if pending is not None else None
     return {
         "messages_in": sum(1 for m in day if m.get("direction") == "in"),
         "messages_out": sum(1 for m in day if m.get("direction") != "in"),
         "first_reply_minutes": delays[0] if delays else None,
         "max_reply_minutes": max(delays) if delays else None,
-        "unanswered": pending is not None,
+        "waiting_minutes": waiting,
+        "unanswered": waiting is not None and waiting >= slow_minutes,
     }
+
+
+def speed_text(speed: dict, slow_minutes: int = DEFAULT_SLOW_REPLY_MINUTES) -> str:
+    """Скорость ответа словами — для промпта."""
+    def minutes(v) -> str:
+        return "—" if v is None else f"{round(v)} мин рабочего времени"
+
+    lines = [
+        f"- сообщений клиента за день: {speed.get('messages_in', 0)}, ответов администратора: {speed.get('messages_out', 0)}",
+        f"- первый ответ за день через: {minutes(speed.get('first_reply_minutes'))}",
+        f"- самое долгое ожидание ответа: {minutes(speed.get('max_reply_minutes'))}",
+    ]
+    if speed.get("waiting_minutes") is not None:
+        state = "БЕЗ ОТВЕТА" if speed.get("unanswered") else "ещё в пределах нормы"
+        lines.append(
+            f"- к концу дня клиент ждёт ответа {round(speed['waiting_minutes'])} мин рабочего времени — {state} (норма — до {slow_minutes} мин)"
+        )
+    else:
+        lines.append("- к концу дня клиент ответа не ждёт")
+    return "\n".join(lines)
+
+
+# --- Что не разбирать ---------------------------------------------------------
+
+
+def _norm(value) -> str:
+    return " ".join(str(value or "").casefold().replace("ё", "е").split())
+
+
+def stage_at(current_stage: str, events: list[dict], day_end: datetime) -> str:
+    """Этап сделки на конец отчётного дня: последняя смена этапа до конца
+    дня, иначе текущий. Повторный разбор старого дня так видит тот этап,
+    что был тогда, а не сегодняшний."""
+    moves = [e for e in events if e.get("kind") == "stage_change" and e["at"] < day_end and (e.get("to_value") or "").strip()]
+    if moves:
+        return max(moves, key=lambda e: e["at"])["to_value"].strip()
+    return current_stage or ""
+
+
+def exclusion_reason(*, pipeline: str, stage: str, manager_key: str, data: dict) -> str:
+    """Почему сделку не разбирать — по настройкам «Что разбирать»; пусто —
+    разбирать. Сравнение без учёта регистра и «ё»."""
+    if pipeline and _norm(pipeline) in {_norm(p) for p in data.get("exclude_pipelines") or []}:
+        return "воронка"
+    for item in data.get("exclude_stages") or []:
+        if not isinstance(item, dict) or not _norm(item.get("stage")):
+            continue
+        if _norm(item.get("stage")) == _norm(stage) and (
+            not _norm(item.get("pipeline")) or _norm(item.get("pipeline")) == _norm(pipeline)
+        ):
+            return "этап"
+    if manager_key and manager_key in {str(k) for k in data.get("exclude_managers") or []}:
+        return "менеджер"
+    return ""
 
 
 def day_manager(deal: dict, day_messages: list[dict], day_events: list[dict]) -> tuple[str, str]:

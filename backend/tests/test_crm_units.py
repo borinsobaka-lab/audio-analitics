@@ -79,6 +79,7 @@ def test_reply_stats_ignores_tomorrow_and_handles_silence():
         "messages_out": 1,
         "first_reply_minutes": None,
         "max_reply_minutes": None,
+        "waiting_minutes": None,
         "unanswered": False,
     }
 
@@ -387,3 +388,100 @@ def test_runner_executes_in_a_thread_and_reports_failures(monkeypatch):
     asyncio.run(go())
     assert seen["run_id"] == str(uuid.UUID(int=5))
     assert seen["thread"] != threading.main_thread().name
+
+
+# --- Рабочее время ---
+
+HOURS = crm_ai.WorkHours(tz=TZ, start=9 * 60, end=21 * 60)
+
+
+def test_working_minutes_skip_night_and_days_off():
+    # 22:00 → 09:30 следующего дня при работе 9–21: только 30 минут.
+    assert crm_ai.working_minutes(at(22, days=-1), at(9, 30), HOURS) == 30
+    # Внутри рабочего дня — как обычно.
+    assert crm_ai.working_minutes(at(10), at(10, 45), HOURS) == 45
+    # Через ночь: 20:30 → 09:15 = 30 + 15.
+    assert crm_ai.working_minutes(at(20, 30), at(9, 15, days=1), HOURS) == 45
+    # Выходной (4 октября 2026 — воскресенье) не считается.
+    weekdays = crm_ai.WorkHours(tz=TZ, start=9 * 60, end=21 * 60, days=frozenset(range(5)))
+    assert crm_ai.working_minutes(at(10, days=-1), at(10, days=1), weekdays) == 60
+    assert crm_ai.working_minutes(at(10), at(9), HOURS) == 0
+    assert crm_ai.working_minutes(at(22, days=-1), at(9, 30), None) == 690
+
+
+def test_add_working_minutes_rolls_into_the_next_morning():
+    # Разбор в 20:00, срок «2 рабочих часа» при работе до 21:00 → 10:00 следующего дня.
+    assert crm_ai.add_working_minutes(at(20), 120, HOURS) == at(10, days=1)
+    assert crm_ai.add_working_minutes(at(10), 30, HOURS) == at(10, 30)
+    assert crm_ai.add_working_minutes(at(5), 30, HOURS) == at(9, 30)
+    assert crm_ai.add_working_minutes(at(5), 30, None) == at(5, 30)
+
+
+def test_reply_stats_in_working_minutes_and_unanswered_threshold():
+    start, end = crm_ai.day_bounds(DAY, TZ, 20)  # 03.10 20:00 → 04.10 20:00
+    messages = [
+        msg("in", 22, days=-1),          # ночью накануне
+        msg("out", 9, 30),               # утром: 30 рабочих минут
+        msg("in", 19, 55),               # за 5 минут до конца отчётного дня
+    ]
+    s = crm_ai.reply_stats(messages, start, end, HOURS, 60)
+    assert s["first_reply_minutes"] == 30 and s["max_reply_minutes"] == 30
+    assert s["waiting_minutes"] == 5 and s["unanswered"] is False
+    # Тот же клиент, но ждёт с 18:00 — уже больше часа рабочего времени.
+    late = messages[:2] + [msg("in", 18, 0)]
+    s = crm_ai.reply_stats(late, start, end, HOURS, 60)
+    assert s["waiting_minutes"] == 120 and s["unanswered"] is True
+    text = crm_ai.speed_text(s, 60)
+    assert "первый ответ за день через: 30 мин рабочего времени" in text
+    assert "БЕЗ ОТВЕТА" in text and "норма — до 60 мин" in text
+
+
+def test_work_hours_from_settings_and_description():
+    h = crm_ai.work_hours_of({"work_start": "10:00", "work_end": "20:30", "work_days": [0, 1, 2, 3, 4]}, TZ)
+    assert (h.start, h.end, sorted(h.days)) == (600, 1230, [0, 1, 2, 3, 4])
+    assert crm_ai.describe_hours(h) == "10:00–20:30, пн, вт, ср, чт, пт"
+    assert crm_ai.describe_hours(crm_ai.work_hours_of({}, TZ)) == "09:00–21:00, ежедневно"
+    # Мусор и перевёрнутые часы — значения по умолчанию.
+    assert crm_ai.work_hours_of({"work_start": "22:00", "work_end": "08:00", "work_days": "x"}, TZ).start == 540
+    assert crm_ai.describe_hours(crm_ai.work_hours_of({"work_start": "00:00", "work_end": "24:00"}, TZ)) == "круглосуточно"
+    prompt = crm_ai.review_prompt(date_label="d", instructions="i", criteria=[], deal_text="D", work_hours="09:00–21:00, ежедневно", speed="- X")
+    assert "РАБОЧЕЕ ВРЕМЯ СТУДИИ: 09:00–21:00, ежедневно." in prompt and "верь этим цифрам" in prompt
+
+
+def test_settings_validate_hours_and_days():
+    with pytest.raises(ValidationError, match="позже начала"):
+        CrmSettingsIn(work_start="21:00", work_end="09:00")
+    with pytest.raises(ValidationError):
+        CrmSettingsIn(work_days=[7])
+    with pytest.raises(ValidationError):
+        CrmSettingsIn(work_days=[])
+    ok = CrmSettingsIn(work_start="00:00", work_end="24:00", work_days=[6, 5, 5])
+    assert ok.work_days == [5, 6]
+    # Прислали только часы — остальное не тронуто.
+    assert CrmSettingsIn(work_start="10:00", work_end="20:00").model_fields_set == {"work_start", "work_end"}
+
+
+# --- Что не разбирать ---
+
+
+def test_stage_at_end_of_day_and_exclusions():
+    events = [
+        {"kind": "stage_change", "to_value": "В работе", "at": at(10)},
+        {"kind": "stage_change", "to_value": "Рассылка", "at": at(12)},
+        {"kind": "stage_change", "to_value": "Отказ", "at": at(9, days=1)},  # уже после дня
+    ]
+    assert crm_ai.stage_at("Отказ", events, END) == "Рассылка"
+    assert crm_ai.stage_at("Новая", [], END) == "Новая"
+    data = {
+        "exclude_pipelines": ["Постпродажа"],
+        "exclude_stages": [{"pipeline": "Продажи", "stage": "Рассылка"}, {"pipeline": "", "stage": "Спам"}],
+        "exclude_managers": ["9"],
+    }
+    reason = crm_ai.exclusion_reason
+    assert reason(pipeline="постпродажа", stage="x", manager_key="7", data=data) == "воронка"
+    assert reason(pipeline="Продажи", stage="рассылка", manager_key="7", data=data) == "этап"
+    assert reason(pipeline="Другая", stage="Рассылка", manager_key="7", data=data) == ""
+    assert reason(pipeline="Любая", stage="Спам", manager_key="7", data=data) == "этап"
+    assert reason(pipeline="Продажи", stage="В работе", manager_key="9", data=data) == "менеджер"
+    assert reason(pipeline="Продажи", stage="В работе", manager_key="7", data=data) == ""
+    assert reason(pipeline="", stage="", manager_key="", data={}) == ""

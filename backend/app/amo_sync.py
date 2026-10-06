@@ -35,12 +35,19 @@ def tz_of(data: dict):
 async def save(
     db: AsyncSession, org: Organization, row: CrmSettings | None, data: dict, amo_data: dict
 ) -> CrmSettings:
-    """Сохранить раздел amo в настройках CRM, не трогая остальное."""
+    """Сохранить раздел amo в настройках CRM, не трогая остальное.
+
+    Остальные ключи берутся из свежей строки, а не из копии, прочитанной в
+    начале синхронизации: пока шли запросы к amoCRM, владелец мог сохранить
+    промпт или рабочее время, и затирать это нельзя."""
     data["amo"] = amo_data
     if row is None:
         row = await db.get(CrmSettings, org.id)
     if row:
-        row.data = data
+        await db.refresh(row)
+        merged = dict(row.data or {})
+        merged["amo"] = amo_data
+        row.data = merged
         row.updated_at = utcnow()
     else:
         row = CrmSettings(org_id=org.id, data=data, updated_by="amoCRM")

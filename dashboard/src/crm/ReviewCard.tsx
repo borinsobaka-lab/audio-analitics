@@ -32,7 +32,17 @@ function eventText(e: CrmReviewDetail["events"][number]): string {
   return e.text ? `${label}: ${e.text}` : label;
 }
 
-export default function ReviewCard({ review }: { review: CrmReview }) {
+export default function ReviewCard({
+  review,
+  slowMinutes = 60,
+  taskId,
+}: {
+  review: CrmReview;
+  /** Ответ дольше — медленный, рабочих минут. */
+  slowMinutes?: number;
+  /** Задача в amoCRM, поставленная по этому разбору. */
+  taskId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<CrmReviewDetail | null>(null);
   const [error, setError] = useState("");
@@ -50,7 +60,7 @@ export default function ReviewCard({ review }: { review: CrmReview }) {
   const deal = review.deal;
   const who = review.employee_name || review.manager_name || "менеджер не указан";
   const applicable = review.scores.filter((s) => s.applicable && s.score != null);
-  const waitBad = review.unanswered || (review.max_reply_minutes != null && review.max_reply_minutes > 60);
+  const waitBad = review.unanswered || (review.max_reply_minutes != null && review.max_reply_minutes > slowMinutes);
 
   return (
     <div className={`dialog crm-review ${review.severity}`}>
@@ -73,17 +83,25 @@ export default function ReviewCard({ review }: { review: CrmReview }) {
           {deal.source && ` · ${deal.source}`}
         </span>
         {review.unanswered ? (
-          <span className="crm-wait bad" title="К концу дня последнее сообщение клиента осталось без ответа">
+          <span
+            className="crm-wait bad"
+            title={`К концу дня клиент ждёт ответа дольше ${slowMinutes} мин рабочего времени`}
+          >
             без ответа
           </span>
         ) : review.first_reply_minutes != null ? (
           <span
             className={`crm-wait${waitBad ? " bad" : ""}`}
-            title={`Первый ответ за день — через ${fmtMinutes(review.first_reply_minutes)}; самое долгое ожидание — ${fmtMinutes(review.max_reply_minutes)}`}
+            title={`По рабочему времени студии: первый ответ за день — через ${fmtMinutes(review.first_reply_minutes)}, самое долгое ожидание — ${fmtMinutes(review.max_reply_minutes)}`}
           >
             ответ через {fmtMinutes(review.first_reply_minutes)}
           </span>
         ) : null}
+        {taskId && (
+          <span className="pill crm-task-pill" title={`Задача № ${taskId} поставлена ответственному в amoCRM`}>
+            задача в amoCRM
+          </span>
+        )}
         {applicable.map((s) => (
           <span key={s.criterion_id} className={`chip-score ${scoreZone(s.score!, s.scale_max)}`}>
             <b>

@@ -7,10 +7,12 @@ import { Slider } from "../components/Slider";
 import Criteria from "../crm/Criteria";
 import Integration from "../crm/Integration";
 import PromptView from "../crm/PromptView";
+import ScopeView from "../crm/ScopeView";
 
-type Tab = "criteria" | "prompt" | "integration";
+type Tab = "criteria" | "scope" | "prompt" | "integration";
 const TABS: { key: Tab; label: string }[] = [
   { key: "criteria", label: "Критерии" },
+  { key: "scope", label: "Что разбирать" },
   { key: "prompt", label: "Промпт и правила" },
   { key: "integration", label: "Интеграция" },
 ];
@@ -24,7 +26,7 @@ export default function CrmSettingsPage() {
     <div className="settings-page">
       <PageHead
         title="Настройки CRM"
-        hint="Критерии — поля, по которым ИИ оценивает каждую сделку за день, и они же — колонки статистики. Промпт — что считать ошибкой. Интеграция — откуда приходят данные."
+        hint="Критерии — поля, по которым ИИ оценивает каждую сделку за день, и они же — колонки статистики. «Что разбирать» — рабочее время и исключения. Промпт — что считать ошибкой. Интеграция — откуда приходят данные."
       />
       <Slider className="tabs" active={tab} role="tablist" aria-label="Настройки CRM">
         {TABS.map((t) => (
@@ -41,6 +43,7 @@ export default function CrmSettingsPage() {
         ))}
       </Slider>
       {tab === "criteria" && <Criteria />}
+      {tab === "scope" && <ScopeView />}
       {tab === "prompt" && <PromptView />}
       {tab === "integration" && <Integration />}
     </div>

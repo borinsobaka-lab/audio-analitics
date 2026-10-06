@@ -10,7 +10,13 @@ import { useEffect, useState } from "react";
 import { api, CrmSettings, CrmSettingsIn, fmtWhen, plural } from "../api";
 import { Note, Skeleton } from "../components/ui";
 
-function draftOf(s: CrmSettings): CrmSettingsIn {
+/** Поля этой вкладки — только их она и сохраняет. */
+type Draft = Pick<
+  CrmSettingsIn,
+  "prompt" | "summary_prompt" | "pipeline_rules" | "model" | "timezone" | "auto_run" | "run_hour" | "max_deals"
+>;
+
+function draftOf(s: CrmSettings): Draft {
   return {
     prompt: s.prompt,
     summary_prompt: s.summary_prompt,
@@ -20,13 +26,12 @@ function draftOf(s: CrmSettings): CrmSettingsIn {
     auto_run: s.auto_run,
     run_hour: s.run_hour,
     max_deals: s.max_deals,
-    manager_map: s.manager_map,
   };
 }
 
 export default function PromptView() {
   const [data, setData] = useState<CrmSettings | null>(null);
-  const [draft, setDraft] = useState<CrmSettingsIn | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -45,13 +50,13 @@ export default function PromptView() {
 
   if (!data || !draft) return error ? <Note kind="error">{error}</Note> : <Skeleton count={1} height={320} />;
 
-  const set = (fields: Partial<CrmSettingsIn>) => setDraft((d) => (d ? { ...d, ...fields } : d));
+  const set = (fields: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...fields } : d));
   const base = draftOf(data);
-  const dirty = (Object.keys(base) as (keyof CrmSettingsIn)[]).some(
-    (k) => k !== "manager_map" && String(draft[k]).trim() !== String(base[k]).trim()
+  const dirty = (Object.keys(base) as (keyof Draft)[]).some(
+    (k) => String(draft[k]).trim() !== String(base[k]).trim()
   );
 
-  async function save(next: CrmSettingsIn) {
+  async function save(next: Draft) {
     setSaving(true);
     setError("");
     try {
