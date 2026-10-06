@@ -951,9 +951,17 @@ class CallEndStat(BaseModel):
     count: int = 0
 
 
+class CallStatUser(BaseModel):
+    key: str
+    name: str = ""
+    runs: int = 0
+
+
 class CallStatsOut(BaseModel):
     sections: list[CallStatSection] = []
     section_id: uuid.UUID | None = None
+    # Кто звонил по сценарию за период — для выбора администратора.
+    users: list[CallStatUser] = []
     totals: CallStatTotals = CallStatTotals()
     funnel: list[CallFunnelStep] = []
     ends: list[CallEndStat] = []
@@ -1471,3 +1479,34 @@ class AmoSyncOut(BaseModel):
     result: str = ""
     applied: CrmIngestOut = CrmIngestOut()
 
+
+class CallRunPathStep(BaseModel):
+    title: str = ""
+    group: str = "main"
+    answer: str = ""
+
+
+class CallRunOut(BaseModel):
+    """Один звонок в истории: когда, кто, докуда дошёл и где закончился."""
+
+    id: uuid.UUID
+    user_name: str = ""
+    started_at: datetime
+    seconds: float | None = None
+    # Идёт сейчас — ещё не закончен и трогали меньше получаса назад.
+    live: bool = False
+    steps: int = 0
+    # Самый дальний пройденный этап сценария (номер с 1) из скольких.
+    reached: int = 0
+    stages: int = 0
+    reached_title: str = ""
+    last_title: str = ""
+    last_group: str = "main"
+    # Закончился на блоке без ответов — дошёл до конца сценария.
+    script_end: bool = False
+    path: list[CallRunPathStep] = []
+
+
+class CallRunsPage(BaseModel):
+    items: list[CallRunOut] = []
+    next_cursor: str = ""

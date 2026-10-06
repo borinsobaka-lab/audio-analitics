@@ -404,12 +404,33 @@ export interface CallStats {
   totals: { runs: number; completed: number; avg_steps: number | null };
   funnel: { node_id: string; title: string; reached: number; ended_here: number }[];
   ends: { node_id: string; title: string; group: string; script_end: boolean; count: number }[];
+  /** Кто звонил по сценарию за период. */
+  users: { key: string; name: string; runs: number }[];
+}
+
+/** Один звонок в истории: когда, кто, докуда дошёл и где закончился. */
+export interface CallRun {
+  id: string;
+  user_name: string;
+  started_at: string;
+  seconds: number | null;
+  live: boolean;
+  steps: number;
+  reached: number;
+  stages: number;
+  reached_title: string;
+  last_title: string;
+  last_group: string;
+  script_end: boolean;
+  path: { title: string; group: string; answer: string }[];
 }
 
 export interface CallStatsQuery {
   from?: string;
   to?: string;
   section?: string;
+  /** Ключ администратора; пусто — все. */
+  user?: string;
 }
 
 export interface CallFlow {
@@ -1216,6 +1237,8 @@ export const api = {
       keepalive: true,
     }),
   callStats: (q: CallStatsQuery) => request<CallStats>(`/api/playbook/call-stats${query(q)}`),
+  callRuns: (q: CallStatsQuery & { section: string; cursor?: string }) =>
+    request<Page<CallRun>>(`/api/playbook/call-runs${query(q)}`),
   saveCallFlow: (sectionId: string, flow: CallFlow, changeNote: string) =>
     request<ScriptSection>(`/api/playbook/sections/${sectionId}/flow`, {
       method: "PUT",

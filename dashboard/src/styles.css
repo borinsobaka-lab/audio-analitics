@@ -5400,10 +5400,14 @@ button.ai-primary:disabled {
   padding: 20px 22px 6px;
 }
 /* Реплика — крупно: её читают вслух, не отрываясь от разговора. */
+/* Реплика — в том же вдавленном поле, что текст обычного скрипта (общий
+   класс script-text): то, что уходит клиенту, везде выглядит одинаково.
+   Только крупнее — её читают вслух, не отрываясь от разговора. */
 .call-say {
   font-size: 18px;
-  line-height: 1.6;
-  color: var(--ink);
+}
+.call-card-body .script-msg-head {
+  margin-bottom: -6px;
 }
 .call-say .fmt strong {
   font-weight: 650;
@@ -6460,5 +6464,174 @@ tr.empty td {
   .crm-review.critical::before,
   .crm-review.warning::before {
     width: 3px;
+  }
+}
+
+/* Тестовый прогон звонка: заметная плашка сверху и пунктир вокруг
+   карточки — чтобы не перепутать с настоящим звонком. */
+.call-test-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  padding: 10px 10px 10px 16px;
+  border-radius: var(--r-md);
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+  font-size: 14px;
+}
+.call-test-banner .grow {
+  flex: 1;
+}
+.call.testing .call-card {
+  outline: 2px dashed var(--amber);
+  outline-offset: 3px;
+}
+
+/* Статистика звонков: переключатель «Сводка / Звонки» и история звонков. */
+.calls-view {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 14px;
+}
+.calls-view .calls-hint {
+  margin: 0;
+}
+.calls-body {
+  margin-top: 18px;
+}
+.funnel-tag.live {
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+.call-history {
+  padding: 4px 0;
+}
+.ch-item + .ch-item {
+  border-top: 1px solid var(--edge-soft);
+}
+button.ch-row {
+  display: grid;
+  grid-template-columns: 118px minmax(110px, 1fr) minmax(170px, 1.5fr) minmax(150px, 1.4fr) 120px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 20px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+@media (hover: hover) {
+  button.ch-row:hover {
+    background: var(--card-2);
+    color: var(--ink);
+  }
+}
+.ch-when {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.ch-who {
+  font-weight: 600;
+}
+.ch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ch-progress .funnel-track {
+  flex: none;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--sunk);
+}
+.ch-progress-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.ch-progress-text .num {
+  font-weight: 700;
+}
+.ch-end {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  font-size: 13.5px;
+}
+.ch-end .funnel-tag {
+  margin-right: 0;
+}
+.ch-meta {
+  font-size: 12.5px;
+  text-align: right;
+  white-space: nowrap;
+}
+.ch-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 4px;
+  margin: 0;
+  padding: 4px 20px 16px 152px;
+  list-style: none;
+}
+.ch-path li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.ch-path li + li::before {
+  content: "→";
+  color: var(--ink-4);
+}
+.ch-step {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--sunk);
+  font-weight: 600;
+}
+.ch-path li.objection .ch-step {
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+.ch-answer {
+  color: var(--ink-3);
+}
+@media (max-width: 900px) {
+  button.ch-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 12px 16px;
+  }
+  .ch-who {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .ch-when {
+    grid-row: 1;
+    grid-column: 2;
+    text-align: right;
+  }
+  .ch-progress,
+  .ch-end {
+    grid-column: 1 / -1;
+  }
+  .ch-meta {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .ch-path {
+    padding: 0 16px 14px;
   }
 }
