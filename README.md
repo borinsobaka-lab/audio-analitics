@@ -13,7 +13,7 @@
         ▼
 [FastAPI на Hetzner]  →  [Cloudflare R2: аудио]  →  [Celery-воркер]
         ▼                                              │
-[Supabase Postgres]  ◄─────────────────────────────────┘
+[Supabase Postgres, self-hosted в Coolify]  ◄─────────────────────────────────┘
         ▼                 пайплайн: ffmpeg → Silero VAD → ElevenLabs Scribe
 [Веб-дашборд React]                → Claude (сегментация → разбор по скрипту → итог дня)
 ```
@@ -483,9 +483,10 @@ Telegram», чтобы отправить сводку руками. Повто�
 
 ### 0. Что подготовить
 
-- Ключи API: **ElevenLabs**, **Anthropic** (обязательно); Supabase-проект;
-  R2-бакет в Cloudflare.
-- В Supabase SQL Editor выполнить миграции по порядку:
+- Ключи API: **ElevenLabs**, **Anthropic** (обязательно); Postgres —
+  self-hosted Supabase в Coolify (`https://sb-audio.eventbase.online`,
+  прямое подключение к `5432`, без пулера); R2-бакет в Cloudflare.
+- В SQL Editor Supabase (или через psql) выполнить миграции по порядку:
   `backend/migrations/001_initial.sql`, `002_multiple_sessions_and_managers.sql`,
   `003_analysis_metrics.sql`, `004_processing_cost.sql`, затем
   `005_access_feedback_agreements.sql`, `006_locations_active.sql`,

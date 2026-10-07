@@ -8,7 +8,7 @@
 ## ⛔ Правила безопасности (прочитай перед началом)
 
 1. **Ничего не удалять и не изменять в существующих ресурсах.** На сервере в
-   Coolify уже работает другой продукт; в Supabase уже есть другой проект.
+   Coolify уже работает другой продукт; в Supabase уже есть другие данные.
    Ты только СОЗДАЁШЬ новые ресурсы. Не трогай чужие проекты, приложения,
    базы, DNS-записи, бакеты.
 2. Всё новое называй с префиксом/именем `audio-analytics`, чтобы было
@@ -25,7 +25,7 @@
 
 ## Что должно быть на руках у владельца (спросить, если нет доступа)
 
-- Доступ в аккаунты: Hetzner-сервер с Coolify, Supabase, Cloudflare, GitHub.
+- Доступ в аккаунты: Hetzner-сервер с Coolify (там же self-hosted Supabase), Cloudflare, GitHub.
 - Аккаунты Anthropic и ElevenLabs (если нет — по ходу инструкции есть шаг
   регистрации; потребуется банковская карта).
 - Домен, уже добавленный в Cloudflare (какой поддомен использовать для API —
@@ -53,32 +53,27 @@
    **Subscription** и оформи план **Starter** (~$5/мес) или согласуй с
    владельцем. Без этого шага транскрипция упрётся в лимит.
 
-## Шаг 3. Supabase — новый проект с базой данных
+## Шаг 3. Supabase — база данных (self-hosted в Coolify)
 
-⚠️ В аккаунте уже есть другой проект — его НЕ трогать. Создаём соседний.
+Postgres живёт в своём Supabase, развёрнутом в Coolify:
+`https://sb-audio.eventbase.online`. Облачный Supabase больше не используется.
+Пулера нет — бэкенд подключается к базе напрямую на порт `5432`.
 
-1. Открой https://supabase.com/dashboard → кнопка **New project**
-   (в той же организации, где живёт существующий проект).
-2. Параметры:
-   - Name: `audio-analytics`
-   - Database Password: нажми **Generate a password**. 📝 Сохрани пароль.
-   - Region: **Central EU (Frankfurt)** (ближе к Hetzner).
-   - План: Free подойдёт для старта.
-3. Дождись создания проекта (1–2 минуты).
-4. **Миграция схемы.** Слева → **SQL Editor** → **New query**. Открой в
-   соседней вкладке
-   `https://github.com/borinsobaka-lab/audio-analitics/blob/claude/audio-recording-sales-analysis-x6tit4/backend/migrations/001_initial.sql`,
-   нажми Raw, скопируй ВЕСЬ текст, вставь в SQL Editor и нажми **Run**.
+1. Пароль базы (`DB_PASSWORD` / `POSTGRES_PASSWORD`) — в переменных
+   окружения сервиса Supabase в Coolify. 📝 Сохрани его.
+2. **Миграция схемы** (только для пустой базы). Открой Supabase Studio
+   (`https://sb-audio.eventbase.online`) → **SQL Editor** → **New query**.
+   Вставь ВЕСЬ текст `backend/migrations/001_initial.sql` и нажми **Run**,
+   затем так же остальные миграции по порядку (список — в README).
    Ожидаемый результат: «Success. No rows returned».
-5. **Строка подключения.** Вверху страницы проекта нажми **Connect**.
-   В открывшемся окне найди раздел **Session pooler** (НЕ «Transaction
-   pooler» и НЕ «Direct connection» — они не подойдут: transaction-режим
-   ломает воркер, а direct доступен только по IPv6).
-   Скопируй строку вида:
-   `postgresql://postgres.XXXX:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`
-6. Подставь в неё пароль из п. 2 вместо `[YOUR-PASSWORD]` и замени префикс
-   `postgresql://` на `postgresql+asyncpg://`.
+3. **Строка подключения** (бэкенд работает внутри Coolify):
+   `postgresql://postgres:<DB_PASSWORD>@supabase-db-qwzavpnprjfdjvgrlaxw0q9r:5432/postgres`
+   Без `?pgbouncer=true` и прочих параметров пулера. Префикс
+   `postgresql://` можно не менять — драйвер `asyncpg` бэкенд подставит сам.
    📝 Сохрани итоговую строку как `DATABASE_URL`.
+4. Хост `supabase-db-…` виден только из сетей Coolify. В настройках ресурса
+   `audio-analytics-backend` включи **Connect To Predefined Network**, чтобы
+   сервисы `api` и `worker` оказались в одной сети с Supabase.
 
 ## Шаг 4. Cloudflare R2 — хранилище аудио
 
@@ -153,7 +148,7 @@
    |---|---|
    | `ENVIRONMENT` | `production` |
    | `API_BASE_URL` | `https://api-audio.<домен>` |
-   | `DATABASE_URL` | строка из Шага 3.6 |
+   | `DATABASE_URL` | строка из Шага 3.3 |
    | `S3_ENDPOINT_URL` | из Шага 4.5 |
    | `S3_ACCESS_KEY_ID` | из Шага 4.5 |
    | `S3_SECRET_ACCESS_KEY` | из Шага 4.5 |

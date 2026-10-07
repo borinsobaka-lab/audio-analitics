@@ -1,5 +1,8 @@
 # Deployment via Coolify (or plain docker compose) on the Hetzner server.
-# Postgres lives in Supabase, audio in Cloudflare R2 — not here.
+# Postgres lives in the self-hosted Supabase in Coolify (direct connection to
+# supabase-db-<uuid>:5432, no pooler), audio in Cloudflare R2 — not here.
+# The api and worker services must share a Docker network with that Supabase:
+# enable "Connect To Predefined Network" for this resource in Coolify.
 #
 # No host ports are published: Coolify/Traefik routes the api service's
 # domain to container port 8000. For plain docker compose, add your own

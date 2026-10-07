@@ -1,6 +1,7 @@
 """Application settings loaded from environment variables (.env)."""
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,8 +13,9 @@ class Settings(BaseSettings):
     environment: str = "development"  # development | production
     api_base_url: str = "http://localhost:8000"
 
-    # --- Database (Supabase Postgres or any PostgreSQL) ---
-    # e.g. postgresql+asyncpg://postgres:pass@db.xxx.supabase.co:5432/postgres
+    # --- Database (self-hosted Supabase Postgres in Coolify or any PostgreSQL) ---
+    # e.g. postgresql+asyncpg://postgres:pass@supabase-db-<uuid>:5432/postgres
+    # Plain postgresql:// is accepted too and gets the asyncpg driver below.
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/audio_analytics"
 
     # --- Redis / Celery ---
@@ -104,6 +106,16 @@ class Settings(BaseSettings):
     # зависшим: воркер убит, а смена так и осталась «в обработке». Пайплайн
     # обновляет статус по ходу дела, поэтому живой разбор сюда не попадает.
     stale_processing_s: int = 3 * 3600
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, value: str) -> str:
+        # Строку подключения обычно копируют как есть (postgresql://...), а
+        # API работает через asyncpg: без явного драйвера движок не создастся.
+        for prefix in ("postgresql://", "postgres://"):
+            if value.startswith(prefix):
+                return "postgresql+asyncpg://" + value[len(prefix):]
+        return value
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
