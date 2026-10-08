@@ -1,9 +1,13 @@
 """Разбор одного дня CRM.
 
-Все сделки, по которым за отчётный день была переписка или движение, по
-одной уходят в модель вместе с базой знаний студии. База — один и тот же
-системный блок на весь день с кэшированием у провайдера: сделок за день
-десятки, а база — десять тысяч токенов, платить за неё каждый раз незачем.
+Сделки, по которым за отчётный день писал клиент (или ждал ответа с прошлых
+дней), по одной уходят в модель вместе с базой знаний студии. Сделки, где
+клиент молчал, а менялись только этапы, задачи и заметки, проверяются
+правилами без модели (crm_ai.needs_model, crm_ai.stage_checks).
+
+База знаний — один и тот же системный блок на весь день с кэшированием у
+провайдера: сделок за день десятки, а база — десять тысяч токенов, платить за
+неё каждый раз незачем.
 
 Выполняется в потоке внутри API (crm_runner.py), а не в воркере Celery:
 старт ровно в назначенный час не должен ждать обработку аудио смены.
@@ -15,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from .. import amo_tasks, crm_ai, crm_notify, playbook_ai
+from .. import amo, amo_tasks, crm_ai, crm_notify, playbook_ai
 from ..config import get_settings
 from ..db import get_sync_db
 from ..models import (
@@ -202,14 +206,7 @@ def _finish_cost(db, run: CrmRun, llm: LlmClient | None) -> float:
     run.llm_input_tokens = usage.input_tokens if usage else 0
     run.llm_output_tokens = usage.output_tokens if usage else 0
     run.llm_calls = usage.calls if usage else 0
-    cost = compute_cost(
-        0.0,
-        run.llm_input_tokens,
-        run.llm_output_tokens,
-        settings.price_asr_per_hour_usd,
-        settings.price_llm_input_per_mtok_usd,
-        settings.price_llm_output_per_mtok_usd,
-    )
+    cost = compute_cost(0.0, usage.cost_usd if usage else 0.0, settings.price_asr_per_hour_usd)
     run.cost_usd = cost.total_usd
     db.commit()
     return cost.total_usd
@@ -273,6 +270,11 @@ def _run(db, run: CrmRun, data: dict) -> str:
     max_deals = max(1, int(data.get("max_deals") or DEFAULT_MAX_DEALS))
     skipped = 0
     excluded: dict[str, int] = {}
+    # Сделки, где клиент за день не писал и ответа не ждал, модели не
+    # отправляются: их движение по воронке проверяется правилами.
+    quiet = 0
+    rule_checks: list[dict] = []
+    order = amo.stage_order((data.get("amo") or {}).get("dicts") or {})
     run.deals_total = len(deals)
     db.commit()
 
@@ -338,6 +340,20 @@ def _run(db, run: CrmRun, data: dict) -> str:
         )
         if reason:
             excluded[reason] = excluded.get(reason, 0) + 1
+            continue
+        if not crm_ai.needs_model(deal_dict, messages, day_e, day_start, day_end):
+            quiet += 1
+            for check in crm_ai.stage_checks(deal_dict, day_e, order):
+                rule_checks.append(
+                    {
+                        **check,
+                        "at": check["at"].isoformat(),
+                        "deal_id": str(deal.id),
+                        "deal": deal.title or f"#{deal.external_id}",
+                        "url": deal.url or "",
+                        "manager_name": manager_name,
+                    }
+                )
             continue
         if run.reviews_done + failed >= max_deals:
             skipped += 1
@@ -452,6 +468,7 @@ def _run(db, run: CrmRun, data: dict) -> str:
     run.summary_json = {
         **summary,
         "stats": stats,
+        **({"rule_checks": {"deals": quiet, "items": rule_checks}} if quiet else {}),
         **({"amo_tasks": amo_tasks_done} if amo_tasks_done else {}),
     }
     db.commit()
@@ -472,6 +489,10 @@ def _run(db, run: CrmRun, data: dict) -> str:
             "исключено настройками: "
             + ", ".join(f"{names.get(k, k)} {v}" for k, v in excluded.items())
         )
+    if quiet:
+        parts.append(f"без сообщений клиента, проверено правилами: {quiet}")
+    if rule_checks:
+        parts.append(f"замечаний по правилам: {len(rule_checks)}")
     if skipped:
         parts.append(f"пропущено сделок сверх лимита {max_deals}: {skipped}")
     parts.append(f"стоимость: ${cost:.3f}")

@@ -69,6 +69,14 @@ def ru_date(day: date) -> str:
     return f"{day.day} {MONTHS[day.month - 1]}"
 
 
+ATTENTION = {
+    "none": "⚪️ Разбирать было нечего",
+    "high": "🔴 Высокое — есть критичные ошибки или клиенты без ответа",
+    "medium": "🟡 Среднее — есть что поправить, клиенты не потеряны",
+    "low": "🟢 Всё в порядке",
+}
+
+
 def attention(stats: dict) -> tuple[str, str]:
     """Насколько стоит обратить внимание — по цифрам, не по настроению модели.
     Возвращает (уровень, подпись)."""
@@ -77,12 +85,14 @@ def attention(stats: dict) -> tuple[str, str]:
     critical = int(stats.get("critical") or 0)
     unanswered = int(stats.get("unanswered") or 0)
     if not deals:
-        return "none", "⚪️ Разбирать было нечего"
-    if critical or unanswered or (deals and problems / deals >= 0.5):
-        return "high", "🔴 Высокое — есть критичные ошибки или клиенты без ответа"
-    if problems:
-        return "medium", "🟡 Среднее — есть что поправить, клиенты не потеряны"
-    return "low", "🟢 Всё в порядке"
+        level = "none"
+    elif critical or unanswered or problems / deals >= 0.5:
+        level = "high"
+    elif problems:
+        level = "medium"
+    else:
+        level = "low"
+    return level, ATTENTION[level]
 
 
 def _plural(n: int, one: str, few: str, many: str) -> str:
@@ -127,9 +137,23 @@ def build_message(
     critical = int(stats.get("critical") or 0)
     unanswered = int(stats.get("unanswered") or 0)
     level, label = attention(stats)
+    # Сделки, где клиент молчал: модели не отправлялись, проверены правилами.
+    checks = (summary or {}).get("rule_checks") or {}
+    quiet = int(checks.get("deals") or 0)
+    quiet_line = (
+        f"Без сообщений клиента, проверено правилами: {quiet} · "
+        f"замечаний <b>{len(checks.get('items') or [])}</b>"
+        if quiet
+        else ""
+    )
     lines = [title]
     if not deals:
-        lines.append("За отчётный день в CRM не было ни переписки, ни движения сделок.")
+        if quiet:
+            # Клиенты не писали, но сделки двигали: уровень — по замечаниям правил.
+            label = ATTENTION["medium" if checks.get("items") else "low"]
+        lines.append(
+            quiet_line or "За отчётный день в CRM не было ни переписки, ни движения сделок."
+        )
         lines.append(f"<b>Внимание:</b> {label}")
         if url:
             lines.append(f'<a href="{html.escape(url, quote=True)}">Открыть CRM</a>')
@@ -141,6 +165,8 @@ def build_message(
         f"с замечаниями <b>{problems}</b> ({share}%) · критичных <b>{critical}</b> · "
         f"без ответа клиенту <b>{unanswered}</b>"
     )
+    if quiet_line:
+        lines.append(quiet_line)
 
     by_category = stats.get("by_category") or {}
     if by_category:

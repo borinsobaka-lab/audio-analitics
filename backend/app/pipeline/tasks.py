@@ -27,7 +27,7 @@ from ..models import (
 from . import audio_prep
 from .asr import AsrResult, Word, get_asr
 from .cost import compute_cost
-from .llm import DEFAULT_PROMPTS, LlmClient
+from .llm import DEFAULT_PROMPTS, LlmClient, group_metrics
 from .segmentation import (
     render_transcript,
     split_into_blocks,
@@ -36,10 +36,29 @@ from .segmentation import (
 from .vad import find_speech_regions
 
 ANALYZABLE_TYPES = ("sale", "consultation", "refusal")
-# Metrics also run on service talks: stage-1 typing is fuzzy (a greeting of a
-# new client is easily labeled "service"), and each metric decides
-# applicability for itself anyway. Only irrelevant (personal) talk is skipped.
-METRIC_TYPES = ("sale", "consultation", "refusal", "service")
+# Реплики храним и у сервисных разговоров: их видно в отчёте смены, даже если
+# по метрикам они не оценивались. Личные разговоры не храним вовсе.
+STORED_TYPES = ("sale", "consultation", "refusal", "service")
+
+
+def metric_types(settings) -> tuple[str, ...]:
+    """Какие диалоги оцениваются по метрикам. Сервисные — только по
+    LLM_METRICS_ON_SERVICE: метрики написаны под продажу, а сервисных
+    разговоров в смене много, и каждый стоит запроса."""
+    return ANALYZABLE_TYPES + (("service",) if settings.llm_metrics_on_service else ())
+
+
+def skip_reason(d_type: str, turns: int, types: tuple[str, ...], min_turns: int) -> str | None:
+    """Почему диалог не оценивается по метрикам; None — оценивается.
+    "service" — сервисный разговор, "short" — слишком мало реплик,
+    "irrelevant" — личное или не по делу."""
+    if d_type not in STORED_TYPES:
+        return "irrelevant"
+    if d_type not in types:
+        return "service"
+    if turns < max(1, min_turns):
+        return "short"
+    return None
 
 # Формат сохранённой расшифровки. Раньше в хранилище лежал сырой ответ
 # провайдера с таймкодами по вырезанной речи; теперь — слова с таймкодами уже
@@ -313,19 +332,33 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
     failed_evals = 0
     evals_done = 0
     evals_applicable = 0
-    to_evaluate = sum(1 for m in dialogs_meta if m["type"] in METRIC_TYPES)
+    types = metric_types(settings)
+    min_turns = settings.llm_min_dialog_turns
+    # Все метрики диалога — одним запросом; очень длинные наборы инструкций
+    # делятся на несколько запросов, чтобы не уйти в дорогой тариф.
+    groups = group_metrics(metrics, settings.llm_metrics_batch_chars)
+    not_evaluated = {"service": 0, "short": 0}
+
+    # Реплика относится к диалогу, если пересекается с его окном. Модель
+    # видит в транскрипте только время НАЧАЛА реплик, поэтому её end_s —
+    # это начало последней реплики; требование «реплика закончилась до
+    # end_s» выбрасывало последнюю фразу каждого разговора.
+    windows = [
+        [t for t in turns if t.start < m["end_s"] + 1 and t.end > m["start_s"] - 1]
+        for m in dialogs_meta
+    ]
+    to_evaluate = sum(
+        1
+        for m, w in zip(dialogs_meta, windows)
+        if w and skip_reason(m["type"], len(w), types, min_turns) is None
+    )
     evaluated = 0
 
-    for meta in dialogs_meta:
+    for meta, d_turns in zip(dialogs_meta, windows):
         # Timestamps and type are already validated by normalize_dialogs().
         d_start = meta["start_s"]
         d_end = meta["end_s"]
         d_type = meta["type"]
-        # Реплика относится к диалогу, если пересекается с его окном. Модель
-        # видит в транскрипте только время НАЧАЛА реплик, поэтому её end_s —
-        # это начало последней реплики; требование «реплика закончилась до
-        # end_s» выбрасывало последнюю фразу каждого разговора.
-        d_turns = [t for t in turns if t.start < d_end + 1 and t.end > d_start - 1]
         if d_turns:
             d_start = min(d_start, d_turns[0].start)
             d_end = max(d_end, max(t.end for t in d_turns))
@@ -347,7 +380,7 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
 
         # Store turns for analyzable dialogs only — irrelevant (personal) talk
         # is deliberately not persisted per the privacy policy.
-        if d_type in METRIC_TYPES:
+        if d_type in STORED_TYPES:
             for t in d_turns:
                 db.add(
                     DialogTurn(
@@ -359,48 +392,60 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
                     )
                 )
 
-        if d_type in METRIC_TYPES and d_turns and metrics:
+        reason = skip_reason(d_type, len(d_turns), types, min_turns)
+        if reason in not_evaluated and d_turns and metrics:
+            not_evaluated[reason] += 1
+        if reason is None and d_turns and metrics:
             evaluated += 1
             _progress(db, rec, f"оценка разговоров по метрикам: {evaluated} из {to_evaluate}")
             dialog_text = render_transcript(d_turns)
             dialog_evals: dict = {}
-            for metric in metrics:
-                # One failed evaluation must not cost the whole day's report.
+            for group in groups:
+                # Один упавший запрос не должен стоить всего отчёта смены.
                 try:
-                    result = llm.evaluate_metric(
+                    results = llm.evaluate_metrics(
                         dialog_text,
-                        metric.name,
-                        metric.prompt,
-                        metric.scale_max,
+                        [
+                            {"name": m.name, "prompt": m.prompt, "scale_max": m.scale_max}
+                            for m in group
+                        ],
                         settings.llm_model_stage2,
                     )
                 except Exception as e:
-                    failed_evals += 1
+                    failed_evals += len(group)
                     logger.warning(
-                        "metric '%s' failed on dialog at %.1fs: %s",
-                        metric.name, d_start, e,
+                        "metrics %s failed on dialog at %.1fs: %s",
+                        [m.name for m in group], d_start, e,
                     )
                     continue
-                db.add(
-                    MetricEvaluation(
-                        day_recording_id=rec.id,
-                        dialog_id=dialog.id,
-                        metric_id=metric.id,
-                        applicable=result["applicable"],
-                        score=result["score"],
-                        good_json=result["good"],
-                        bad_json=result["bad"],
-                        comment=result["comment"],
+                for metric, result in zip(group, results):
+                    if result is None:
+                        failed_evals += 1
+                        logger.warning(
+                            "metric '%s' is missing in the answer for dialog at %.1fs",
+                            metric.name, d_start,
+                        )
+                        continue
+                    db.add(
+                        MetricEvaluation(
+                            day_recording_id=rec.id,
+                            dialog_id=dialog.id,
+                            metric_id=metric.id,
+                            applicable=result["applicable"],
+                            score=result["score"],
+                            good_json=result["good"],
+                            bad_json=result["bad"],
+                            comment=result["comment"],
+                        )
                     )
-                )
-                evals_done += 1
-                if result["applicable"]:
-                    evals_applicable += 1
-                    dialog_evals[metric.name] = {
-                        "score": result["score"],
-                        "scale": metric.scale_max,
-                        "bad": result["bad"],
-                    }
+                    evals_done += 1
+                    if result["applicable"]:
+                        evals_applicable += 1
+                        dialog_evals[metric.name] = {
+                            "score": result["score"],
+                            "scale": metric.scale_max,
+                            "bad": result["bad"],
+                        }
             if dialog_evals:
                 analyses.append(
                     {"start_s": d_start, "type": d_type, "metrics": dialog_evals}
@@ -454,19 +499,12 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
     )
     db.commit()
 
-    # Стоимость последней обработки: расход хранится рядом с суммой, чтобы
-    # при смене тарифов прошлые смены можно было пересчитать.
+    # Стоимость последней обработки: цена запросов к модели посчитана по
+    # тарифу каждой модели с учётом кэша, токены — для справки в админке.
     rec.llm_input_tokens = llm.usage.input_tokens
     rec.llm_output_tokens = llm.usage.output_tokens
     rec.llm_calls = llm.usage.calls
-    cost = compute_cost(
-        rec.asr_seconds,
-        llm.usage.input_tokens,
-        llm.usage.output_tokens,
-        settings.price_asr_per_hour_usd,
-        settings.price_llm_input_per_mtok_usd,
-        settings.price_llm_output_per_mtok_usd,
-    )
+    cost = compute_cost(rec.asr_seconds, llm.usage.cost_usd, settings.price_asr_per_hour_usd)
     rec.cost_usd = cost.total_usd
     db.commit()
 
@@ -480,6 +518,13 @@ def _run_pipeline(db, rec: DayRecording, tmp: Path, full: bool = False) -> str:
         parts.append(f"сработало оценок: {evals_applicable} из {evals_done}")
     if failed_evals:
         parts.append(f"ошибок оценки: {failed_evals}")
+    skipped_parts = [
+        f"{label} {not_evaluated[key]}"
+        for key, label in (("service", "сервисных"), ("short", "коротких"))
+        if not_evaluated[key]
+    ]
+    if skipped_parts:
+        parts.append("без оценки: " + ", ".join(skipped_parts))
     if reused_note:
         parts.append(reused_note)
     parts.append(f"стоимость: ${cost.total_usd:.3f}")

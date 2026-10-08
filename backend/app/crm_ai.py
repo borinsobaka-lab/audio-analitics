@@ -45,6 +45,10 @@ CONTEXT_MESSAGES = 30
 CONTEXT_EVENTS = 6
 # Длинное сообщение режется: модели важен смысл, а не вложенный прайс целиком.
 MESSAGE_CHARS = 1500
+# Клиент, написавший за столько дней до отчётного и не получивший ответа,
+# ещё ждёт: ответ ему сегодня проверяет модель. Три дня — с запасом на
+# выходной студии.
+CLIENT_WAIT_DAYS = 3
 
 DEFAULT_PROMPT = """Ты проверяешь, как администраторы студии растяжки Lady Stretch (Тбилиси) ведут клиентов в CRM: переписку в мессенджерах и движение сделок по воронке. Цель — вовремя заметить ошибки общения и ошибки работы со сделками, пока клиент не потерян.
 
@@ -516,6 +520,65 @@ def exclusion_reason(*, pipeline: str, stage: str, manager_key: str, data: dict)
     if manager_key and manager_key in {str(k) for k in data.get("exclude_managers") or []}:
         return "менеджер"
     return ""
+
+
+def needs_model(
+    deal: dict,
+    messages: list[dict],
+    day_events: list[dict],
+    day_start: datetime,
+    day_end: datetime,
+) -> bool:
+    """Отправлять ли сделку модели.
+
+    Модель нужна, чтобы читать переписку: клиент писал за день или ждал
+    ответа с прошлых дней (тогда сегодняшний ответ администратора или его
+    отсутствие и есть то, что проверяется). Сделки, где клиент молчал, —
+    напоминания, рассылки, перестановка по этапам — проверяются правилами
+    без модели (stage_checks). Исключение — закрытие в «Отказ»: справедливость
+    закрытия видна только по прошлой переписке, а потерянный клиент — самая
+    дорогая ошибка."""
+    if any(m.get("direction") == "in" and day_start <= m["at"] < day_end for m in messages):
+        return True
+    before = [m for m in messages if m["at"] < day_start]
+    if (
+        before
+        and before[-1].get("direction") == "in"
+        and before[-1]["at"] >= day_start - timedelta(days=CLIENT_WAIT_DAYS)
+    ):
+        return True
+    moved = any(e.get("kind") in ("stage_change", "status_change") for e in day_events)
+    return moved and deal.get("status") == "lost"
+
+
+def stage_checks(deal: dict, day_events: list[dict], order: dict[str, dict[str, int]]) -> list[dict]:
+    """Проверки движения сделки без модели — для сделок, где клиент за день
+    не писал. Сейчас одна: возврат на более ранний открытый этап. Порядок
+    этапов — из словарей CRM ({воронка: {этап: позиция}}); нет порядка —
+    нет и проверки."""
+    stages = {_norm(k): v for k, v in (order.get(deal.get("pipeline") or "") or {}).items()}
+    out = []
+    for e in day_events:
+        if e.get("kind") != "stage_change":
+            continue
+        frm = (e.get("from_value") or "").strip()
+        to = (e.get("to_value") or "").strip()
+        a, b = stages.get(_norm(frm)), stages.get(_norm(to))
+        if a is None or b is None or b >= a:
+            continue
+        out.append(
+            {
+                "rule": "stage_back",
+                "severity": "warning",
+                "text": (
+                    f"Сделку вернули с этапа «{frm}» на «{to}», а клиент за день не писал. "
+                    "Проверьте, что это не ошибка."
+                ),
+                "author_name": (e.get("author_name") or "").strip(),
+                "at": e["at"],
+            }
+        )
+    return out
 
 
 def day_manager(deal: dict, day_messages: list[dict], day_events: list[dict]) -> tuple[str, str]:

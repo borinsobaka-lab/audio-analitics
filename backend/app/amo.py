@@ -125,8 +125,9 @@ def _str(value) -> str:
 
 
 def pipelines_dict(payload: dict | None) -> dict:
-    """{"pipelines": {id: name}, "statuses": {status_id: {name, pipeline_id, type}}}.
-    Ключи — строками: из вебхуков id приходят текстом."""
+    """{"pipelines": {id: name}, "statuses": {status_id: {name, pipeline_id, type, sort}}}.
+    Ключи — строками: из вебхуков id приходят текстом. Порядок этапов — в
+    sort: словари хранятся в jsonb, а он порядок ключей не сохраняет."""
     pipelines: dict[str, str] = {}
     statuses: dict[str, dict] = {}
     for p in ((payload or {}).get("_embedded") or {}).get("pipelines") or []:
@@ -137,8 +138,25 @@ def pipelines_dict(payload: dict | None) -> dict:
                 "name": _str(s.get("name")),
                 "pipeline_id": pid,
                 "type": int(s.get("type") or 0),
+                "sort": int(s.get("sort") or 0),
             }
     return {"pipelines": pipelines, "statuses": statuses}
+
+
+def stage_order(dicts: dict) -> dict[str, dict[str, int]]:
+    """{воронка: {этап: позиция}} для открытых этапов — по нему проверяется
+    возврат сделки назад. «Успешно» и «Отказ» не входят: из них сделку
+    переоткрывают, и это не возврат. Словари без sort (сохранены до этой
+    версии) порядка не дают — проверка ждёт следующей синхронизации."""
+    pipelines = dicts.get("pipelines") or {}
+    out: dict[str, dict[str, int]] = {}
+    for sid, s in (dicts.get("statuses") or {}).items():
+        if sid in (str(WON_STATUS), str(LOST_STATUS)) or "sort" not in s:
+            continue
+        name = pipelines.get(str(s.get("pipeline_id")))
+        if name and s.get("name"):
+            out.setdefault(name, {})[s["name"]] = int(s["sort"])
+    return out
 
 
 def users_dict(payload: dict | None) -> dict[str, str]:

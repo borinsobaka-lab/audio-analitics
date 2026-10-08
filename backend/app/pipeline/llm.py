@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import anthropic
 
 from ..config import get_settings
+from .cost import ModelPrice, price_for, request_cost
 
 logger = logging.getLogger(__name__)
 
@@ -232,30 +233,96 @@ def normalize_dialogs(items: list, day_duration_s: float | None = None) -> list[
     return result
 
 
-# Internal wrapper around an owner-defined metric prompt. The owner writes only
+# Internal wrapper around owner-defined metric prompts. The owner writes only
 # the instructions (what to evaluate, the reference script, what counts as
 # good); this template pins down applicability, the scale and the JSON shape.
-METRIC_EVAL_TEMPLATE = """Ты — контролёр качества студии растяжки. Оцени диалог менеджера \
-с клиентом по метрике «{name}».
+# All metrics of a dialog go in one request: the dialog is sent once instead of
+# once per metric, and the model reads it once.
+METRICS_EVAL_TEMPLATE = """Ты — контролёр качества студии растяжки. Оцени диалог менеджера \
+с клиентом по каждой метрике ниже.
 
-ИНСТРУКЦИИ МЕТРИКИ (заданы владельцем студии):
-{prompt}
+{metrics}
 
-ПРАВИЛА:
+ПРАВИЛА — для каждой метрики отдельно:
 1. Сначала реши, применима ли метрика к этому диалогу (applicable). Метрика применима,
    только если в диалоге реально была ситуация, которую она оценивает. Если нет —
    applicable=false, score=null, списки пустые.
-2. Если применима — поставь score: ЦЕЛОЕ число от 1 до {scale} ({scale} — идеально по инструкциям).
+2. Если применима — поставь score: ЦЕЛОЕ число от 1 до верхней границы шкалы этой метрики
+   (верхняя граница — идеально по её инструкциям).
 3. good — что менеджер сделал хорошо по этой метрике (каждый пункт с дословной цитатой).
 4. bad — что сделано плохо или упущено (каждый пункт с пояснением, при возможности с цитатой).
 5. comment — итог в 1–2 предложениях.
-6. Опирайся ТОЛЬКО на транскрипт. Не выдумывай цитат и фактов.
+6. Каждую метрику оценивай только по её инструкциям: замечание по одной метрике
+   не переносится в другую.
+7. Опирайся ТОЛЬКО на транскрипт. Не выдумывай цитат и фактов.
 
-Ответ — строго JSON без пояснений:
-{{"applicable": true|false, "score": число|null, "good": [], "bad": [], "comment": ""}}
+Ответ — строго JSON без пояснений, по одному элементу на каждую метрику; metric — номер метрики:
+{{"evaluations": [{{"metric": 1, "applicable": true|false, "score": число|null, "good": [], "bad": [], "comment": ""}}]}}
 
 ДИАЛОГ (с таймкодами и спикерами):
 {dialog}"""
+
+
+def render_metrics(metrics: list[dict]) -> str:
+    """Блок метрик для запроса: номер, название, шкала и инструкции владельца."""
+    return "\n\n".join(
+        f"МЕТРИКА {i} — «{m['name']}», шкала от 1 до {m['scale_max']}.\n"
+        f"Инструкции (заданы владельцем студии):\n{m['prompt']}"
+        for i, m in enumerate(metrics, start=1)
+    )
+
+
+def group_metrics(metrics: list, max_chars: int, size=lambda m: len(m.prompt)) -> list[list]:
+    """Разложить метрики по запросам: инструкции в одном запросе не длиннее
+    max_chars, порядок сохраняется. Метрика длиннее лимита идёт одна —
+    отказываться от её оценки хуже, чем заплатить за длинный запрос."""
+    groups: list[list] = []
+    used = 0
+    for metric in metrics:
+        length = size(metric)
+        if groups and used + length <= max_chars:
+            groups[-1].append(metric)
+            used += length
+        else:
+            groups.append([metric])
+            used = length
+    return groups
+
+
+def parse_metric_evals(raw, metrics: list[dict]) -> list[dict | None]:
+    """Ответ модели по нескольким метрикам → оценка на каждую метрику по порядку;
+    None — модель эту метрику пропустила.
+
+    Метрика узнаётся по номеру; если модель вместо номера написала название —
+    по названию; если без того и другого, но ответов ровно столько, сколько
+    метрик, — по порядку."""
+    if isinstance(raw, dict):
+        items = raw.get("evaluations")
+        if items is None and len(metrics) == 1 and "applicable" in raw:
+            items = [raw]
+    else:
+        items = raw
+    if not isinstance(items, list):
+        raise ValueError("metric evaluation must return {\"evaluations\": [...]}")
+    items = [item for item in items if isinstance(item, dict)]
+    names = {str(m["name"]).strip().lower(): i for i, m in enumerate(metrics)}
+    found: dict[int, dict] = {}
+    for pos, item in enumerate(items):
+        ref = item.get("metric")
+        index = None
+        try:
+            index = int(ref) - 1
+        except (TypeError, ValueError):
+            if isinstance(ref, str):
+                index = names.get(ref.strip().strip("«»\"").lower())
+            elif ref is None and len(items) == len(metrics):
+                index = pos
+        if index is not None and 0 <= index < len(metrics):
+            found.setdefault(index, item)
+    return [
+        normalize_metric_eval(found[i], int(m["scale_max"])) if i in found else None
+        for i, m in enumerate(metrics)
+    ]
 
 
 def normalize_metric_eval(raw: dict, scale_max: int) -> dict:
@@ -338,25 +405,44 @@ def normalize_analysis(analysis: dict) -> dict:
 
 @dataclass
 class LlmUsage:
-    """Расход за всю обработку смены: складывается по всем вызовам модели."""
+    """Расход за всю обработку: складывается по всем вызовам модели.
+
+    Цена считается на каждом запросе по тарифу его модели: кэш и обычный
+    вход стоят по-разному, а этапы могут идти на разных моделях. Модель не
+    из таблицы тарифов считается по `fallback` — ценам из настроек."""
 
     input_tokens: int = 0
     output_tokens: int = 0
     calls: int = 0
+    cost_usd: float = 0.0
+    fallback: ModelPrice | None = None
 
-    def add(self, message) -> None:
+    def add(self, message, model: str = "") -> None:
         usage = getattr(message, "usage", None)
         if usage is None:
             return
         # Кешированные токены считаются отдельными полями и есть не во всех
         # версиях SDK — берём то, что реально пришло.
-        self.input_tokens += (
-            (getattr(usage, "input_tokens", 0) or 0)
-            + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
-            + (getattr(usage, "cache_read_input_tokens", 0) or 0)
-        )
-        self.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        fresh = getattr(usage, "input_tokens", 0) or 0
+        written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        output = getattr(usage, "output_tokens", 0) or 0
+        # Запись на час дороже пятиминутной; разбивка есть в новых версиях API.
+        hour = getattr(getattr(usage, "cache_creation", None), "ephemeral_1h_input_tokens", 0) or 0
+        hour = min(hour, written)
+        self.input_tokens += fresh + written + read
+        self.output_tokens += output
         self.calls += 1
+        price = price_for(model) or self.fallback
+        if price:
+            self.cost_usd += request_cost(
+                price,
+                input_tokens=fresh,
+                cache_write_5m_tokens=written - hour,
+                cache_write_1h_tokens=hour,
+                cache_read_tokens=read,
+                output_tokens=output,
+            )
 
 
 class LlmClient:
@@ -364,7 +450,11 @@ class LlmClient:
         settings = get_settings()
         self.settings = settings
         self.client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key)
-        self.usage = LlmUsage()
+        self.usage = LlmUsage(
+            fallback=ModelPrice(
+                settings.price_llm_input_per_mtok_usd, settings.price_llm_output_per_mtok_usd
+            )
+        )
 
     def complete_json(self, prompt: str, model: str, system: str | list | None = None):
         """One request → parsed JSON.
@@ -398,7 +488,7 @@ class LlmClient:
 
             # Считаем расход даже у неудачного разбора: токены потрачены в любом
             # случае, и стоимость смены должна это отражать.
-            self.usage.add(message)
+            self.usage.add(message, model)
 
             text = "".join(
                 block.text for block in message.content if block.type == "text"
@@ -464,17 +554,13 @@ class LlmClient:
             raise ValueError("sale_analysis prompt must return a JSON object")
         return normalize_analysis(result)
 
-    def evaluate_metric(
-        self, dialog_text: str, metric_name: str, metric_prompt: str,
-        scale_max: int, model: str,
-    ) -> dict:
-        prompt = METRIC_EVAL_TEMPLATE.format(
-            name=metric_name, prompt=metric_prompt, scale=scale_max, dialog=dialog_text
-        )
-        result = self.complete_json(prompt, model)
-        if not isinstance(result, dict):
-            raise ValueError("metric evaluation must return a JSON object")
-        return normalize_metric_eval(result, scale_max)
+    def evaluate_metrics(self, dialog_text: str, metrics: list[dict], model: str) -> list[dict | None]:
+        """Оценить диалог по нескольким метрикам одним запросом.
+
+        `metrics` — [{"name", "prompt", "scale_max"}]; ответ — оценка на каждую
+        метрику по порядку, None — модель метрику пропустила."""
+        prompt = METRICS_EVAL_TEMPLATE.format(metrics=render_metrics(metrics), dialog=dialog_text)
+        return parse_metric_evals(self.complete_json(prompt, model), metrics)
 
     def summarize_day(
         self, analyses: list[dict], stats: dict, prompt_content: str, model: str

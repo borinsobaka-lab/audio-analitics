@@ -125,6 +125,7 @@ export default function CrmDayPage() {
   if (!report) return <Skeleton count={3} height={92} />;
 
   const { run, summary, stats } = report;
+  const checks = summary?.rule_checks;
   const { day: dayLabel, weekday } = fmtDate(run.date);
   const window =
     report.day_end_hour && report.window_from && report.window_to
@@ -220,7 +221,7 @@ export default function CrmDayPage() {
         )}
       </div>
 
-      {summary && !summary.error && (
+      {summary && !summary.error && hasConclusions(summary) && (
         <Section title="Выводы дня">
           {summary.top_problems && summary.top_problems.length > 0 && (
             <Panel tone="bad" title="Главные ошибки">
@@ -290,6 +291,36 @@ export default function CrmDayPage() {
         </Section>
       )}
 
+      {checks && checks.deals > 0 && (
+        <Section
+          title="Без переписки"
+          hint={`${checks.deals} ${plural(checks.deals, "сделка", "сделки", "сделок")}: клиент не писал, движение проверено правилами без ИИ`}
+        >
+          {checks.items.length > 0 ? (
+            <Panel tone="bad" title="Замечания по движению сделок">
+              <ul className="notes bad">
+                {checks.items.map((c, i) => (
+                  <li key={i}>
+                    {c.url ? (
+                      <a href={c.url} target="_blank" rel="noreferrer" title="Открыть сделку в CRM">
+                        {c.deal}
+                      </a>
+                    ) : (
+                      <b>{c.deal}</b>
+                    )}
+                    {c.manager_name ? ` · ${c.manager_name}` : ""}
+                    {" — "}
+                    {c.text}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          ) : (
+            <p className="muted">Замечаний нет.</p>
+          )}
+        </Section>
+      )}
+
       <Section
         title="Сделки"
         hint={
@@ -349,9 +380,11 @@ export default function CrmDayPage() {
 
         {report.reviews.length === 0 && run.status === "done" && (
           <Empty title="Сделок за этот день нет">
-            {me.can_view_all_crm
-              ? "В CRM за этот день не было ни переписки, ни движения сделок — или данные за него ещё не пришли."
-              : "По вашим сделкам за этот день разборов нет."}
+            {!me.can_view_all_crm
+              ? "По вашим сделкам за этот день разборов нет."
+              : checks && checks.deals > 0
+                ? "Клиенты за этот день не писали — сделки без переписки проверены правилами выше."
+                : "В CRM за этот день не было ни переписки, ни движения сделок — или данные за него ещё не пришли."}
           </Empty>
         )}
         {report.reviews.length > 0 && shown.length === 0 && (
@@ -367,5 +400,12 @@ export default function CrmDayPage() {
         ))}
       </Section>
     </div>
+  );
+}
+
+/** Есть ли в итоге дня выводы модели: без них раздел «Выводы дня» пустой. */
+function hasConclusions(summary: NonNullable<CrmRunReport["summary"]>): boolean {
+  return [summary.top_problems, summary.by_manager, summary.recommendations, summary.highlights].some(
+    (list) => (list?.length ?? 0) > 0
   );
 }

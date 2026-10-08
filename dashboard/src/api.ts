@@ -808,12 +808,27 @@ export interface CrmRuns {
   day_end_hour: number;
 }
 
+/** Замечание по сделке без сообщений клиента: проверка правилом, без ИИ. */
+export interface CrmRuleCheck {
+  rule: string;
+  severity: "warning" | "critical";
+  text: string;
+  deal: string;
+  deal_id: string;
+  url: string;
+  manager_name: string;
+  author_name: string;
+  at: string;
+}
+
 export interface CrmDaySummary {
   top_problems?: string[];
   by_manager?: { manager: string; note: string }[];
   recommendations?: string[];
   highlights?: string[];
   error?: string;
+  /** Сделки, где клиент за день не писал: модели не отправлялись. */
+  rule_checks?: { deals: number; items: CrmRuleCheck[] };
 }
 
 export interface CrmDayStats {

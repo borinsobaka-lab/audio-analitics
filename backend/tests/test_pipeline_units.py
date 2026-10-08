@@ -313,27 +313,88 @@ def test_complete_json_reports_empty_answer_clearly():
 
 # --- стоимость обработки ---
 
-from app.pipeline.cost import compute_cost  # noqa: E402
+from app.pipeline.cost import (  # noqa: E402
+    ModelPrice,
+    compute_cost,
+    price_for,
+    request_cost,
+)
 
 
 def test_cost_splits_asr_and_llm():
-    # час распознавания по $0.40 + 1M входных по $3 + 0.5M выходных по $15
-    cost = compute_cost(3600, 1_000_000, 500_000, 0.40, 3.00, 15.00)
+    # час распознавания по $0.40 + запросы к модели на $10.50
+    cost = compute_cost(3600, 10.50, 0.40)
     assert cost.asr_usd == pytest.approx(0.40)
-    assert cost.llm_usd == pytest.approx(3.00 + 7.50)
+    assert cost.llm_usd == pytest.approx(10.50)
     assert cost.total_usd == pytest.approx(10.90)
 
 
 def test_cost_handles_missing_usage():
     # смена без речи: ASR не вызывался, модель не вызывалась
-    cost = compute_cost(None, 0, 0, 0.40, 3.00, 15.00)
+    cost = compute_cost(None, 0.0, 0.40)
     assert cost.total_usd == 0.0
 
 
 def test_cost_keeps_sub_cent_precision():
-    # разбор одной смены дешевле цента — округление до копеек обнулило бы всё
-    cost = compute_cost(60, 1000, 500, 0.40, 3.00, 15.00)
-    assert cost.total_usd > 0
+    # разбор одной смены на Haiku дешевле цента — округление до копеек обнулило бы всё
+    llm = request_cost(price_for("claude-haiku-5-5"), input_tokens=1000, output_tokens=500)
+    cost = compute_cost(60, llm, 0.40)
+    assert cost.llm_usd > 0 and cost.total_usd > cost.asr_usd
+
+
+def test_price_for_matches_longest_model_name():
+    # claude-sonnet-5-5 не должен уйти в тариф claude-sonnet-5, дата в конце не мешает
+    assert price_for("claude-haiku-5-5").input == pytest.approx(0.10)
+    assert price_for("claude-sonnet-5").output == pytest.approx(10.00)
+    assert price_for("claude-opus-5-5").input == pytest.approx(4.00)
+    assert price_for("claude-haiku-4-5-20251001").input == pytest.approx(1.00)
+    assert price_for("anthropic.claude-haiku-5-5").output == pytest.approx(0.50)
+    assert price_for("gpt-6-luna") is None
+
+
+def test_request_cost_prices_cache_separately():
+    # Haiku 5.5: 1M нового входа $0.10, запись в кэш ×1.25, чтение ×0.1, выход $0.50
+    price = price_for("claude-haiku-5-5")
+    assert request_cost(price, input_tokens=50_000) == pytest.approx(0.005)
+    assert request_cost(price, cache_write_5m_tokens=50_000) == pytest.approx(0.00625)
+    assert request_cost(price, cache_write_1h_tokens=50_000) == pytest.approx(0.01)
+    assert request_cost(price, cache_read_tokens=50_000) == pytest.approx(0.0005)
+    assert request_cost(price, output_tokens=10_000) == pytest.approx(0.005)
+
+
+def test_request_cost_switches_to_long_prompt_rate():
+    # у Haiku 5.5 запрос длиннее 100 тыс. токенов идёт по $0.50 / $2.50, кэш тоже считается
+    price = price_for("claude-haiku-5-5")
+    short = request_cost(price, input_tokens=100_000, output_tokens=1_000)
+    long = request_cost(price, input_tokens=60_000, cache_read_tokens=60_000, output_tokens=1_000)
+    assert short == pytest.approx(0.010 + 0.0005)
+    assert long == pytest.approx(0.030 + 0.003 + 0.0025)
+
+
+def test_usage_counts_cost_by_model_and_falls_back_for_unknown():
+    usage_obj = type(
+        "U", (), {"input_tokens": 50_000, "output_tokens": 100_000,
+                  "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+    )()
+    message = type("M", (), {"usage": usage_obj})()
+    usage = LlmUsage(fallback=ModelPrice(2.0, 10.0))
+    usage.add(message, "claude-haiku-5-5")
+    assert usage.cost_usd == pytest.approx(0.005 + 0.05)
+    usage.add(message, "unknown-model")
+    assert usage.cost_usd == pytest.approx(0.055 + 0.10 + 1.0)
+    assert usage.calls == 2 and usage.input_tokens == 100_000
+
+
+def test_usage_bills_hour_cache_writes_at_double_rate():
+    cc = type("CC", (), {"ephemeral_1h_input_tokens": 40_000})()
+    usage_obj = type(
+        "U", (), {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 50_000,
+                  "cache_read_input_tokens": 0, "cache_creation": cc},
+    )()
+    usage = LlmUsage()
+    usage.add(type("M", (), {"usage": usage_obj})(), "claude-haiku-5-5")
+    # 10 тыс. по ×1.25 и 40 тыс. по ×2 от $0.10
+    assert usage.cost_usd == pytest.approx((10_000 * 1.25 + 40_000 * 2) * 0.10 / 1_000_000)
 
 
 # --- сводная статистика ---
