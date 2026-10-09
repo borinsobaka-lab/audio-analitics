@@ -954,6 +954,25 @@ export interface AmoPipeline {
   stages: string[];
 }
 
+/** Wazzup: тексты ответов администраторов (amoCRM их через API не отдаёт). */
+export interface WazzupStatus {
+  connected: boolean;
+  key_hint: string;
+  connected_at: string | null;
+  last_webhook_at: string | null;
+  webhooks_received: number;
+  /** Ответов администраторов с текстом: новых и дописанных к фактам из amoCRM. */
+  texts_added: number;
+  texts_merged: number;
+  /** Ждут, пока сделка клиента появится в CRM. */
+  pending: number;
+  /** Сделку не нашли: нет номера или он не совпал ни с одной сделкой. */
+  unmatched: number;
+  last_error: string;
+  /** Адрес вебхуков, который стоял в Wazzup до подключения CRM. */
+  replaced_uri: string;
+}
+
 export interface AmoStatus {
   connected: boolean;
   enabled: boolean;
@@ -1359,6 +1378,11 @@ export const api = {
     request<AmoStatus>("/api/crm/amo", { method: "PUT", body: JSON.stringify(body) }),
   syncAmo: () => request<AmoSyncResult>("/api/crm/amo/sync", { method: "POST" }),
   disconnectAmo: () => request<AmoStatus>("/api/crm/amo", { method: "DELETE" }),
+  wazzupStatus: () => request<WazzupStatus>("/api/crm/wazzup"),
+  /** force — заменить чужой адрес вебхуков в Wazzup. */
+  connectWazzup: (api_key: string, force = false) =>
+    request<WazzupStatus>("/api/crm/wazzup", { method: "PUT", body: JSON.stringify({ api_key, force }) }),
+  disconnectWazzup: () => request<WazzupStatus>("/api/crm/wazzup", { method: "DELETE" }),
   /** Задачи менеджерам в amoCRM по разбору дня; уже поставленные не дублируются. */
   amoTasks: (day: string) => request<AmoTasksResult>(`/api/crm/amo/tasks/${day}`, { method: "POST" }),
   playbookSettings: () => request<PlaybookSettings>("/api/playbook/settings"),

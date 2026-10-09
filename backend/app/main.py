@@ -15,6 +15,7 @@ from .routers import (
     auth_router,
     crm,
     crm_amo,
+    crm_wazzup,
     crm_ingest,
     crm_stats,
     employees,
@@ -89,6 +90,7 @@ app.include_router(crm.router)
 app.include_router(crm_stats.router)
 app.include_router(crm_ingest.router)
 app.include_router(crm_amo.router)
+app.include_router(crm_wazzup.router)
 
 
 @app.get("/health")

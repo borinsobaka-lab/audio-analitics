@@ -205,7 +205,14 @@ export default function ReviewCard({
                         {fmtStamp(m.at, !m.in_day)}
                       </span>
                       <span className="who">{m.direction === "out" ? m.author_name || "Администратор" : "Клиент"}:</span>
-                      <span>{m.text}</span>
+                      {m.text ? (
+                        <span>{m.text}</span>
+                      ) : (
+                        // amoCRM сообщила о сообщении только время и автора.
+                        <span className="muted" title="Текст amoCRM не отдаёт; он приходит из Wazzup для WhatsApp">
+                          текст недоступен
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

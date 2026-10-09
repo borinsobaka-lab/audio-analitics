@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, CrmIngestResult, CrmSettings, CrmSettingsIn, Employee, plural } from "../api";
 import { ConfirmAction, Note, Section, Skeleton, TableCard } from "../components/ui";
 import AmoConnect from "./AmoConnect";
+import WazzupConnect from "./WazzupConnect";
 
 const EXAMPLE = `{
   "deals": [
@@ -119,6 +120,7 @@ export default function Integration() {
       {notice && <Note kind="success">{notice}</Note>}
 
       <AmoConnect />
+      <WazzupConnect />
 
       <Section title="Другая CRM или свой сценарий" hint="ключ, которым CRM или сценарий n8n/Make подписывает каждый пакет данных">
         <div className="sheet sheet-pad crm-key-card">

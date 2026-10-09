@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import amo
+from . import amo, wazzup_sync
 from .models import CrmDeal, CrmSettings, Organization, utcnow
 from .routers.crm_ingest import apply_batch
 from .schemas import CrmIngestIn, CrmIngestOut
@@ -56,6 +56,52 @@ async def save(
     return row
 
 
+# Пакет приёма ограничен по размеру; первая синхронизация переписки за
+# неделю бывает больше — она уходит частями.
+CHUNK = 2000
+
+
+async def apply_all(db: AsyncSession, org: Organization, batch: dict) -> CrmIngestOut:
+    """Пакет любого размера: сначала сделки, потом сообщения и события —
+    частями, итог складывается."""
+    total = CrmIngestOut()
+    parts = []
+    for key in ("deals", "messages", "events"):
+        items = batch.get(key) or []
+        parts += [{key: items[i : i + CHUNK]} for i in range(0, len(items), CHUNK)]
+    for part in parts:
+        out = await apply_batch(db, org, CrmIngestIn(**part))
+        for field in CrmIngestOut.model_fields:
+            setattr(total, field, getattr(total, field) + getattr(out, field))
+    return total
+
+
+async def attach_to_deals(
+    db: AsyncSession, org: Organization, contact_messages: list[dict]
+) -> tuple[list[dict], int]:
+    """Сообщения, привязанные к контакту, а не к сделке, — в последнюю сделку
+    этого контакта. Возвращает (сообщения со сделкой, сколько не пристроено)."""
+    found: dict[str, str | None] = {}
+    out: list[dict] = []
+    dropped = 0
+    for m in contact_messages:
+        contact = m["contact_id"]
+        if contact not in found:
+            deal = await db.scalar(
+                select(CrmDeal)
+                .where(CrmDeal.org_id == org.id, CrmDeal.contact_key == contact)
+                .order_by(CrmDeal.last_activity_at.desc().nulls_last(), CrmDeal.updated_at.desc())
+                .limit(1)
+            )
+            found[contact] = deal.external_id if deal else None
+        if found[contact]:
+            entry = {k: v for k, v in m.items() if k != "contact_id"}
+            out.append({**entry, "deal_id": found[contact]})
+        else:
+            dropped += 1
+    return out, dropped
+
+
 def cache_dicts(a: dict, dicts: dict) -> None:
     """Словари amoCRM кладутся в настройки: вебхук приходит без них, а
     названия этапов и имена людей нужны сразу."""
@@ -83,7 +129,9 @@ async def sync_org(
         dicts = await amo.load_dicts(client)
         cache_dicts(a, dicts)
         result = await amo.collect(client, a, dicts, now, tz_of(data))
-        applied = await apply_batch(db, org, CrmIngestIn(**result["batch"]))
+        attached, _ = await attach_to_deals(db, org, result["contact_messages"])
+        result["batch"]["messages"].extend(attached)
+        applied = await apply_all(db, org, result["batch"])
         a["cursor"] = {**(a.get("cursor") or {}), **result["cursor"]}
         a["last_sync_at"] = amo.iso(now)
         a["last_sync_result"] = amo.summarize(result, applied)
@@ -96,6 +144,8 @@ async def sync_org(
     finally:
         await client.close()
     await save(db, org, row, data, a)
+    # Тексты из Wazzup, ждавшие свою сделку: она могла прийти только сейчас.
+    await wazzup_sync.retry_pending(db, org)
     return a["last_sync_result"], applied
 
 
@@ -108,19 +158,8 @@ async def apply_webhook(
     base = amo.base_url(a.get("subdomain") or "", a.get("domain") or "")
     parsed = amo.parse_webhook(payload, a.get("dicts") or {}, base, tz_of(data))
 
-    dropped = 0
-    for m in parsed["contact_messages"]:
-        deal = await db.scalar(
-            select(CrmDeal)
-            .where(CrmDeal.org_id == org.id, CrmDeal.contact_key == m["contact_id"])
-            .order_by(CrmDeal.last_activity_at.desc().nulls_last(), CrmDeal.updated_at.desc())
-            .limit(1)
-        )
-        if deal:
-            entry = {k: v for k, v in m.items() if k != "contact_id"}
-            parsed["messages"].append({**entry, "deal_id": deal.external_id})
-        else:
-            dropped += 1
+    attached, dropped = await attach_to_deals(db, org, parsed["contact_messages"])
+    parsed["messages"].extend(attached)
 
     applied = await apply_batch(
         db,

@@ -1,10 +1,11 @@
 /** Подключение amoCRM.
  *
- *  Два канала, и это не прихоть: сделки, этапы, задачи, заметки и SMS
- *  приходят по API раз в несколько минут, а текст сообщений из чатов
- *  («Беседы») API amoCRM не отдаёт — его присылает только вебхук в момент
- *  отправки. Поэтому здесь и токен для API, и адрес вебхука с перечнем
- *  событий, которые надо включить в amoCRM.
+ *  Два канала, и это не прихоть: сделки, этапы, задачи, заметки, SMS и факты
+ *  сообщений из чатов (время и автор) приходят по API раз в несколько минут,
+ *  а текст сообщений API amoCRM не отдаёт. Текст входящих присылает вебхук в
+ *  момент получения; исходящих в вебхуках amoCRM нет совсем — их текст
+ *  приходит из Wazzup (WazzupConnect). Поэтому здесь и токен для API, и адрес
+ *  вебхука с перечнем событий, которые надо включить в amoCRM.
  *
  *  Авторизация — долгосрочный токен приватной интеграции: его выдают в
  *  настройках интеграции, без редиректов. Код авторизации OAuth — под
@@ -112,7 +113,7 @@ export default function AmoConnect() {
     (status.connected || form.token.trim().length > 0 || (oauth && form.code.trim().length > 0));
 
   return (
-    <Section title="amoCRM" hint="сделки, этапы, задачи и заметки — по API; сообщения из чатов — вебхуком">
+    <Section title="amoCRM" hint="сделки, этапы, задачи и факты сообщений — по API; текст входящих — вебхуком">
       <div className="sheet sheet-pad crm-amo">
         {status.connected ? (
           <div className="crm-amo-state">
@@ -161,7 +162,7 @@ export default function AmoConnect() {
             <input
               type="text"
               value={form.subdomain}
-              placeholder="ladystretch — из адреса ladystretch.amocrm.ru"
+              placeholder="studio — из адреса studio.amocrm.ru"
               spellCheck={false}
               autoCapitalize="none"
               onChange={(e) => set({ subdomain: e.target.value })}
@@ -335,9 +336,11 @@ export default function AmoConnect() {
       <div className="sheet sheet-pad crm-amo-webhook">
         <h4 className="crm-amo-title">Вебхук — сообщения из чатов</h4>
         <p className="muted form-hint no-margin">
-          Текст сообщений WhatsApp, Instagram и Telegram API amoCRM не отдаёт: он приходит только
-          вебхуком, с момента его подключения. В amoCRM: «Настройки» → «Интеграции» → «Webhooks» →
-          «Добавить» → вставьте адрес и отметьте события ниже.
+          Текст сообщений из чатов API amoCRM не отдаёт. Входящие сообщения клиентов приходят
+          вебхуком с момента его подключения; ответов администраторов в вебхуках amoCRM нет — о них
+          синхронизация знает время и автора, а текст приходит из Wazzup (ниже). В amoCRM:
+          «Настройки» → «Интеграции» → «Webhooks» → «Добавить» → вставьте адрес и отметьте события
+          ниже.
         </p>
         {status.webhook_url ? (
           <div className="creds-body crm-amo-url">

@@ -12,7 +12,7 @@
 """
 import hmac
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -63,6 +63,47 @@ async def ingest_ping(org: Organization = Depends(require_integration)):
 
 def clean_text(text: str | None) -> str:
     return (text or "").replace("\r\n", "\n").strip()
+
+
+# Насколько могут разойтись часы двух источников об одном сообщении.
+MERGE_WINDOW = timedelta(minutes=2)
+
+
+def merge_twin(candidates: list, at: datetime, text: str):
+    """То же сообщение, уже лежащее в базе под другим id, или None.
+
+    С текстом — ищется ближайшее по времени сообщение без текста (факт из
+    журнала amoCRM, который теперь получит текст) или с тем же текстом
+    (повторная доставка). Без текста — любое сообщение рядом: текст уже есть,
+    факт ничего не добавит. Кандидаты — той же сделки и направления."""
+    near = [c for c in candidates if abs(c.at - at) <= MERGE_WINDOW]
+    if text:
+        repeat = next((c for c in near if c.text == text), None)
+        if repeat is not None:
+            return repeat
+        near = [c for c in near if not c.text]
+    if not near:
+        return None
+    return min(near, key=lambda c: abs(c.at - at))
+
+
+def fill_message(target, m, text: str) -> None:
+    """Дописать в сообщение-факт текст, который знает второй источник."""
+    target.text = text
+    if not target.channel and m.channel.strip():
+        target.channel = m.channel.strip().lower()
+    fill_author(target, m)
+
+
+def fill_author(target, m) -> None:
+    """Автор — из того источника, который его знает: Wazzup не всегда говорит,
+    кто отправил, а журнал amoCRM знает и администратора, и робота."""
+    if not target.author_key and m.author_id.strip():
+        target.author_key = m.author_id.strip()
+        if m.author_name.strip():
+            target.author_name = m.author_name.strip()
+    elif not target.author_name and m.author_name.strip():
+        target.author_name = m.author_name.strip()
 
 
 WON = {"won", "success", "successful", "sold", "closed_won", "paid"}
@@ -166,19 +207,23 @@ async def apply_batch(db: AsyncSession, org: Organization, body: CrmIngestIn) ->
             deal.last_activity_at = at
 
     # --- Сообщения ---
+    # Одно сообщение может прийти из двух источников: журнал amoCRM знает
+    # время и автора, но не текст; вебхук amoCRM (входящие) и Wazzup
+    # (исходящие) знают текст. Такие пары сливаются в одно сообщение — по
+    # внешнему id, а если id разные, то по сделке, направлению и времени.
     ext_ids = {m.id.strip() for m in body.messages if m.id and m.id.strip()}
-    known_ext: set[str] = set()
+    by_ext: dict[str, CrmMessage] = {}
     if ext_ids:
-        known_ext = set(
-            (
-                await db.scalars(
-                    select(CrmMessage.external_id).where(
-                        CrmMessage.org_id == org.id, CrmMessage.external_id.in_(ext_ids)
-                    )
+        for known in (
+            await db.scalars(
+                select(CrmMessage).where(
+                    CrmMessage.org_id == org.id, CrmMessage.external_id.in_(ext_ids)
                 )
-            ).all()
-        )
+            )
+        ).all():
+            by_ext[known.external_id] = known
     natural: set[tuple] = set()
+    nearby: dict[tuple, list[CrmMessage]] = {}
     deal_ids = {existing[m.deal_id.strip()].id for m in body.messages if m.deal_id.strip() in existing}
     if deal_ids:
         times = [aware(m.at, tz) for m in body.messages]
@@ -186,12 +231,13 @@ async def apply_batch(db: AsyncSession, org: Organization, body: CrmIngestIn) ->
             await db.scalars(
                 select(CrmMessage).where(
                     CrmMessage.deal_id.in_(deal_ids),
-                    CrmMessage.at >= min(times),
-                    CrmMessage.at <= max(times),
+                    CrmMessage.at >= min(times) - MERGE_WINDOW,
+                    CrmMessage.at <= max(times) + MERGE_WINDOW,
                 )
             )
         ).all():
             natural.add((m.deal_id, m.at, m.direction, m.text))
+            nearby.setdefault((m.deal_id, m.direction), []).append(m)
     for m in body.messages:
         deal = existing.get(m.deal_id.strip())
         if deal is None:
@@ -201,25 +247,36 @@ async def apply_batch(db: AsyncSession, org: Organization, body: CrmIngestIn) ->
         at = aware(m.at, tz)
         text = clean_text(m.text)
         key = (deal.id, at, m.direction, text)
-        if (ext and ext in known_ext) or key in natural:
+        if key in natural:
             out.messages_skipped += 1
             continue
-        db.add(
-            CrmMessage(
-                org_id=org.id,
-                deal_id=deal.id,
-                external_id=ext,
-                direction=m.direction,
-                channel=m.channel.strip().lower(),
-                author_key=m.author_id.strip(),
-                author_name=m.author_name.strip(),
-                text=text,
-                at=at,
-            )
+        same = by_ext.get(ext) if ext else None
+        if same is None:
+            same = merge_twin(nearby.get((deal.id, m.direction)) or [], at, text)
+        if same is not None:
+            if text and not same.text:
+                fill_message(same, m, text)
+                out.messages_merged += 1
+            else:
+                fill_author(same, m)
+                out.messages_skipped += 1
+            continue
+        msg = CrmMessage(
+            org_id=org.id,
+            deal_id=deal.id,
+            external_id=ext,
+            direction=m.direction,
+            channel=m.channel.strip().lower(),
+            author_key=m.author_id.strip(),
+            author_name=m.author_name.strip(),
+            text=text,
+            at=at,
         )
+        db.add(msg)
         natural.add(key)
+        nearby.setdefault((deal.id, m.direction), []).append(msg)
         if ext:
-            known_ext.add(ext)
+            by_ext[ext] = msg
         bump(deal, at)
         # Источник сделки, если CRM его не прислала, — канал первого
         # сообщения клиента: Instagram, WhatsApp, Telegram.

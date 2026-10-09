@@ -52,6 +52,8 @@ export default function Criteria() {
   }, []);
 
   const activeCount = items?.filter((c) => c.active).length ?? 0;
+  const taken = new Set((items ?? []).map((c) => c.name.trim().toLowerCase()));
+  const remaining = EXAMPLES.filter((ex) => !taken.has(ex.name.trim().toLowerCase()));
 
   return (
     <div className="crm-criteria">
@@ -92,9 +94,16 @@ export default function Criteria() {
         </Empty>
       )}
 
-      {items !== null && items.length === 0 && !creating && (
+      {items?.map((c) => (
+        <Card key={c.id} criterion={c} onChanged={load} />
+      ))}
+
+      {/* Примеры остаются, пока не взяты все: после первого сохранённого
+          критерия остальные нужны так же. */}
+      {items !== null && remaining.length > 0 && !creating && (
         <div className="crm-examples">
-          {EXAMPLES.map((ex) => (
+          {items.length > 0 && <h4 className="crm-amo-title">Ещё готовые примеры</h4>}
+          {remaining.map((ex) => (
             <div key={ex.name} className="sheet sheet-pad crm-example">
               <div className="metric-card-head">
                 <strong className="metric-card-name">{ex.name}</strong>
@@ -110,10 +119,6 @@ export default function Criteria() {
           ))}
         </div>
       )}
-
-      {items?.map((c) => (
-        <Card key={c.id} criterion={c} onChanged={load} />
-      ))}
     </div>
   );
 }

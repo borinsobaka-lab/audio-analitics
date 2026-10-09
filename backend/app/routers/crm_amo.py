@@ -31,12 +31,7 @@ def status_out(data: dict) -> AmoStatusOut:
     dicts = a.get("dicts") or {}
     pipelines = []
     for pid, name in (dicts.get("pipelines") or {}).items():
-        stages = [
-            s["name"]
-            for s in (dicts.get("statuses") or {}).values()
-            if s.get("pipeline_id") == pid and s.get("name")
-        ]
-        pipelines.append(AmoPipelineOut(id=pid, name=name, stages=stages))
+        pipelines.append(AmoPipelineOut(id=pid, name=name, stages=amo.stage_names(dicts, pid)))
     key = data.get("integration_key") or ""
     base = settings.api_base_url.rstrip("/")
     return AmoStatusOut(
@@ -89,7 +84,7 @@ async def amo_connect(
     a = amo_sync.section(data)
     subdomain = amo.clean_subdomain(body.subdomain)
     if not SUBDOMAIN.fullmatch(subdomain):
-        raise HTTPException(400, "Поддомен — это часть адреса до .amocrm.ru, например «ladystretch»")
+        raise HTTPException(400, "Поддомен — это часть адреса до .amocrm.ru: для studio.amocrm.ru это «studio»")
     now = datetime.now(timezone.utc)
     a.update(
         subdomain=subdomain,

@@ -1406,8 +1406,37 @@ class CrmIngestOut(BaseModel):
     deals_stubbed: int = 0
     messages_added: int = 0
     messages_skipped: int = 0
+    # Сообщение уже было фактом без текста, а теперь пришёл его текст.
+    messages_merged: int = 0
     events_added: int = 0
     events_skipped: int = 0
+
+
+# --- Wazzup ---
+
+class WazzupConnectIn(BaseModel):
+    # Пусто — оставить сохранённый ключ (переподключение).
+    api_key: str = Field(default="", max_length=200)
+    # Заменить чужой адрес вебхуков в Wazzup.
+    force: bool = False
+
+
+class WazzupStatusOut(BaseModel):
+    connected: bool = False
+    key_hint: str = ""
+    connected_at: datetime | None = None
+    last_webhook_at: datetime | None = None
+    webhooks_received: int = 0
+    # Сообщений администраторов с текстом: новых и дописанных к фактам из amoCRM.
+    texts_added: int = 0
+    texts_merged: int = 0
+    # Ждут, пока сделка клиента появится в CRM.
+    pending: int = 0
+    # Сделку не нашли: нет номера или номер не совпал ни с одной сделкой.
+    unmatched: int = 0
+    last_error: str = ""
+    # Адрес вебхуков, который стоял в Wazzup до подключения CRM.
+    replaced_uri: str = ""
 
 
 # --- amoCRM ---

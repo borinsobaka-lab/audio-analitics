@@ -45,6 +45,21 @@ CONTEXT_MESSAGES = 30
 CONTEXT_EVENTS = 6
 # Длинное сообщение режется: модели важен смысл, а не вложенный прайс целиком.
 MESSAGE_CHARS = 1500
+# Робот CRM: Salesbot, цифровая воронка, автоматизации (в amoCRM — пользователь 0).
+# Его сообщения не ответ администратора, а его действия не «ведение» сделки.
+ROBOT_KEY = "robot"
+ROBOT_NAME = "Робот amoCRM"
+# Сообщение, о котором известно только время и автор: amoCRM отдаёт факт
+# исходящего сообщения из чата, но не его текст.
+HIDDEN_TEXT = "[текст недоступен: CRM сообщила только факт сообщения]"
+
+
+def is_robot(author_key: str | None) -> bool:
+    """Автор — робот CRM. «0» — так робот записан в данных, пришедших до
+    появления отдельного ключа."""
+    return (author_key or "").strip() in (ROBOT_KEY, "0")
+
+
 # Клиент, написавший за столько дней до отчётного и не получивший ответа,
 # ещё ждёт: ответ ему сегодня проверяет модель. Три дня — с запасом на
 # выходной студии.
@@ -110,6 +125,8 @@ REVIEW_TEMPLATE = """Ты — контролёр качества работы �
 8. criteria — по каждому критерию из списка: id как в списке; applicable — применим ли он к этой сделке за этот день; score — ЦЕЛОЕ число от 1 до шкалы критерия (шкала — идеально); comment — одной фразой почему. Не применим — score null.
 9. summary — 1–2 предложения для руководителя: что происходило со сделкой за день и главный вывод.
 10. Пиши по-русски, о действиях, а не о личности.
+11. Сообщение с пометкой «{hidden}» — ответ был, его время и автор точны, но содержание неизвестно. Не пиши, что ответа не было, и не делай выводов о его тоне, скрипте, ценах и следующем шаге. Критерии и скрипты, которые без текста ответов не оценить, — applicable false и scripts.used пустой; о качестве общения суди только по видимым репликам.
+12. Сообщения «{robot}» — автоответы и рассылки CRM, а не работа администратора: ответом клиенту они не считаются.
 
 Ответ — строго JSON без пояснений:
 {{"category": "...", "severity": "ok|warning|critical", "summary": "...",
@@ -203,6 +220,8 @@ def _t(at: datetime, tz: tzinfo, with_date: bool) -> str:
 def _who(m: dict) -> str:
     if m.get("direction") == "in":
         return "Клиент"
+    if is_robot(m.get("author_key")):
+        return ROBOT_NAME
     name = (m.get("author_name") or "").strip()
     return f"Администратор {name}" if name else "Администратор"
 
@@ -210,7 +229,8 @@ def _who(m: dict) -> str:
 def render_message(m: dict, tz: tzinfo, with_date: bool) -> str:
     channel = (m.get("channel") or "").strip()
     tag = f" ({channel})" if channel else ""
-    return f"[{_t(m['at'], tz, with_date)}] {_who(m)}{tag}: {_clip(m.get('text'))}"
+    text = _clip(m.get("text")) if (m.get("text") or "").strip() else HIDDEN_TEXT
+    return f"[{_t(m['at'], tz, with_date)}] {_who(m)}{tag}: {text}"
 
 
 EVENT_NAMES = {
@@ -305,6 +325,8 @@ def review_prompt(
         deal=deal_text,
         work_hours=work_hours,
         speed=speed,
+        hidden=HIDDEN_TEXT,
+        robot=ROBOT_NAME,
     )
 
 
@@ -444,7 +466,11 @@ def reply_stats(
     пять минут до конца отчётного дня или ночью, — ещё не «без ответа»: если
     его так и не закроют, оно станет им в следующем разборе.
     """
-    ordered = sorted((m for m in messages if m["at"] < day_end), key=lambda m: m["at"])
+    # Автоответ робота — не ответ администратора: ожидание клиента он не закрывает.
+    ordered = sorted(
+        (m for m in messages if m["at"] < day_end and not (m.get("direction") != "in" and is_robot(m.get("author_key")))),
+        key=lambda m: m["at"],
+    )
     pending: datetime | None = None
     delays: list[float] = []
     for m in ordered:
@@ -461,6 +487,8 @@ def reply_stats(
     return {
         "messages_in": sum(1 for m in day if m.get("direction") == "in"),
         "messages_out": sum(1 for m in day if m.get("direction") != "in"),
+        # Ответы, о которых CRM сообщила только время: текст неизвестен.
+        "hidden_out": sum(1 for m in day if m.get("direction") != "in" and not (m.get("text") or "").strip()),
         "first_reply_minutes": delays[0] if delays else None,
         "max_reply_minutes": max(delays) if delays else None,
         "waiting_minutes": waiting,
@@ -474,7 +502,12 @@ def speed_text(speed: dict, slow_minutes: int = DEFAULT_SLOW_REPLY_MINUTES) -> s
         return "—" if v is None else f"{round(v)} мин рабочего времени"
 
     lines = [
-        f"- сообщений клиента за день: {speed.get('messages_in', 0)}, ответов администратора: {speed.get('messages_out', 0)}",
+        f"- сообщений клиента за день: {speed.get('messages_in', 0)}, ответов администратора: {speed.get('messages_out', 0)}"
+        + (
+            f" (текст {speed['hidden_out']} из них недоступен — известны только время и автор)"
+            if speed.get("hidden_out")
+            else ""
+        ),
         f"- первый ответ за день через: {minutes(speed.get('first_reply_minutes'))}",
         f"- самое долгое ожидание ответа: {minutes(speed.get('max_reply_minutes'))}",
     ]
@@ -540,7 +573,10 @@ def needs_model(
     дорогая ошибка."""
     if any(m.get("direction") == "in" and day_start <= m["at"] < day_end for m in messages):
         return True
-    before = [m for m in messages if m["at"] < day_start]
+    before = [
+        m for m in messages
+        if m["at"] < day_start and not (m.get("direction") != "in" and is_robot(m.get("author_key")))
+    ]
     if (
         before
         and before[-1].get("direction") == "in"
@@ -588,12 +624,16 @@ def day_manager(deal: dict, day_messages: list[dict], day_events: list[dict]) ->
     если ответственный в CRM другой (подменял). Иначе — ответственный по
     сделке. Возвращает (ключ, имя) как в CRM."""
     seen: dict[str, str] = {}
+    # Робот сделку не ведёт: ночная реактивация или автоответ — не работа
+    # администратора.
     for m in day_messages:
-        if m.get("direction") != "in" and (m.get("author_key") or "").strip():
-            seen.setdefault(m["author_key"].strip(), (m.get("author_name") or "").strip())
+        key = (m.get("author_key") or "").strip()
+        if m.get("direction") != "in" and key and not is_robot(key):
+            seen.setdefault(key, (m.get("author_name") or "").strip())
     for e in day_events:
-        if (e.get("author_key") or "").strip():
-            seen.setdefault(e["author_key"].strip(), (e.get("author_name") or "").strip())
+        key = (e.get("author_key") or "").strip()
+        if key and not is_robot(key):
+            seen.setdefault(key, (e.get("author_name") or "").strip())
     if len(seen) == 1:
         key, name = next(iter(seen.items()))
         return key, name or key

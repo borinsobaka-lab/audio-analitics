@@ -30,6 +30,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from .crm_ai import ROBOT_KEY, ROBOT_NAME
+
 log = logging.getLogger(__name__)
 
 DOMAINS = ("amocrm.ru", "kommo.com", "amocrm.com")
@@ -51,6 +53,15 @@ REQUEST_PAUSE_S = 0.2
 OAUTH_REFRESH_AHEAD = timedelta(minutes=15)
 
 EVENT_TYPES = "lead_status_changed,entity_responsible_changed"
+# Сообщения из чатов в журнале событий: время, автор и сделка, но без текста —
+# текст amoCRM через API не отдаёт. Входящий текст приходит вебхуком, исходящий —
+# от Wazzup (wazzup.py); журнал нужен, чтобы ответ администратора был виден
+# всегда, хотя бы как факт.
+CHAT_EVENT_TYPES = ("incoming_chat_message", "outgoing_chat_message")
+# Журнал событий не сортируется по нашему желанию, поэтому сообщения из чатов
+# забираются окнами по времени: окно целиком или ничего.
+CHAT_WINDOW = timedelta(hours=6)
+CHAT_WINDOWS_PER_PASS = 40
 NOTE_TYPES_CALL = {"call_in": "in", "call_out": "out"}
 NOTE_TYPES_SMS = {"sms_in": "in", "sms_out": "out"}
 # Типы примечаний в вебхуках — числами.
@@ -63,15 +74,16 @@ WEBHOOK_NOTE_TYPES = {
     "103": "sms_out",
 }
 # Что включить в настройках вебхука amoCRM — подсказка в админке.
+# Названия — как в списке событий вебхука amoCRM. Исходящих сообщений в этом
+# списке нет: amoCRM их вебхуком не присылает.
 WEBHOOK_EVENTS = [
-    "Входящее сообщение в чате",
-    "Исходящее сообщение в чате",
-    "Сделка: добавлена",
-    "Сделка: изменена",
-    "Сделка: смена статуса",
-    "Примечание: добавлено в сделку",
-    "Задача: добавлена",
-    "Задача: изменена",
+    "Входящее сообщение добавлено",
+    "Сделка добавлена",
+    "Сделка изменена",
+    "Статус сделки изменён",
+    "Примечание добавлено в сделке",
+    "Задача добавлена",
+    "Задача изменена",
 ]
 
 
@@ -143,6 +155,27 @@ def pipelines_dict(payload: dict | None) -> dict:
     return {"pipelines": pipelines, "statuses": statuses}
 
 
+def stage_names(dicts: dict, pipeline_id) -> list[str]:
+    """Этапы воронки в её порядке: по sort, «Успешно» и «Отказ» — в конце, как
+    в amoCRM. Словари без sort — в порядке, в котором лежат."""
+    pid = _str(pipeline_id)
+    items = [
+        (sid, s) for sid, s in (dicts.get("statuses") or {}).items()
+        if _str(s.get("pipeline_id")) == pid and s.get("name")
+    ]
+
+    def position(item):
+        sid, s = item
+        closed = sid in (str(WON_STATUS), str(LOST_STATUS))
+        return (closed, int(s.get("sort") or 0), sid == str(LOST_STATUS))
+
+    names: list[str] = []
+    for _, s in sorted(items, key=position):
+        if s["name"] not in names:
+            names.append(s["name"])
+    return names
+
+
 def stage_order(dicts: dict) -> dict[str, dict[str, int]]:
     """{воронка: {этап: позиция}} для открытых этапов — по нему проверяется
     возврат сделки назад. «Успешно» и «Отказ» не входят: из них сделку
@@ -205,6 +238,16 @@ def user_name(dicts: dict, user_id) -> str:
     return (dicts.get("users") or {}).get(_str(user_id), "")
 
 
+def author_of(dicts: dict, user_id) -> tuple[str, str]:
+    """Автор действия в amoCRM: (ключ, имя). Пользователь 0 — робот: Salesbot,
+    цифровая воронка, автоматизации. Его действия не работа администратора,
+    поэтому у робота свой ключ, а не «0»."""
+    uid = _str(user_id)
+    if uid == "0":
+        return ROBOT_KEY, ROBOT_NAME
+    return uid, user_name(dicts, uid)
+
+
 # --- Сделки, события, заметки, задачи → формат приёма ------------------------
 
 
@@ -253,12 +296,12 @@ def map_event(ev: dict, dicts: dict) -> dict | None:
     kind = _str(ev.get("type"))
     before = (ev.get("value_before") or [{}])[0] if ev.get("value_before") else {}
     after = (ev.get("value_after") or [{}])[0] if ev.get("value_after") else {}
-    author = _str(ev.get("created_by"))
+    author_id, author_name = author_of(dicts, ev.get("created_by"))
     common = {
         "id": f"ev:{_str(ev.get('id'))}",
         "deal_id": _str(ev.get("entity_id")),
-        "author_id": author,
-        "author_name": user_name(dicts, author),
+        "author_id": author_id,
+        "author_name": author_name,
         "at": iso(at),
     }
     if kind == "lead_status_changed":
@@ -279,6 +322,44 @@ def map_event(ev: dict, dicts: dict) -> dict | None:
     return None
 
 
+def map_chat_event(ev: dict, dicts: dict) -> dict | None:
+    """Сообщение из чата по журналу событий → {"message": …} со сделкой или
+    {"contact_message": …} с контактом; None — не наше.
+
+    Текста в журнале нет, только id сообщения: сообщение сохраняется с
+    пустым текстом и потом сливается с тем же сообщением, пришедшим с текстом
+    (вебхук amoCRM для входящих, Wazzup для исходящих)."""
+    kind = _str(ev.get("type"))
+    if kind not in CHAT_EVENT_TYPES:
+        return None
+    at = ts(ev.get("created_at"))
+    if not at:
+        return None
+    after = (ev.get("value_after") or [{}])[0] if ev.get("value_after") else {}
+    msg_id = _str(((after or {}).get("message") or {}).get("id"))
+    incoming = kind == "incoming_chat_message"
+    author_id, author_name = ("", "") if incoming else author_of(dicts, ev.get("created_by"))
+    entry = {
+        "id": f"msg:{msg_id}" if msg_id else f"ev:{_str(ev.get('id'))}",
+        "direction": "in" if incoming else "out",
+        "channel": "",
+        "author_id": author_id,
+        "author_name": author_name,
+        "text": "",
+        "at": iso(at),
+    }
+    entity_type = _str(ev.get("entity_type"))
+    entity_id = _str(ev.get("entity_id"))
+    if _is_lead(entity_type) and entity_id:
+        return {"message": {**entry, "deal_id": entity_id}}
+    contact_id = _str(ev.get("linked_talk_contact_id")) or (
+        entity_id if entity_type in ("contact", "contacts") else ""
+    )
+    if contact_id:
+        return {"contact_message": {**entry, "contact_id": contact_id}}
+    return None
+
+
 def map_note(note: dict, dicts: dict) -> dict | None:
     """Примечание сделки → {"message": …} (SMS) или {"event": …}; None — не наше."""
     note_type = _str(note.get("note_type"))
@@ -287,11 +368,11 @@ def map_note(note: dict, dicts: dict) -> dict | None:
     if not at or not deal_id:
         return None
     params = note.get("params") or {}
-    author = _str(note.get("created_by"))
+    author_id, author_name = author_of(dicts, note.get("created_by"))
     base = {
         "deal_id": deal_id,
-        "author_id": author,
-        "author_name": user_name(dicts, author),
+        "author_id": author_id,
+        "author_name": author_name,
         "at": iso(at),
     }
     note_id = _str(note.get("id"))
@@ -333,7 +414,9 @@ def map_task(task: dict, dicts: dict, tz=None) -> list[dict]:
     if not created:
         return []
     task_id = _str(task.get("id"))
-    author = _str(task.get("created_by")) or _str(task.get("responsible_user_id"))
+    author_id, author_name = author_of(
+        dicts, _str(task.get("created_by")) or _str(task.get("responsible_user_id"))
+    )
     text = _str(task.get("text"))
     due = ts(task.get("complete_till"))
     if due:
@@ -345,13 +428,15 @@ def map_task(task: dict, dicts: dict, tz=None) -> list[dict]:
             "deal_id": deal_id,
             "kind": "task",
             "text": text,
-            "author_id": author,
-            "author_name": user_name(dicts, author),
+            "author_id": author_id,
+            "author_name": author_name,
             "at": iso(created),
         }
     ]
     if task.get("is_completed"):
-        done_by = _str(task.get("updated_by")) or _str(task.get("responsible_user_id"))
+        done_id, done_name = author_of(
+            dicts, _str(task.get("updated_by")) or _str(task.get("responsible_user_id"))
+        )
         result = _str((task.get("result") or {}).get("text"))
         out.append(
             {
@@ -359,8 +444,8 @@ def map_task(task: dict, dicts: dict, tz=None) -> list[dict]:
                 "deal_id": deal_id,
                 "kind": "task_done",
                 "text": f"{_str(task.get('text'))}{f' — {result}' if result else ''}",
-                "author_id": done_by,
-                "author_name": user_name(dicts, done_by),
+                "author_id": done_id,
+                "author_name": done_name,
                 "at": iso(ts(task.get("updated_at")) or created),
             }
         )
@@ -456,7 +541,7 @@ def parse_webhook(payload: dict, dicts: dict, base: str, tz=None) -> dict:
             deals.append({k: v for k, v in deal.items() if v is not None})
             if section == "status" and _str(lead.get("status_id")):
                 at = updated or datetime.now(timezone.utc)
-                author = _str(lead.get("modified_user_id"))
+                author_id, author_name = author_of(dicts, lead.get("modified_user_id"))
                 events.append(
                     {
                         "id": f"wh:status:{lead_id}:{int(at.timestamp())}",
@@ -464,8 +549,8 @@ def parse_webhook(payload: dict, dicts: dict, base: str, tz=None) -> dict:
                         "kind": "stage_change",
                         "from": status_name(dicts, lead.get("old_status_id")),
                         "to": status_name(dicts, lead.get("status_id")),
-                        "author_id": author,
-                        "author_name": user_name(dicts, author),
+                        "author_id": author_id,
+                        "author_name": author_name,
                         "at": iso(at),
                     }
                 )
@@ -795,6 +880,18 @@ async def collect(client: AmoClient, amo: dict, dicts: dict, now: datetime, tz=N
             batch["events"].append(mapped["event"])
     advance("notes", notes, cut, "updated_at")
 
+    chats, chat_cursor, chat_cut = await chat_events(client, since_for(amo, "chats", now), now)
+    contact_messages: list[dict] = []
+    for ev in chats:
+        mapped = map_chat_event(ev, dicts)
+        if mapped and "message" in mapped:
+            batch["messages"].append(mapped["message"])
+        elif mapped:
+            contact_messages.append(mapped["contact_message"])
+    cursor["chats"] = iso(chat_cursor)
+    if chat_cut:
+        truncated.append("chats")
+
     tasks, cut = await client.pages(
         "/api/v4/tasks",
         [("filter[updated_at][from]", unix(since_for(amo, "tasks", now))), ("filter[entity_type]", "leads")],
@@ -804,9 +901,45 @@ async def collect(client: AmoClient, amo: dict, dicts: dict, now: datetime, tz=N
         batch["events"].extend(map_task(task, dicts, tz))
     advance("tasks", tasks, cut, "updated_at")
 
-    return {"batch": batch, "cursor": cursor, "truncated": truncated, "counts": {
+    return {"batch": batch, "contact_messages": contact_messages, "cursor": cursor, "truncated": truncated, "counts": {
         "leads": len(leads), "events": len(events), "notes": len(notes), "tasks": len(tasks),
+        "chats": len(chats),
     }}
+
+
+async def chat_events(client: AmoClient, since: datetime, now: datetime) -> tuple[list[dict], datetime, bool]:
+    """Сообщения из чатов из журнала событий, окнами по CHAT_WINDOW от старых к
+    новым. Возвращает (события, до какого момента забрано, не всё за раз).
+
+    Журнал отдаёт события в своём порядке и без сортировки, поэтому курсор
+    двигается по целым окнам: за проход — не больше CHAT_WINDOWS_PER_PASS
+    окон, остальное следующим проходом (первый запуск забирает неделю). Окно
+    больше MAX_PAGES страниц — тысячи сообщений за шесть часов — забирается
+    частично, это видно в логе. По документации amoCRM фильтр для этих
+    событий — по контакту, а приходят они со сделкой."""
+    out: list[dict] = []
+    start = since
+    for _ in range(CHAT_WINDOWS_PER_PASS):
+        if start >= now:
+            return out, now, False
+        end = min(start + CHAT_WINDOW, now)
+        items, cut = await client.pages(
+            "/api/v4/events",
+            [
+                ("filter[created_at][from]", int(start.timestamp())),
+                ("filter[created_at][to]", int(end.timestamp())),
+                ("filter[entity][]", "contact"),
+                *(("filter[type][]", t) for t in CHAT_EVENT_TYPES),
+            ],
+            "events",
+            limit=EVENTS_PAGE_LIMIT,
+        )
+        out.extend(items)
+        if cut:
+            log.warning("amoCRM: в окне %s–%s событий чатов больше, чем берём, часть пропущена", start, end)
+        start = end
+        await asyncio.sleep(REQUEST_PAUSE_S)
+    return out, start, start < now
 
 
 def summarize(result: dict, applied) -> str:
@@ -816,6 +949,7 @@ def summarize(result: dict, applied) -> str:
         f"событий {c['events']}",
         f"примечаний {c['notes']}",
         f"задач {c['tasks']}",
+        f"сообщений в чатах {c.get('chats', 0)}",
         f"новых сообщений {applied.messages_added}",
     ]
     if result["truncated"]:

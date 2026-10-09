@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import asyncio
 
-from .. import crm_ai, crm_notify, crm_scheduler
+from .. import amo, crm_ai, crm_notify, crm_scheduler
 from ..auth import UserContext, require_crm_manage, require_user
 from ..config import get_settings
 from ..db import get_db
@@ -98,17 +98,23 @@ async def settings_data(db: AsyncSession, org_id) -> tuple[CrmSettings | None, d
     return row, dict((row.data if row else None) or {})
 
 
+# Разделы настроек, которые пишут сами интеграции, а не форма настроек.
+OWN_SECTIONS = ("amo", "wazzup")
+
+
 async def save_data(
     db: AsyncSession, org: Organization, row: CrmSettings | None, data: dict, who: str
 ) -> None:
-    """Сохранить настройки, не трогая раздел amoCRM: его пишет синхронизация,
-    и токен OAuth, обновлённый ею секунду назад, нельзя затереть старым."""
+    """Сохранить настройки, не трогая разделы интеграций: их пишут
+    синхронизация и вебхуки, и токен OAuth, обновлённый секунду назад, или
+    счётчики Wazzup нельзя затереть старой копией."""
     if row:
         await db.refresh(row)
-        fresh_amo = (row.data or {}).get("amo")
         merged = dict(data)
-        if fresh_amo is not None:
-            merged["amo"] = fresh_amo
+        for section in OWN_SECTIONS:
+            fresh = (row.data or {}).get(section)
+            if fresh is not None:
+                merged[section] = fresh
         row.data = merged
         row.updated_at = utcnow()
         row.updated_by = who
@@ -224,9 +230,9 @@ async def known_pipelines(db: AsyncSession, org_id, data: dict) -> list[CrmPipel
     dicts = (data.get("amo") or {}).get("dicts") or {}
     for pid, name in (dicts.get("pipelines") or {}).items():
         stages = order.setdefault(name, [])
-        for s in (dicts.get("statuses") or {}).values():
-            if s.get("pipeline_id") == pid and s.get("name") and s["name"] not in stages:
-                stages.append(s["name"])
+        for stage in amo.stage_names(dicts, pid):
+            if stage not in stages:
+                stages.append(stage)
     rows = (
         await db.execute(
             select(CrmDeal.pipeline, CrmDeal.stage)

@@ -77,6 +77,7 @@ def test_reply_stats_ignores_tomorrow_and_handles_silence():
     assert s == {
         "messages_in": 0,
         "messages_out": 1,
+        "hidden_out": 0,
         "first_reply_minutes": None,
         "max_reply_minutes": None,
         "waiting_minutes": None,
