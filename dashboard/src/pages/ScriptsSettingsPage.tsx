@@ -9,6 +9,7 @@ import AiPromptView from "../scripts/AiPromptView";
 import { IconSparkle } from "../scripts/AssistDialog";
 import CopyStatsView from "../scripts/CopyStats";
 import CallStatsView from "../scripts/CallStats";
+import ExportScripts from "../scripts/ExportScripts";
 import History from "../scripts/History";
 import Substitution from "../scripts/Substitution";
 import Suggestions from "../scripts/Suggestions";
@@ -46,7 +47,10 @@ export default function ScriptsSettingsPage() {
             ? undefined
             : "Только просмотр: менять настройки могут те, кому выдано «Скрипты: правка»."
         }
-      />
+      >
+        {/* Перенос скриптов в Base40 («Скрипты LS» → «Настройки» → «Импорт»). */}
+        {canEdit && <ExportScripts />}
+      </PageHead>
       <Slider className="tabs" active={tab} role="tablist" aria-label="Настройки скриптов">
         {tabs.map((t) => (
           <button
